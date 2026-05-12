@@ -21,9 +21,11 @@ export default function SubSidebar({ subSidebar, onClose }) {
           <i className={`ti ${subSidebar.titleIcon} text-blue-900 text-[16px]`} />
           <span className="text-[13px] font-bold text-blue-900">{subSidebar.title}</span>
         </div>
-        <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100">
-          <i className="ti ti-x text-gray-400 text-[14px]" />
-        </button>
+        {onClose && (
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100">
+            <i className="ti ti-x text-gray-400 text-[14px]" />
+          </button>
+        )}
       </div>
 
       {/* Groups */}
@@ -48,7 +50,6 @@ export default function SubSidebar({ subSidebar, onClose }) {
                       <Link
                         key={item.href}
                         href={item.href}
-                        onClick={onClose}
                         className={`block px-2 py-2 rounded-lg text-[12.5px] transition-colors
                           ${active ? 'text-orange-500 font-semibold bg-orange-50' : 'text-gray-600 hover:text-blue-900 hover:bg-blue-50'}`}
                       >
