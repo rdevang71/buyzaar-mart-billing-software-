@@ -1,0 +1,44 @@
+'use client';
+
+import { useState } from 'react';
+import SalesOrderListPage from '@/components/SalesOrderListPage';
+
+const columns = [
+  { key: 'id',               label: 'ID' },
+  { key: 'sales_order_id',   label: 'Sales Order ID' },
+  { key: 'booking_id',       label: 'Booking ID' },
+  { key: 'booking_date',     label: 'Booking Date' },
+  { key: 'billing_username', label: 'Billing Username' },
+  { key: 'gross_bill',       label: 'Gross Bill' },
+  { key: 'total_discount',   label: 'Total Discount' },
+  { key: 'invoice_id',       label: 'Invoice ID' },
+  { key: 'invoice_date',     label: 'Invoice Date' },
+  { key: 'converted_by',     label: 'Converted By' },
+  { key: 'status',           label: 'Status' },
+  { key: 'channel',          label: 'Channel' },
+];
+
+export default function InvoiceConversionTrackerPage() {
+  const [rows, setRows] = useState([]);
+
+  const handleFetch = ({ dateRange, stores }) => {
+    // TODO: API call with dateRange and stores
+    setRows([]);
+  };
+
+  return (
+    <SalesOrderListPage
+      breadcrumbs={[
+        { label: 'Sales Order', href: '/sales-order' },
+        { label: 'Invoice Conversion Tracker' },
+      ]}
+      title="Invoice Conversion Tracker"
+      description="List of Invoice Conversion Tracker"
+      columns={columns}
+      rows={rows}
+      onFetch={handleFetch}
+      totalLabel="Results"
+      emptyMessage="No matching record found"
+    />
+  );
+}

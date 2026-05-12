@@ -61,15 +61,15 @@ export const menuItems = [
         label: 'Dashboard', icon: 'ti-layout-dashboard',
         items: [
           { label: 'Inventory Dashboard', href: '/inventory/ops' },
-          { label: 'Overview', href: '/inventory/hub' },
+          { label: 'Overview',            href: '/inventory/hub' },
         ],
       },
       {
         label: 'Stock Operations', icon: 'ti-swap-horizontal',
         items: [
-          { label: 'Stock In', href: '/inventory/stockin' },
-          { label: 'Stock Out', href: '/inventory/stockout' },
-          { label: 'Stock Transfer', href: '/inventory/stocktransfer' },
+          { label: 'Stock In',         href: '/inventory/stockin' },
+          { label: 'Stock Out',        href: '/inventory/stockout' },
+          { label: 'Stock Transfer',   href: '/inventory/stocktransfer' },
           { label: 'Stock Validation', href: '/inventory/stockvalidation' },
         ],
       },
@@ -77,11 +77,11 @@ export const menuItems = [
         label: 'Requisitions & Batches', icon: 'ti-clipboard-list',
         items: [
           { label: 'Stock Requisition', href: '/inventory/stockrequisition' },
-          { label: 'Batches', href: '/inventory/batches' },
+          { label: 'Batches',           href: '/inventory/batches' },
         ],
       },
     ],
-  } },
+  }},
   { label: 'Purchase',     icon: 'ti-shopping-cart',  href: '/purchase/vendors', subSidebar: {
     title: 'Purchase',
     titleIcon: 'ti-shopping-cart',
@@ -89,20 +89,40 @@ export const menuItems = [
       {
         label: 'Vendors & Invoices', icon: 'ti-user-plus',
         items: [
-          { label: 'Vendors', href: '/purchase/vendors' },
-          { label: 'Purchase Orders', href: '/purchase/purchase-orders' },
-          { label: 'Vendor Invoices', href: '/purchase/vendor-invoices' },
-          { label: 'Invoice Settlement', href: '/purchase/invoice-settlement' },
+          { label: 'Vendors',             href: '/purchase/vendors' },
+          { label: 'Purchase Orders',     href: '/purchase/purchase-orders' },
+          { label: 'Vendor Invoices',     href: '/purchase/vendor-invoices' },
+          { label: 'Invoice Settlement',  href: '/purchase/invoice-settlement' },
         ],
       },
     ],
   }},
-  { label: 'Sales Order',  icon: 'ti-receipt',        href: '/sales-order',  subSidebar: null },
+
+  /* ── Sales Order ── */
+  { label: 'Sales Order',  icon: 'ti-receipt', href: '/sales-order/invoice-sales-order', subSidebar: {
+    title: 'Sales Order',
+    titleIcon: 'ti-receipt',
+    groups: [
+      {
+        label: 'Sales Order', icon: 'ti-file-invoice',
+        items: [
+          { label: 'Invoice Sales Order',        href: '/sales-order/invoice-sales-order' },
+          { label: 'Uninvoiced Sales Order',      href: '/sales-order/uninvoiced-sales-order' },
+          { label: 'Bulk Sales Order',            href: '/sales-order/bulk-sales-order' },
+          { label: 'Invoice Conversion Tracker', href: '/sales-order/invoice-conversion-tracker' },
+          { label: 'Write Off',                   href: '/sales-order/write-off' },
+          { label: 'Quotation Pending Approval',  href: '/sales-order/quotation-pending-approval' },
+          { label: 'Auto Invoice',                href: '/sales-order/auto-invoice' },
+        ],
+      },
+    ],
+  }},
+
   { label: 'Customer',     icon: 'ti-users',           href: '/customer',     subSidebar: null },
-  { label: 'Employee',     icon: 'ti-user-check',     href: '/employee',     subSidebar: null },
-  { label: 'Reports',      icon: 'ti-chart-pie',      href: '/reports',      subSidebar: null },
-  { label: 'Settings',     icon: 'ti-settings',       href: '/settings',     subSidebar: null },
-  { label: 'eStore',       icon: 'ti-device-desktop', href: '/estore',       subSidebar: null },
-  { label: 'Khata',        icon: 'ti-book',           href: '/khata',        subSidebar: null },
-  { label: 'Integrations', icon: 'ti-plug',           href: '/integrations', subSidebar: null },
+  { label: 'Employee',     icon: 'ti-user-check',      href: '/employee',     subSidebar: null },
+  { label: 'Reports',      icon: 'ti-chart-pie',       href: '/reports',      subSidebar: null },
+  { label: 'Settings',     icon: 'ti-settings',        href: '/settings',     subSidebar: null },
+  { label: 'eStore',       icon: 'ti-device-desktop',  href: '/estore',       subSidebar: null },
+  { label: 'Khata',        icon: 'ti-book',            href: '/khata',        subSidebar: null },
+  { label: 'Integrations', icon: 'ti-plug',            href: '/integrations', subSidebar: null },
 ];
