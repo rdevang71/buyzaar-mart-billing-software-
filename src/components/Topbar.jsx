@@ -4,13 +4,33 @@ import { usePathname } from 'next/navigation';
 import { menuItems } from './sidebarConfig';
 
 function getPageTitle(pathname) {
-  const flat = menuItems.flatMap((m) =>
-    m.subSidebar
-      ? m.subSidebar.groups.flatMap((g) => g.items).concat({ label: m.label, href: m.href })
-      : [{ label: m.label, href: m.href }]
-  );
-  const match = flat.find((i) => pathname === i.href || pathname.startsWith(i.href + '/'));
-  return match?.label ?? 'Home';
+  for (const item of menuItems) {
+    if (pathname === item.href || pathname.startsWith(item.href + '/')) {
+      if (item.subSidebar?.groups) {
+        for (const group of item.subSidebar.groups) {
+          const match = group.items.find(
+            (subItem) => pathname === subItem.href || pathname.startsWith(subItem.href + '/')
+          );
+          if (match?.label) {
+            return match.label;
+          }
+        }
+      }
+
+      if (item.subSidebar?.simpleItems) {
+        const match = item.subSidebar.simpleItems.find(
+          (subItem) => pathname === subItem.href || pathname.startsWith(subItem.href + '/')
+        );
+        if (match?.label && match.label !== 'Inventory Dashboard') {
+          return match.label;
+        }
+      }
+
+      return item.label;
+    }
+  }
+
+  return 'Home';
 }
 
 export default function Topbar({ onMenuOpen }) {

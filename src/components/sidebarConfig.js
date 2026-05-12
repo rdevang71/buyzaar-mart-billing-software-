@@ -53,7 +53,35 @@ export const menuItems = [
       },
     ],
   }},
-  { label: 'Inventory',    icon: 'ti-clipboard-list', href: '/inventory',    subSidebar: null },
+  { label: 'Inventory',    icon: 'ti-clipboard-list', href: '/inventory/hub', subSidebar: {
+    title: 'Inventory Dashboard',
+    titleIcon: 'ti-layout-dashboard',
+    groups: [
+      {
+        label: 'Dashboard', icon: 'ti-layout-dashboard',
+        items: [
+          { label: 'Inventory Dashboard', href: '/inventory/ops' },
+          { label: 'Overview', href: '/inventory/hub' },
+        ],
+      },
+      {
+        label: 'Stock Operations', icon: 'ti-swap-horizontal',
+        items: [
+          { label: 'Stock In', href: '/inventory/stockin' },
+          { label: 'Stock Out', href: '/inventory/stockout' },
+          { label: 'Stock Transfer', href: '/inventory/stocktransfer' },
+          { label: 'Stock Validation', href: '/inventory/stockvalidation' },
+        ],
+      },
+      {
+        label: 'Requisitions & Batches', icon: 'ti-clipboard-list',
+        items: [
+          { label: 'Stock Requisition', href: '/inventory/stockrequisition' },
+          { label: 'Batches', href: '/inventory/batches' },
+        ],
+      },
+    ],
+  } },
   { label: 'Purchase',     icon: 'ti-shopping-cart',  href: '/purchase',     subSidebar: null },
   { label: 'Sales Order',  icon: 'ti-receipt',        href: '/sales-order',  subSidebar: null },
   { label: 'Customer',     icon: 'ti-users',           href: '/customer',     subSidebar: null },
