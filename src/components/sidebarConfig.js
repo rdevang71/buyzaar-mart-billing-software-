@@ -119,7 +119,16 @@ export const menuItems = [
   }},
 
   { label: 'Customer',     icon: 'ti-users',           href: '/customer',     subSidebar: null },
-  { label: 'Employee',     icon: 'ti-user-check',      href: '/employee',     subSidebar: null },
+  { label: 'Employee', icon: 'ti-user-check', href: '/employee', subSidebar: {
+    flatItems: [
+      { label: 'Roles', href: '/employee/roles', icon: 'ti-shield' },
+      {label:'Employee Departments' , href :'/employee/staffdepartments'},
+      { label: 'Permissions', href: '/employee/permissions' },
+      { label: 'Employees', href: '/employee/staff', icon: 'ti-user' },
+      { label: 'User Counter Session', href: '/employee/user-counter-session' },
+    ],
+  }},
+ 
   { label: 'Reports',      icon: 'ti-chart-pie',       href: '/reports',      subSidebar: null },
   { label: 'Settings',     icon: 'ti-settings',        href: '/settings',     subSidebar: null },
   { label: 'eStore',       icon: 'ti-device-desktop',  href: '/estore',       subSidebar: null },
