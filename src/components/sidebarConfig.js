@@ -82,7 +82,21 @@ export const menuItems = [
       },
     ],
   } },
-  { label: 'Purchase',     icon: 'ti-shopping-cart',  href: '/purchase',     subSidebar: null },
+  { label: 'Purchase',     icon: 'ti-shopping-cart',  href: '/purchase/vendors', subSidebar: {
+    title: 'Purchase',
+    titleIcon: 'ti-shopping-cart',
+    groups: [
+      {
+        label: 'Vendors & Invoices', icon: 'ti-user-plus',
+        items: [
+          { label: 'Vendors', href: '/purchase/vendors' },
+          { label: 'Purchase Orders', href: '/purchase/purchase-orders' },
+          { label: 'Vendor Invoices', href: '/purchase/vendor-invoices' },
+          { label: 'Invoice Settlement', href: '/purchase/invoice-settlement' },
+        ],
+      },
+    ],
+  }},
   { label: 'Sales Order',  icon: 'ti-receipt',        href: '/sales-order',  subSidebar: null },
   { label: 'Customer',     icon: 'ti-users',           href: '/customer',     subSidebar: null },
   { label: 'Employee',     icon: 'ti-user-check',     href: '/employee',     subSidebar: null },

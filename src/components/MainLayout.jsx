@@ -14,18 +14,20 @@ export default function MainLayout({ children }) {
 
   // Auto-open subSidebar when on a matching route
   useEffect(() => {
+    // Extract base path from current pathname (e.g., 'purchase' from '/purchase/purchase-orders')
+    const pathBase = pathname.split('/')[1];
+    
+    // Find matching menu item by comparing base paths
     const matched = menuItems.find(
       (item) =>
         item.subSidebar &&
-        (pathname === item.href || pathname.startsWith(item.href + '/'))
+        item.href.split('/')[1] === pathBase // Compare base paths
     );
+    
     if (matched) {
       setActiveMenu(matched);
     } else {
-      setActiveMenu((prev) => {
-        if (prev && !pathname.startsWith(prev.href)) return null;
-        return prev;
-      });
+      setActiveMenu(null);
     }
   }, [pathname]);
 
@@ -52,7 +54,7 @@ export default function MainLayout({ children }) {
         <div className="hidden md:block fixed left-[218px] top-[52px] h-[calc(100vh-52px)] z-30 shadow-md w-[200px]">
           <SubSidebar
             subSidebar={activeMenu.subSidebar}
-            onClose={() => setActiveMenu(null)}
+            onClose={null}
           />
         </div>
       )}
@@ -63,7 +65,6 @@ export default function MainLayout({ children }) {
           <SubSidebar
             subSidebar={activeMenu.subSidebar}
             onClose={() => {
-              setActiveMenu(null);
               setMobileOpen(false);
             }}
           />
