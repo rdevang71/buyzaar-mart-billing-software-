@@ -118,7 +118,6 @@ export const menuItems = [
     ],
   }},
 
-  { label: 'Customer',     icon: 'ti-users',           href: '/customer',     subSidebar: null },
   { label: 'Employee', icon: 'ti-user-check', href: '/employee', subSidebar: {
     flatItems: [
       { label: 'Roles', href: '/employee/roles', icon: 'ti-shield' },
@@ -129,6 +128,39 @@ export const menuItems = [
     ],
   }},
  
+  
+  /* ── Customer ── */
+  { label: 'Customer', icon: 'ti-users', href: '/customer/dashboard', subSidebar: {
+    title: 'Customer',
+    titleIcon: 'ti-users',
+    groups: [
+      {
+        label: 'Customer', icon: 'ti-users',
+        items: [
+          { label: 'Customers Dashboard',          href: '/customer/dashboard' },
+          { label: 'List Of Customers',            href: '/customer/list-of-customers' },
+          { label: 'Customer Groups',              href: '/customer/customer-groups' },
+          { label: 'Inactive Customers',           href: '/customer/inactive-customers' },
+          { label: 'Customer Ledger',              href: '/customer/customer-ledger' },
+          { label: 'Customer Credit Sale',         href: '/customer/customer-credit-sale' },
+          { label: 'Credit Settlement',            href: '/customer/credit-settlement' },
+          { label: 'Credit Note History',          href: '/customer/credit-note-history' },
+          { label: 'Customers Sales Report',       href: '/customer/customers-sales-report' },
+          { label: 'Credit Advanced Configs List', href: '/customer/credit-advanced-configs-list' },
+          { label: 'Credit Advanced Configuration', href: '/customer/credit-advanced-configuration' },
+          { label: 'Unsettled Orders',             href: '/customer/unsettled-orders' },
+          { label: 'Customer Advance Payment',     href: '/customer/customer-advance-payment' },
+          { label: 'Balance Transfer Tracker',     href: '/customer/balance-transfer-tracker' },
+          { label: 'Loyalty Settings',             href: '/customer/loyalty-settings' },
+          { label: 'Message History',              href: '/customer/message-history' },
+          { label: 'WhatsApp Logs',                href: '/customer/whatsapp-logs' },
+          { label: 'SMS Credit',                   href: '/customer/sms-credit' },
+          { label: 'WhatsApp Credit',              href: '/customer/whatsapp-credit' },
+          
+        ],
+      },
+    ],
+  }},
   { label: 'Reports',      icon: 'ti-chart-pie',       href: '/reports',      subSidebar: null },
   { label: 'Settings',     icon: 'ti-settings',        href: '/settings',     subSidebar: null },
   { label: 'eStore',       icon: 'ti-device-desktop',  href: '/estore',       subSidebar: null },
