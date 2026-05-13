@@ -7,7 +7,7 @@ import { usePathname } from 'next/navigation';
 export default function SubSidebar({ subSidebar, onClose }) {
   const pathname = usePathname();
 
-  /* ── Employee-style flat list (section title + optional icons per row) ── */
+  /* ── Employee-style flat list ── */
   if (subSidebar.flatItems?.length) {
     const sectionActive =
       subSidebar.sectionHref &&
@@ -15,9 +15,9 @@ export default function SubSidebar({ subSidebar, onClose }) {
         pathname.startsWith(subSidebar.sectionHref + '/'));
 
     return (
-      <div className="flex flex-col h-full bg-[#eef3f8] border-r border-gray-200/90 overflow-y-auto">
+      <div className="flex flex-col h-full bg-white border-r border-gray-200 overflow-y-auto">
         {onClose && (
-          <div className="md:hidden flex items-center justify-end px-3 py-2.5 border-b border-gray-200/80 bg-white/90 shrink-0">
+          <div className="md:hidden flex items-center justify-end px-3 py-2.5 border-b border-gray-200 bg-white shrink-0">
             <button
               type="button"
               onClick={onClose}
@@ -29,27 +29,29 @@ export default function SubSidebar({ subSidebar, onClose }) {
           </div>
         )}
 
-        <div className="px-4 pt-5 pb-2">
-          {subSidebar.sectionHref ? (
-            <Link
-              href={subSidebar.sectionHref}
-              onClick={() => onClose?.()}
-              className={`block text-[13px] font-semibold tracking-tight transition-colors ${
-                sectionActive
-                  ? 'text-orange-500'
-                  : 'text-[#6b8cce] hover:text-blue-800'
-              }`}
-            >
-              {subSidebar.sectionTitle}
-            </Link>
-          ) : (
-            <p className="text-[13px] font-semibold text-[#6b8cce] tracking-tight">
-              {subSidebar.sectionTitle}
-            </p>
-          )}
-        </div>
+        {subSidebar.sectionTitle && (
+          <div className="px-4 pt-5 pb-2">
+            {subSidebar.sectionHref ? (
+              <Link
+                href={subSidebar.sectionHref}
+                onClick={() => onClose?.()}
+                className={`block text-[13px] font-semibold tracking-tight transition-colors ${
+                  sectionActive
+                    ? 'text-orange-500'
+                    : 'text-gray-500 hover:text-gray-800'
+                }`}
+              >
+                {subSidebar.sectionTitle}
+              </Link>
+            ) : (
+              <p className="text-[13px] font-semibold text-gray-500 tracking-tight">
+                {subSidebar.sectionTitle}
+              </p>
+            )}
+          </div>
+        )}
 
-        <nav className="px-3 pb-6 flex flex-col">
+        <nav className="px-3 pb-6 pt-2 flex flex-col gap-0.5">
           {subSidebar.flatItems.map((item) => {
             const active =
               pathname === item.href || pathname.startsWith(item.href + '/');
@@ -58,16 +60,16 @@ export default function SubSidebar({ subSidebar, onClose }) {
                 key={item.href}
                 href={item.href}
                 onClick={() => onClose?.()}
-                className={`flex items-center gap-3 px-2 py-3.5 rounded-lg text-[13px] font-semibold transition-colors ${
+                className={`flex items-center gap-3 px-3 py-3 rounded-lg text-[13px] font-medium transition-colors ${
                   active
-                    ? 'text-orange-500 bg-orange-50/80'
-                    : 'text-blue-950 hover:bg-white/60'
+                    ? 'text-orange-500 bg-orange-50 font-semibold'
+                    : 'text-gray-700 hover:text-blue-700 hover:bg-blue-50'
                 }`}
               >
                 {item.icon ? (
                   <i
                     className={`ti ${item.icon} text-[18px] w-[22px] text-center flex-shrink-0 ${
-                      active ? 'text-orange-500' : 'text-blue-900'
+                      active ? 'text-orange-500' : 'text-gray-500'
                     }`}
                   />
                 ) : (
@@ -82,7 +84,7 @@ export default function SubSidebar({ subSidebar, onClose }) {
     );
   }
 
-  /* ── Grouped sidebar (Catalog, Inventory, …) ── */
+  /* ── Grouped sidebar (Catalog, Sales Order, …) ── */
   const [openGroups, setOpenGroups] = useState(
     () => Object.fromEntries(subSidebar.groups.map((g) => [g.label, true]))
   );
@@ -114,9 +116,7 @@ export default function SubSidebar({ subSidebar, onClose }) {
                 onClick={() => toggle(group.label)}
                 className="w-full flex items-center gap-2 px-2 py-2.5 rounded-lg hover:bg-blue-50 transition-colors"
               >
-                <i
-                  className={`ti ${isOpen ? 'ti-chevron-down' : 'ti-chevron-right'} text-orange-400 text-[11px]`}
-                />
+                <i className={`ti ${isOpen ? 'ti-chevron-down' : 'ti-chevron-right'} text-orange-400 text-[11px]`} />
                 <i className={`ti ${group.icon} text-blue-800 text-[16px]`} />
                 <span className="text-[12.5px] font-bold text-blue-900 text-left">{group.label}</span>
               </button>
@@ -130,7 +130,10 @@ export default function SubSidebar({ subSidebar, onClose }) {
                         key={item.href}
                         href={item.href}
                         className={`block px-2 py-2 rounded-lg text-[12.5px] transition-colors
-                          ${active ? 'text-orange-500 font-semibold bg-orange-50' : 'text-gray-600 hover:text-blue-900 hover:bg-blue-50'}`}
+                          ${active
+                            ? 'text-orange-500 font-semibold bg-orange-50'
+                            : 'text-gray-600 hover:text-blue-900 hover:bg-blue-50'
+                          }`}
                       >
                         {item.label}
                       </Link>
