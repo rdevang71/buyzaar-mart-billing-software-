@@ -39,6 +39,8 @@ export default function InventoryShell({
             {actions.map((action, index) => (
               <button
                 key={action.label}
+                type={action.type || 'button'}
+                onClick={action.onClick}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-medium transition-colors ${
                   index === actions.length - 1 && action.primary
                     ? 'bg-blue-600 text-white hover:bg-blue-700'

@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import MainLayout from '@/components/MainLayout';
 
 const tabs = [
@@ -27,6 +28,8 @@ const quickFilters = [
 ];
 
 export default function InventoryOpsPage() {
+  const router = useRouter();
+
   return (
     <MainLayout>
       <div className="flex items-center gap-2 text-[12px] text-gray-500 mb-4">
@@ -50,7 +53,11 @@ export default function InventoryOpsPage() {
             <i className="ti ti-download text-[16px]" />
             Export
           </button>
-          <button className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gray-900 text-[13px] font-medium text-white hover:bg-gray-800 transition-colors">
+          <button
+            type="button"
+            onClick={() => router.push('/inventory/stockin')}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gray-900 text-[13px] font-medium text-white hover:bg-gray-800 transition-colors"
+          >
             <i className="ti ti-plus text-[16px]" />
             Stock In
           </button>
