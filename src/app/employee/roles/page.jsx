@@ -1,24 +1,100 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import MainLayout from '@/components/MainLayout';
 
 const PAGE_SIZES = [10, 25, 50, 100];
 
-const sampleRows = [
-  { id: 1, roleId: 1, roleName: 'Manager' },
-  { id: 2, roleId: 2, roleName: 'Cashier' },
+async function fetchRoles() {
+  const res = await fetch('/api/employee/roles');
+  if (!res.ok) throw new Error('Failed to fetch roles');
+  return res.json();
+}
+
+async function updateRole(payload) {
+  const res = await fetch('/api/employee/roles', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to update role');
+  return data;
+}
+
+async function deleteRole(id) {
+  const res = await fetch(`/api/employee/roles?id=${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to delete role');
+  return data;
+}
+
+const PERMISSION_OPTIONS = [
+  { value: 'MANAGE_ROLES', label: 'Manage Roles' },
+  { value: 'MANAGE_USERS', label: 'Manage Users' },
+  { value: 'ACCESS_DASHBOARD', label: 'Access Module' },
+  { value: 'MANAGE_DEVICES', label: 'Manage Devices' },
+  { value: 'MANAGE_INVENTORY', label: 'Manage Inventory' },
+  { value: 'MANAGE_CATALOG', label: 'Manage Catalog' },
+  { value: 'VIEW_REPORTS', label: 'View Reports' },
+  { value: 'MANAGE_STORES', label: 'Manage Stores' },
+  { value: 'MANAGE_BILLING', label: 'Manage Billing' },
 ];
 
-export default function RolesPage({ rows = sampleRows }) {
-  const [search,      setSearch]      = useState('');
-  const [pageSize,    setPageSize]    = useState(10);
-  const [page,        setPage]        = useState(1);
-  const [showCreate,  setShowCreate]  = useState(false);
-  const [newRoleName, setNewRoleName] = useState('');
-  const [openMenuId,  setOpenMenuId]  = useState(null);
+function normalizeRoleRow(row) {
+  return {
+    id: row.id,
+    roleId: row.roleId ?? row.id,
+    roleName: row.roleName ?? row.role_name ?? '',
+    permissions: row.permissions ?? [],
+    description: row.description ?? '',
+    createdAt: row.createdAt ?? row.created_at ?? null,
+  };
+}
+
+export default function RolesPage() {
+  const router = useRouter();
+  const [search, setSearch] = useState('');
+  const [pageSize, setPageSize] = useState(10);
+  const [page, setPage] = useState(1);
+  const [roles, setRoles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [openMenuId, setOpenMenuId] = useState(null);
+  const [editingRole, setEditingRole] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [savingRole, setSavingRole] = useState(false);
+  const [deletingRole, setDeletingRole] = useState(false);
   const menuRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    setLoading(true);
+    fetchRoles()
+      .then((data) => {
+        if (cancelled) return;
+        setRoles(Array.isArray(data) ? data.map(normalizeRoleRow) : []);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error('Failed to load roles', err);
+          setRoles([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const handler = (e) => {
@@ -28,16 +104,70 @@ export default function RolesPage({ rows = sampleRows }) {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const filtered = rows.filter((r) =>
-    String(r.roleName).toLowerCase().includes(search.toLowerCase()) ||
-    String(r.roleId).includes(search)
-  );
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return roles;
+    return roles.filter((r) =>
+      String(r.roleName).toLowerCase().includes(q) ||
+      String(r.roleId).includes(q) ||
+      String(r.description || '').toLowerCase().includes(q)
+    );
+  }, [roles, search]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paginated  = filtered.slice((page - 1) * pageSize, page * pageSize);
   const totalCount = filtered.length;
   const startIndex = totalCount === 0 ? 0 : (page - 1) * pageSize + 1;
   const endIndex   = Math.min(page * pageSize, totalCount);
+
+  const refreshRoles = async () => {
+    const data = await fetchRoles();
+    setRoles(Array.isArray(data) ? data.map(normalizeRoleRow) : []);
+  };
+
+  const closeEditors = () => {
+    setEditingRole(null);
+    setDeleteTarget(null);
+  };
+
+  const handleEditSave = async (draft) => {
+    if (!draft.roleName.trim()) return alert('Role name is required');
+    if (draft.permissions.length === 0) return alert('At least one permission is required');
+
+    setSavingRole(true);
+    try {
+      await updateRole({
+        id: draft.id,
+        role_name: draft.roleName,
+        permissions: draft.permissions,
+        description: draft.description,
+      });
+      await refreshRoles();
+      closeEditors();
+    } catch (err) {
+      console.error(err);
+      alert(err.message || 'Failed to update role');
+    } finally {
+      setSavingRole(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+
+    setDeletingRole(true);
+    try {
+      await deleteRole(deleteTarget.id);
+      setRoles((current) => current.filter((role) => role.id !== deleteTarget.id));
+      setPage(1);
+      closeEditors();
+    } catch (err) {
+      console.error(err);
+      alert(err.message || 'Failed to delete role');
+    } finally {
+      setDeletingRole(false);
+    }
+  };
 
   return (
     <MainLayout>
@@ -62,7 +192,7 @@ export default function RolesPage({ rows = sampleRows }) {
             </p>
           </div>
           <button
-            onClick={() => setShowCreate(true)}
+            onClick={() => router.push('/employee/customroles/createcustomrole')}
             className="self-start flex items-center gap-1.5 px-4 py-2 bg-blue-700 text-white rounded-lg text-[12.5px] font-semibold hover:bg-blue-800 transition-colors shadow-sm flex-shrink-0"
           >
             <i className="ti ti-plus text-[14px]" />
@@ -105,7 +235,13 @@ export default function RolesPage({ rows = sampleRows }) {
                 </tr>
               </thead>
               <tbody>
-                {paginated.length === 0 ? (
+                {loading ? (
+                  <tr>
+                    <td colSpan={3} className="text-center text-gray-400 py-16 text-[13px]">
+                      Loading roles...
+                    </td>
+                  </tr>
+                ) : paginated.length === 0 ? (
                   <tr>
                     <td colSpan={3} className="text-center text-gray-400 py-16 text-[13px]">
                       <i className="ti ti-shield-off text-[32px] mb-2 block" />
@@ -134,14 +270,25 @@ export default function RolesPage({ rows = sampleRows }) {
                           <div className="absolute right-4 top-10 w-36 bg-white border border-gray-200 rounded-lg shadow-lg z-20 py-1">
                             <button
                               className="block w-full text-left px-4 py-2 text-[12.5px] text-gray-700 hover:bg-gray-50 transition"
-                              onClick={() => setOpenMenuId(null)}
+                              onClick={() => {
+                                setOpenMenuId(null);
+                                setEditingRole({
+                                  id: row.id,
+                                  roleName: row.roleName,
+                                  permissions: Array.isArray(row.permissions) ? row.permissions : [],
+                                  description: row.description || '',
+                                });
+                              }}
                             >
                               <i className="ti ti-edit text-[13px] mr-2 text-blue-500" />
                               Edit
                             </button>
                             <button
                               className="block w-full text-left px-4 py-2 text-[12.5px] text-red-600 hover:bg-red-50 transition"
-                              onClick={() => setOpenMenuId(null)}
+                              onClick={() => {
+                                setOpenMenuId(null);
+                                setDeleteTarget(row);
+                              }}
                             >
                               <i className="ti ti-trash text-[13px] mr-2" />
                               Delete
@@ -217,47 +364,120 @@ export default function RolesPage({ rows = sampleRows }) {
 
       </div>
 
-      {/* Create Role Modal */}
-      {showCreate && (
-        <div
-          className="fixed inset-0 z-[70] flex items-center justify-center p-4"
-          style={{ background: 'rgba(0,0,0,0.4)' }}
-        >
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+      {editingRole && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.4)' }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6 max-h-[90vh] overflow-auto">
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-[16px] font-bold text-gray-900">Create Role</h2>
+              <h2 className="text-[16px] font-bold text-gray-900">Edit Role</h2>
               <button
-                onClick={() => { setShowCreate(false); setNewRoleName(''); }}
+                onClick={closeEditors}
                 className="p-1.5 rounded-lg hover:bg-gray-100"
               >
                 <i className="ti ti-x text-gray-500 text-[16px]" />
               </button>
             </div>
-            <div className="mb-4">
-              <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">
-                Role Name
-              </label>
-              <input
-                type="text"
-                placeholder="Enter role name"
-                value={newRoleName}
-                onChange={(e) => setNewRoleName(e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-gray-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all"
-                autoFocus
-              />
+
+            <div className="grid grid-cols-2 gap-x-12 gap-y-8">
+              <div>
+                <label className="text-[12px] text-gray-700 font-medium">Role Name *</label>
+                <input
+                  value={editingRole.roleName}
+                  onChange={(e) => setEditingRole({ ...editingRole, roleName: e.target.value })}
+                  placeholder="Enter Role Name"
+                  className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-[13px] text-gray-800 bg-white placeholder:text-gray-400 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-[12px] text-gray-700 font-medium">Permissions *</label>
+                <div className="mt-2 rounded-lg border border-gray-300 bg-white p-3 max-h-64 overflow-auto">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {PERMISSION_OPTIONS.map((option) => {
+                      const checked = editingRole.permissions.includes(option.value);
+                      return (
+                        <label
+                          key={option.value}
+                          className={`flex items-center gap-2 rounded-md border px-3 py-2 text-[13px] cursor-pointer transition-colors ${
+                            checked ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 hover:bg-gray-50 text-gray-700'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              setEditingRole((current) => ({
+                                ...current,
+                                permissions: e.target.checked
+                                  ? [...current.permissions, option.value]
+                                  : current.permissions.filter((permission) => permission !== option.value),
+                              }));
+                            }}
+                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span>{option.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="col-span-2">
+                <label className="text-[12px] text-gray-700 font-medium">Description</label>
+                <textarea
+                  value={editingRole.description}
+                  onChange={(e) => setEditingRole({ ...editingRole, description: e.target.value })}
+                  placeholder="Description"
+                  rows={5}
+                  className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-[13px] text-gray-800 bg-white placeholder:text-gray-400 focus:outline-none focus:border-blue-500 resize-none"
+                />
+              </div>
             </div>
+
             <div className="flex gap-2 mt-6">
               <button
-                onClick={() => { setShowCreate(false); setNewRoleName(''); }}
+                onClick={closeEditors}
                 className="flex-1 py-2.5 border border-gray-200 rounded-lg text-[13px] font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
               >
                 Cancel
               </button>
               <button
-                onClick={() => { setShowCreate(false); setNewRoleName(''); }}
+                onClick={() => handleEditSave(editingRole)}
                 className="flex-1 py-2.5 bg-blue-700 text-white rounded-lg text-[13px] font-semibold hover:bg-blue-800 transition-colors"
+                disabled={savingRole}
               >
-                Create
+                {savingRole ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.4)' }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-[16px] font-bold text-gray-900">Delete Role</h2>
+              <button onClick={closeEditors} className="p-1.5 rounded-lg hover:bg-gray-100">
+                <i className="ti ti-x text-gray-500 text-[16px]" />
+              </button>
+            </div>
+            <p className="text-[13px] text-gray-600">
+              Delete <span className="font-semibold text-gray-900">{deleteTarget.roleName}</span>? This action cannot be undone.
+            </p>
+            <div className="flex gap-2 mt-6">
+              <button
+                onClick={closeEditors}
+                className="flex-1 py-2.5 border border-gray-200 rounded-lg text-[13px] font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-lg text-[13px] font-semibold hover:bg-red-700 transition-colors"
+                disabled={deletingRole}
+              >
+                {deletingRole ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           </div>
