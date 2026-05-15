@@ -125,10 +125,15 @@ export default function AuthScreen({
 
               <div className="mt-4 border-t border-gray-100 pt-3.5 text-[12px] text-gray-500">
                 <p>
-                  {footerText}{' '}
-                  <Link href={footerLinkHref} className="font-semibold text-blue-600 hover:underline">
-                    {footerLinkText}
-                  </Link>
+                  {footerText}
+                  {footerText && footerLinkText && footerLinkHref && (
+                    <>
+                      {' '}
+                      <Link href={footerLinkHref} className="font-semibold text-blue-600 hover:underline">
+                        {footerLinkText}
+                      </Link>
+                    </>
+                  )}
                 </p>
               </div>
             </div>

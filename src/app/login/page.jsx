@@ -76,9 +76,7 @@ export default function LoginPage() {
       eyebrow="Welcome back."
       title="Sign in to continue."
       subtitle=""
-      footerText="Don't have a merchant account?"
-      footerLinkText="Get Started"
-      footerLinkHref="/register"
+      footerText="Registration is handled by the admin team."
       highlights={highlights}
     >
       <form className="space-y-3.5" onSubmit={handleSubmit}>
