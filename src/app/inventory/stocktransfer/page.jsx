@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import InventoryShell from '@/components/inventory/InventoryShell';
+import { getBulkField, parseBulkSheet, pickSpreadsheetFile, toBoolean } from '@/lib/bulkSheet';
 
 async function fetchStores() {
   const res = await fetch('/api/stores');
@@ -107,6 +108,52 @@ export default function StockTransferPage() {
     setShowModal(true);
   };
 
+  const handleBulkImport = async () => {
+    try {
+      const file = await pickSpreadsheetFile();
+      if (!file) return;
+
+      const rows = await parseBulkSheet(file);
+      if (!rows.length) {
+        alert('No rows found in selected file.');
+        return;
+      }
+
+      const created = [];
+      let failed = 0;
+
+      for (const row of rows) {
+        const sourceId = getBulkField(row, ['source_id', 'source']);
+        const destinationId = getBulkField(row, ['destination_id', 'destination']);
+        if (!sourceId || !destinationId || String(sourceId) === String(destinationId)) {
+          failed += 1;
+          continue;
+        }
+        try {
+          const draft = await postTransfer({
+            source: String(sourceId),
+            destination: String(destinationId),
+            applyTaxes: toBoolean(getBulkField(row, ['apply_taxes']), true),
+          });
+          created.push(draft);
+        } catch {
+          failed += 1;
+        }
+      }
+
+      if (!created.length) {
+        alert('Could not import any row. Check columns like source_id and destination_id.');
+        return;
+      }
+
+      alert(`Bulk import complete: ${created.length} draft(s) created${failed ? `, ${failed} failed` : ''}. Opening the first draft.`);
+      setDraftId(created[0].id);
+    } catch (err) {
+      console.error(err);
+      alert('Bulk import failed. Please use a valid Excel/CSV file.');
+    }
+  };
+
   const next = async () => {
     if (!source) return alert('Please select a source');
     if (!destination) return alert('Please select a destination');
@@ -131,7 +178,7 @@ export default function StockTransferPage() {
         breadcrumb={[{ label: 'Inventory' }, { label: 'Stock Transfer' }]}
         title="Stock Transfer"
         subtitle="Stock Transfer transaction history of last 7 days. Need Help?"
-        actions={[{ label: 'Bulk Operations' }, { label: 'Stock Transfer', primary: true, onClick: openModal }]}
+        actions={[{ label: 'Bulk Operations', onClick: handleBulkImport }, { label: 'Stock Transfer', primary: true, onClick: openModal }]}
         searchPlaceholder="Search"
         filters={['Date Range', 'Select Source']}
         tableHeaders={tableHeaders}

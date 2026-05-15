@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import InventoryShell from '@/components/inventory/InventoryShell';
+import { getBulkField, parseBulkSheet, pickSpreadsheetFile, toBoolean } from '@/lib/bulkSheet';
 
 async function fetchStores() {
   const res = await fetch('/api/stores');
@@ -103,6 +104,45 @@ export default function StockValidationPage() {
     setShowModal(true);
   };
 
+  const handleBulkImport = async () => {
+    try {
+      const file = await pickSpreadsheetFile();
+      if (!file) return;
+
+      const rows = await parseBulkSheet(file);
+      if (!rows.length) {
+        alert('No rows found in selected file.');
+        return;
+      }
+
+      const created = [];
+      let failed = 0;
+
+      for (const row of rows) {
+        try {
+          const draft = await postValidation({
+            destination: String(getBulkField(row, ['destination_id', 'destination'], 'none')),
+            applyTaxes: toBoolean(getBulkField(row, ['apply_taxes']), true),
+          });
+          created.push(draft);
+        } catch {
+          failed += 1;
+        }
+      }
+
+      if (!created.length) {
+        alert('Could not import any row. Check destination_id column.');
+        return;
+      }
+
+      alert(`Bulk import complete: ${created.length} draft(s) created${failed ? `, ${failed} failed` : ''}. Opening the first draft.`);
+      setDraftId(created[0].id);
+    } catch (err) {
+      console.error(err);
+      alert('Bulk import failed. Please use a valid Excel/CSV file.');
+    }
+  };
+
   const next = async () => {
     setSubmitting(true);
     try {
@@ -123,7 +163,7 @@ export default function StockValidationPage() {
         breadcrumb={[{ label: 'Inventory' }, { label: 'Stock Validation' }]}
         title="Stock Validation"
         subtitle="Stock Validation transaction history of last 7 days. Need Help?"
-        actions={[{ label: 'Audit In Bulk (Excel)' }, { label: 'Audit', primary: true, onClick: openModal }]}
+        actions={[{ label: 'Audit In Bulk (Excel)', onClick: handleBulkImport }, { label: 'Audit', primary: true, onClick: openModal }]}
         searchPlaceholder="Search"
         filters={['Date Range', 'Select Source']}
         tableHeaders={tableHeaders}

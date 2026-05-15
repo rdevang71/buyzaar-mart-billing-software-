@@ -13,6 +13,8 @@ export default function InventoryShell({
   cards = [],
   tableHeaders = [],
   tableData = [],
+  searchValue,
+  onSearchChange,
   emptyMessage = 'No Records Found',
   showTable = true,
 }) {
@@ -136,6 +138,8 @@ export default function InventoryShell({
             <input
               type="text"
               placeholder={searchPlaceholder}
+              value={typeof onSearchChange === 'function' ? (searchValue || '') : undefined}
+              onChange={typeof onSearchChange === 'function' ? (e) => onSearchChange(e.target.value) : undefined}
               className="flex-1 bg-transparent text-[13px] text-gray-700 outline-none placeholder:text-gray-400"
             />
           </div>

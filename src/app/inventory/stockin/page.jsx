@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import InventoryShell from '@/components/inventory/InventoryShell';
+import { getBulkField, parseBulkSheet, pickSpreadsheetFile, toBoolean } from '@/lib/bulkSheet';
 
 async function fetchStores() {
   const res = await fetch('/api/stores');
@@ -97,6 +98,60 @@ export default function StockInPage() {
   const handleOpen = () => setShowModal(true);
   const handleClose = () => setShowModal(false);
 
+  const handleBulkImport = async () => {
+    try {
+      const file = await pickSpreadsheetFile();
+      if (!file) return;
+
+      const rows = await parseBulkSheet(file);
+      if (!rows.length) {
+        alert('No rows found in selected file.');
+        return;
+      }
+
+      const created = [];
+      let failed = 0;
+
+      for (const row of rows) {
+        const destinationId = getBulkField(row, ['destination_id', 'destination', 'store_id']);
+        if (!destinationId) {
+          failed += 1;
+          continue;
+        }
+
+        try {
+          const payload = {
+            method: 'new',
+            destination: String(destinationId),
+            applyTaxes: toBoolean(getBulkField(row, ['apply_taxes']), true),
+            addProductsPrefill: toBoolean(getBulkField(row, ['add_products_prefill']), true),
+          };
+          const draft = await postStockIn(payload);
+          created.push(draft);
+        } catch {
+          failed += 1;
+        }
+      }
+
+      if (!created.length) {
+        alert('Could not import any row. Check columns like destination_id / destination.');
+        return;
+      }
+
+      setLoadingList(true);
+      fetchStockInList()
+        .then((data) => setTableData(mapRecordsToTable(data)))
+        .catch(() => setTableData([]))
+        .finally(() => setLoadingList(false));
+
+      alert(`Bulk import complete: ${created.length} draft(s) created${failed ? `, ${failed} failed` : ''}. Opening the first draft.`);
+      router.push(`/inventory/stockin/line-items?id=${encodeURIComponent(created[0].id)}`);
+    } catch (err) {
+      console.error(err);
+      alert('Bulk import failed. Please use a valid Excel/CSV file.');
+    }
+  };
+
   const handleNext = async () => {
     if (!destination) return alert('Please select a destination');
     setSubmitting(true);
@@ -125,7 +180,7 @@ export default function StockInPage() {
         breadcrumb={[{ label: 'Inventory' }, { label: 'Stock In' }]}
         title="Stock In"
         subtitle="Stock In transaction history of last 7 days. Need Help?"
-        actions={[{ label: 'Add In Bulk (Excel)' }, { label: 'Add Stock', primary: true, onClick: handleOpen }]}
+        actions={[{ label: 'Add In Bulk (Excel)', onClick: handleBulkImport }, { label: 'Add Stock', primary: true, onClick: handleOpen }]}
         searchPlaceholder="Search"
         filters={['Date Range', 'Select Source']}
         tableHeaders={tableHeaders}

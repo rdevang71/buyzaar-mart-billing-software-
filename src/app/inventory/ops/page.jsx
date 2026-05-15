@@ -144,6 +144,8 @@ export default function InventoryOpsPage() {
   const [activeTab, setActiveTab] = useState('overview');
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [askQuery, setAskQuery] = useState('');
 
   const activeConfig = listConfig[activeTab];
 
@@ -170,6 +172,86 @@ export default function InventoryOpsPage() {
     return records.map(activeConfig.map);
   }, [activeConfig, records]);
 
+  const filteredRows = useMemo(() => {
+    if (!searchTerm.trim()) return tableRows;
+    const q = searchTerm.trim().toLowerCase();
+    const headers = activeConfig?.headers || [];
+    return tableRows.filter((row) =>
+      headers.some((header) => String(row[header] ?? '').toLowerCase().includes(q))
+    );
+  }, [tableRows, searchTerm, activeConfig?.headers]);
+
+  const downloadCsv = (headers, rows, filename) => {
+    const esc = (v) => {
+      const s = String(v ?? '');
+      if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+        return `"${s.replace(/"/g, '""')}"`;
+      }
+      return s;
+    };
+
+    const lines = [headers.map(esc).join(',')];
+    for (const row of rows) {
+      lines.push(headers.map((h) => esc(row[h] ?? '')).join(','));
+    }
+
+    const blob = new Blob([`\uFEFF${lines.join('\n')}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExport = () => {
+    if (activeTab === 'overview') {
+      alert('Select a tab to export transactions.');
+      return;
+    }
+    if (!filteredRows.length) {
+      alert('No records to export.');
+      return;
+    }
+
+    const headers = activeConfig?.headers || [];
+    const filename = `inventory-${activeTab}-${new Date().toISOString().slice(0, 10)}.csv`;
+    downloadCsv(headers, filteredRows, filename);
+  };
+
+  const handleQuickFilter = (filter) => {
+    const lowered = filter.toLowerCase();
+    if (lowered.includes('variance')) {
+      setActiveTab('audit');
+      setSearchTerm('');
+      return;
+    }
+    if (lowered.includes('not sold') || lowered.includes('slowest')) {
+      setActiveTab('stockout');
+      setSearchTerm('');
+      return;
+    }
+    if (lowered.includes('stock value')) {
+      setActiveTab('stockin');
+      setSearchTerm('');
+      return;
+    }
+    setActiveTab('transfers');
+    setSearchTerm('');
+  };
+
+  const handleAsk = () => {
+    if (!askQuery.trim()) {
+      alert('Enter a question first.');
+      return;
+    }
+    // Use stock-in tab as default searchable dataset for quick natural-language lookup.
+    setActiveTab('stockin');
+    setSearchTerm(askQuery.trim());
+  };
+
   return (
     <MainLayout>
       <div className="flex items-center gap-2 text-[12px] text-gray-500 mb-4">
@@ -185,11 +267,19 @@ export default function InventoryOpsPage() {
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
-          <button className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-blue-300 text-[13px] font-medium text-blue-600 hover:bg-blue-50 transition-colors">
+          <button
+            type="button"
+            onClick={() => router.push('/inventory/stockin')}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-blue-300 text-[13px] font-medium text-blue-600 hover:bg-blue-50 transition-colors"
+          >
             <i className="ti ti-upload text-[16px]" />
             Import stock
           </button>
-          <button className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-blue-300 text-[13px] font-medium text-blue-600 hover:bg-blue-50 transition-colors">
+          <button
+            type="button"
+            onClick={handleExport}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-blue-300 text-[13px] font-medium text-blue-600 hover:bg-blue-50 transition-colors"
+          >
             <i className="ti ti-download text-[16px]" />
             Export
           </button>
@@ -211,7 +301,13 @@ export default function InventoryOpsPage() {
             <button
               key={tab.key}
               type="button"
-              onClick={() => setActiveTab(tab.key)}
+              onClick={() => {
+                if (tab.key === 'batches') {
+                  router.push('/inventory/batches');
+                  return;
+                }
+                setActiveTab(tab.key);
+              }}
               className={`flex items-center gap-2 pb-3 px-1 text-[13.5px] font-medium whitespace-nowrap border-b-2 transition-colors ${
                 active
                   ? 'text-gray-900 border-b-gray-900'
@@ -226,21 +322,29 @@ export default function InventoryOpsPage() {
       </div>
 
       {activeTab === 'overview' ? (
-        <OverviewContent />
+        <OverviewContent
+          askQuery={askQuery}
+          onAskQueryChange={setAskQuery}
+          onAsk={handleAsk}
+          onQuickFilterClick={handleQuickFilter}
+          onViewAll={() => setActiveTab('stockin')}
+        />
       ) : (
         <InventoryListPanel
           title={activeConfig.title}
           headers={activeConfig.headers}
-          rows={tableRows}
+          rows={filteredRows}
           loading={loading}
           emptyMessage={activeTab === 'batches' ? 'No expiring batches found' : 'No Records Found'}
+          searchTerm={searchTerm}
+          onSearchTermChange={setSearchTerm}
         />
       )}
     </MainLayout>
   );
 }
 
-function OverviewContent() {
+function OverviewContent({ askQuery, onAskQueryChange, onAsk, onQuickFilterClick, onViewAll }) {
   return (
     <>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -295,7 +399,7 @@ function OverviewContent() {
               <h3 className="text-[14px] font-semibold text-gray-900">Recent stock movements</h3>
               <p className="text-[12px] text-gray-500 mt-0.5">Last 24 hours across all stores</p>
             </div>
-            <button type="button" className="text-[12px] font-medium text-blue-600 hover:underline">
+            <button type="button" onClick={onViewAll} className="text-[12px] font-medium text-blue-600 hover:underline">
               View all <i className="ti ti-arrow-right text-[12px] inline ml-1" />
             </button>
           </div>
@@ -338,10 +442,12 @@ function OverviewContent() {
             <input
               type="text"
               placeholder="e.g. Which SKUs have the most shrinkage this quarter?"
+              value={askQuery}
+              onChange={(e) => onAskQueryChange(e.target.value)}
               className="flex-1 bg-transparent text-[13px] text-gray-700 outline-none placeholder:text-gray-400"
             />
           </div>
-          <button className="px-4 py-3 rounded-lg bg-gray-900 text-white text-[13px] font-semibold hover:bg-gray-800 transition-colors flex-shrink-0">
+          <button type="button" onClick={onAsk} className="px-4 py-3 rounded-lg bg-gray-900 text-white text-[13px] font-semibold hover:bg-gray-800 transition-colors flex-shrink-0">
             Ask
           </button>
         </div>
@@ -350,6 +456,8 @@ function OverviewContent() {
           {quickFilters.map((filter) => (
             <button
               key={filter}
+              type="button"
+              onClick={() => onQuickFilterClick(filter)}
               className="px-3 py-2 rounded-lg bg-gray-100 text-[12px] font-medium text-gray-700 hover:bg-gray-200 transition-colors"
             >
               {filter}
@@ -361,7 +469,7 @@ function OverviewContent() {
   );
 }
 
-function InventoryListPanel({ title, headers, rows, loading, emptyMessage }) {
+function InventoryListPanel({ title, headers, rows, loading, emptyMessage, searchTerm, onSearchTermChange }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
       <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200 justify-between flex-wrap">
@@ -374,6 +482,8 @@ function InventoryListPanel({ title, headers, rows, loading, emptyMessage }) {
           <input
             type="text"
             placeholder="Search"
+            value={searchTerm}
+            onChange={(e) => onSearchTermChange(e.target.value)}
             className="flex-1 bg-transparent text-[13px] text-gray-700 outline-none placeholder:text-gray-400"
           />
         </div>

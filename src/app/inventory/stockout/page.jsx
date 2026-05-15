@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import InventoryShell from '@/components/inventory/InventoryShell';
+import { getBulkField, parseBulkSheet, pickSpreadsheetFile, toBoolean } from '@/lib/bulkSheet';
 
 async function fetchStores() {
   const res = await fetch('/api/stores');
@@ -117,6 +118,54 @@ export default function StockOutPage() {
 
   const handleClose = () => setShowModal(false);
 
+  const handleBulkImport = async () => {
+    try {
+      const file = await pickSpreadsheetFile();
+      if (!file) return;
+
+      const rows = await parseBulkSheet(file);
+      if (!rows.length) {
+        alert('No rows found in selected file.');
+        return;
+      }
+
+      const created = [];
+      let failed = 0;
+
+      for (const row of rows) {
+        try {
+          const methodRaw = String(getBulkField(row, ['method', 'mode'], 'stock_out')).toLowerCase();
+          const method = methodRaw.includes('return') ? 'po_return' : 'stock_out';
+          const payload = {
+            method,
+            destination: method === 'stock_out'
+              ? String(getBulkField(row, ['destination_id', 'destination'], 'all'))
+              : 'all',
+            applyTaxes: toBoolean(getBulkField(row, ['apply_taxes']), true),
+            addProductsPrefill: toBoolean(getBulkField(row, ['add_products_prefill']), true),
+            purchaseOrderId: getBulkField(row, ['purchase_order_id', 'po_id'], null),
+            invoiceNumber: getBulkField(row, ['invoice_number'], null),
+          };
+          const draft = await postStockOut(payload);
+          created.push(draft);
+        } catch {
+          failed += 1;
+        }
+      }
+
+      if (!created.length) {
+        alert('Could not import any row. Check columns like destination_id, method, invoice_number.');
+        return;
+      }
+
+      alert(`Bulk import complete: ${created.length} draft(s) created${failed ? `, ${failed} failed` : ''}. Opening the first draft.`);
+      setLineItemsDraftId(created[0].id);
+    } catch (err) {
+      console.error(err);
+      alert('Bulk import failed. Please use a valid Excel/CSV file.');
+    }
+  };
+
   const handleNext = async () => {
     if (activeTab === 'stock_out' && !destination) {
       return alert('Please select a destination');
@@ -153,7 +202,7 @@ export default function StockOutPage() {
         title="Stock Out"
         subtitle="Stock Out transaction history of last 7 days. Need Help?"
         actions={[
-          { label: 'Remove In Bulk (Excel)' },
+          { label: 'Remove In Bulk (Excel)', onClick: handleBulkImport },
           { label: 'Remove Stock', primary: true, onClick: handleOpen },
         ]}
         searchPlaceholder="Search"
