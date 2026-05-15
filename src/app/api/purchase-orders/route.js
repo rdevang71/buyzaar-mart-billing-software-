@@ -1,0 +1,108 @@
+import { NextResponse } from 'next/server';
+import { query, getClient } from '@/lib/db';
+import { ensureStockInSchema } from '@/lib/stockInSchema';
+import { ensureVendorsSchema } from '@/lib/vendorsSchema';
+import { ensurePurchaseOrderSchema } from '@/lib/purchaseOrderSchema';
+
+function mapRow(row) {
+  return {
+    id: row.id,
+    transactionId: row.transaction_id || `PO-${String(row.id).padStart(4, '0')}`,
+    destinationId: row.destination_id,
+    destinationName: row.destination_name || '—',
+    vendorId: row.vendor_id,
+    vendorName: row.vendor_name || '—',
+    invoiceDate: row.invoice_date,
+    expectedDeliveryDate: row.expected_delivery_date,
+    shipmentMode: row.shipment_mode || '—',
+    invoiceNumber: row.invoice_number || '—',
+    ccEmails: row.cc_emails || '',
+    status: row.status || 'draft',
+    totalItems: Number(row.total_items || 0),
+    totalCost: Number(row.total_cost || 0),
+    totalTax: Number(row.total_tax || 0),
+    createdAt: row.created_at,
+    confirmedAt: row.confirmed_at,
+  };
+}
+
+export async function GET() {
+  try {
+    await ensureStockInSchema();
+    await ensureVendorsSchema();
+    await ensurePurchaseOrderSchema();
+
+    const res = await query(
+      `SELECT po.id, po.transaction_id, po.destination_id, po.vendor_id, po.invoice_date, po.expected_delivery_date,
+              po.shipment_mode, po.invoice_number, po.cc_emails, po.status, po.total_items, po.total_cost, po.total_tax,
+              po.created_at, po.confirmed_at,
+              st.name AS destination_name,
+              v.name AS vendor_name
+       FROM purchase_orders po
+       LEFT JOIN stores st ON st.id = po.destination_id
+       LEFT JOIN vendors v ON v.id = po.vendor_id
+       ORDER BY po.confirmed_at DESC NULLS LAST, po.created_at DESC
+       LIMIT 200`
+    );
+
+    return NextResponse.json(res.rows.map(mapRow));
+  } catch (err) {
+    console.error('[purchase-orders GET]', err.message);
+    return NextResponse.json([]);
+  }
+}
+
+export async function POST(request) {
+  try {
+    await ensureStockInSchema();
+    await ensureVendorsSchema();
+    await ensurePurchaseOrderSchema();
+
+    const body = await request.json();
+    const destinationId = body.destination || body.destinationId || null;
+    const vendorId = body.vendor || body.vendorId || null;
+
+    if (!destinationId) {
+      return NextResponse.json({ error: 'Destination is required' }, { status: 400 });
+    }
+    if (!vendorId) {
+      return NextResponse.json({ error: 'Vendor is required' }, { status: 400 });
+    }
+
+    const client = await getClient();
+    try {
+      await client.query('BEGIN');
+      const res = await client.query(
+        `INSERT INTO purchase_orders (
+          destination_id, vendor_id, invoice_date, expected_delivery_date,
+          shipment_mode, invoice_number, cc_emails, status, meta, created_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,'draft',$8,NOW())
+        RETURNING id`,
+        [
+          destinationId,
+          vendorId,
+          body.invoice_date || null,
+          body.expected_delivery_date || null,
+          body.shipment_mode || null,
+          body.invoice_number || null,
+          body.cc_emails || null,
+          JSON.stringify(body),
+        ]
+      );
+
+      const id = res.rows[0].id;
+      const transactionId = `PO-${String(id).padStart(4, '0')}`;
+      await client.query('UPDATE purchase_orders SET transaction_id = $1 WHERE id = $2', [transactionId, id]);
+      await client.query('COMMIT');
+      return NextResponse.json({ id, transactionId }, { status: 201 });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    console.error('[purchase-orders POST]', err.message);
+    return NextResponse.json({ error: 'Failed to create purchase order' }, { status: 500 });
+  }
+}

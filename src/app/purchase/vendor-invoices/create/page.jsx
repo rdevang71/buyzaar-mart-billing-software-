@@ -1,0 +1,163 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import MainLayout from '@/components/MainLayout';
+
+async function fetchVendors() {
+  const res = await fetch('/api/vendors');
+  if (!res.ok) throw new Error('Failed to fetch vendors');
+  return res.json();
+}
+
+async function createVendorInvoice(payload) {
+  const res = await fetch('/api/vendor-invoices', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to create vendor invoice');
+  return data;
+}
+
+export default function CreateVendorInvoicePage() {
+  const router = useRouter();
+  const [vendors, setVendors] = useState([]);
+  const [loadingVendors, setLoadingVendors] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    invoice_number: '',
+    total_amount: '',
+    vendor: '',
+    due_date: '',
+    remarks: '',
+  });
+
+  useEffect(() => {
+    setLoadingVendors(true);
+    fetchVendors()
+      .then((data) => setVendors(Array.isArray(data) ? data : []))
+      .catch(() => setVendors([]))
+      .finally(() => setLoadingVendors(false));
+  }, []);
+
+  const handleSave = async () => {
+    if (!form.invoice_number.trim()) return alert('Invoice number is required');
+    if (!form.total_amount || Number(form.total_amount) < 0) return alert('Amount is required');
+    if (!form.vendor) return alert('Vendor is required');
+    if (!form.due_date) return alert('Invoice due date is required');
+
+    setSaving(true);
+    try {
+      await createVendorInvoice({
+        invoice_number: form.invoice_number,
+        total_amount: Number(form.total_amount),
+        vendor: form.vendor,
+        due_date: form.due_date,
+        remarks: form.remarks,
+      });
+      router.push('/purchase/vendor-invoices');
+    } catch (err) {
+      console.error(err);
+      alert(err.message || 'Failed to save vendor invoice');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <MainLayout>
+      <div className="flex items-center gap-2 text-[12px] text-gray-500 mb-4">
+        <span className="text-blue-600">Purchase</span>
+        <i className="ti ti-chevron-right text-[11px] text-gray-400" />
+        <span className="font-semibold text-gray-900">Vendor Invoices</span>
+      </div>
+
+      <div className="flex items-start justify-between gap-4 mb-5">
+        <div>
+          <h1 className="text-[28px] font-semibold text-gray-900 leading-tight">Create Vendor Invoices</h1>
+        </div>
+
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <button onClick={() => router.back()} className="flex items-center gap-2 px-4 py-2 rounded-lg border border-blue-300 text-[13px] font-medium text-blue-600 hover:bg-blue-50 transition-colors">
+            <i className="ti ti-chevron-left text-[16px]" />
+            Back
+          </button>
+          <button onClick={handleSave} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-[13px] font-medium text-white hover:bg-blue-700 transition-colors" disabled={saving}>
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-[0_1px_2px_rgba(15,23,42,0.03)] p-6">
+        <section className="border border-gray-300 rounded p-6 bg-white">
+          <h4 className="text-sm text-blue-700 font-semibold mb-8">Basic Information</h4>
+          <div className="grid grid-cols-2 gap-x-12 gap-y-8">
+            <div>
+              <label className="text-[12px] text-gray-700 font-medium">Invoice Number *</label>
+              <input
+                value={form.invoice_number}
+                onChange={(e) => setForm({ ...form, invoice_number: e.target.value })}
+                placeholder="Enter Invoice Number"
+                className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-[13px] text-gray-800 bg-white placeholder:text-gray-400 focus:outline-none focus:border-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="text-[12px] text-gray-700 font-medium">Amount *</label>
+              <input
+                type="number"
+                value={form.total_amount}
+                onChange={(e) => setForm({ ...form, total_amount: e.target.value })}
+                placeholder="Enter Amount"
+                className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-[13px] text-gray-800 bg-white placeholder:text-gray-400 focus:outline-none focus:border-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="text-[12px] text-gray-700 font-medium">Vendor</label>
+              <select
+                value={form.vendor}
+                onChange={(e) => setForm({ ...form, vendor: e.target.value })}
+                className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-[13px] text-gray-800 bg-white focus:outline-none focus:border-blue-500"
+              >
+                <option value="">Select Vendor</option>
+                {loadingVendors ? (
+                  <option>Loading...</option>
+                ) : (
+                  vendors.map((vendor) => (
+                    <option key={vendor.id} value={vendor.id}>
+                      {vendor.name}
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-[12px] text-gray-700 font-medium">Invoice Due Date *</label>
+              <input
+                type="date"
+                value={form.due_date}
+                onChange={(e) => setForm({ ...form, due_date: e.target.value })}
+                className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-[13px] text-gray-800 bg-white focus:outline-none focus:border-blue-500"
+              />
+            </div>
+
+            <div className="col-span-2">
+              <label className="text-[12px] text-gray-700 font-medium">Remarks</label>
+              <textarea
+                value={form.remarks}
+                onChange={(e) => setForm({ ...form, remarks: e.target.value })}
+                placeholder="remarks"
+                rows={5}
+                className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-[13px] text-gray-800 bg-white placeholder:text-gray-400 focus:outline-none focus:border-blue-500 resize-none"
+              />
+            </div>
+          </div>
+        </section>
+      </div>
+    </MainLayout>
+  );
+}

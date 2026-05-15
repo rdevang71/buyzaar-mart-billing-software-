@@ -1,5 +1,7 @@
 'use client';
 
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import MainLayout from '@/components/MainLayout';
 
 const tableHeaders = [
@@ -17,52 +19,83 @@ const tableHeaders = [
   'Status',
 ];
 
-const tableData = [
-  {
-    'Invoice ID': '#INV-001',
-    'Invoice Number': 'INV-2024-600',
-    'Vendor Name': 'Abc Suppliers',
-    'PO ID': '#PO-2024-001',
-    'Total Amount': '₹45,000',
-    'Amount Paid': '₹45,000',
-    'Amount Left': '₹0',
-    'Invoice Creation Date': '12 May 2024',
-    'Due Date': '26 May 2024',
-    'Created by': 'Amit Sharma',
-    'Remarks': 'Payment Cleared',
-    'Status': 'Paid',
-  },
-  {
-    'Invoice ID': '#INV-002',
-    'Invoice Number': 'INV-2024-601',
-    'Vendor Name': 'XYZ Suppliers',
-    'PO ID': '#PO-2024-002',
-    'Total Amount': '₹32,500',
-    'Amount Paid': '₹16,250',
-    'Amount Left': '₹16,250',
-    'Invoice Creation Date': '11 May 2024',
-    'Due Date': '25 May 2024',
-    'Created by': 'Priya Verma',
-    'Remarks': 'Partial Payment',
-    'Status': 'Pending',
-  },
-  {
-    'Invoice ID': '#INV-003',
-    'Invoice Number': 'INV-2024-602',
-    'Vendor Name': 'Global Trading',
-    'PO ID': '#PO-2024-003',
-    'Total Amount': '₹58,000',
-    'Amount Paid': '₹0',
-    'Amount Left': '₹58,000',
-    'Invoice Creation Date': '10 May 2024',
-    'Due Date': '24 May 2024',
-    'Created by': 'Rajesh Kumar',
-    'Remarks': 'Awaiting Payment',
-    'Status': 'Pending',
-  },
-];
+function formatDate(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function formatCurrency(value) {
+  return `₹${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+}
+
+function mapRecordsToTable(records) {
+  return (records || []).map((row) => ({
+    'Invoice ID': row.transactionId ? `#${row.transactionId}` : `#INV-${String(row.id).padStart(4, '0')}`,
+    'Invoice Number': row.invoiceNumber || '—',
+    'Vendor Name': row.vendorName || '—',
+    'PO ID': row.poId ? `#${row.poId}` : '—',
+    'Total Amount': formatCurrency(row.totalAmount),
+    'Amount Paid': formatCurrency(row.amountPaid),
+    'Amount Left': formatCurrency(row.amountLeft),
+    'Invoice Creation Date': formatDate(row.invoiceDate || row.createdAt),
+    'Due Date': formatDate(row.dueDate),
+    'Created by': row.createdBy || 'System',
+    'Remarks': row.remarks || '—',
+    'Status': row.status || 'Pending',
+  }));
+}
+
+async function fetchVendorInvoices() {
+  const res = await fetch('/api/vendor-invoices');
+  if (!res.ok) throw new Error('Failed to fetch vendor invoices');
+  return res.json();
+}
+
+async function fetchVendors() {
+  const res = await fetch('/api/vendors');
+  if (!res.ok) throw new Error('Failed to fetch vendors');
+  return res.json();
+}
 
 export default function VendorInvoicesPage() {
+  const router = useRouter();
+  const [records, setRecords] = useState([]);
+  const [vendors, setVendors] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [vendorFilter, setVendorFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([fetchVendorInvoices(), fetchVendors()])
+      .then(([invoiceData, vendorData]) => {
+        setRecords(Array.isArray(invoiceData) ? invoiceData : []);
+        setVendors(Array.isArray(vendorData) ? vendorData : []);
+      })
+      .catch(() => {
+        setRecords([]);
+        setVendors([]);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filteredRecords = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return records.filter((row) => {
+      const vendorMatch = vendorFilter === 'all' || String(row.vendorId) === String(vendorFilter);
+      const statusMatch = statusFilter === 'all' || String(row.status || '').toLowerCase() === statusFilter.toLowerCase();
+      const searchMatch = !q || [row.transactionId, row.invoiceNumber, row.vendorName, row.status, row.remarks]
+        .filter(Boolean)
+        .some((field) => String(field).toLowerCase().includes(q));
+      return vendorMatch && statusMatch && searchMatch;
+    });
+  }, [records, search, vendorFilter, statusFilter]);
+
+  const tableData = useMemo(() => mapRecordsToTable(filteredRecords), [filteredRecords]);
+
   return (
     <MainLayout>
       <div className="flex items-center gap-2 text-[12px] text-gray-500 mb-4">
@@ -77,31 +110,48 @@ export default function VendorInvoicesPage() {
           <p className="text-[12.5px] text-gray-400 mt-1">List of all invoices Need Help?</p>
         </div>
 
-        <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-[13px] font-medium text-white hover:bg-blue-700 transition-colors flex-shrink-0">
+        <button
+          onClick={() => router.push('/purchase/vendor-invoices/create')}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-[13px] font-medium text-white hover:bg-blue-700 transition-colors flex-shrink-0"
+        >
           <i className="ti ti-plus text-[16px]" />
           Create Invoice
         </button>
       </div>
 
-      {/* Filters */}
       <div className="bg-white rounded-xl border border-gray-200 p-4 mb-5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
-            <label className="text-[12px] font-medium text-gray-600">Vendor:</label>
-            <select className="px-3 py-2 border border-gray-200 rounded-lg text-[12px] bg-white">
-              <option>ALL</option>
+            <label className="text-[12px] font-medium text-gray-800">Vendor:</label>
+            <select
+              value={vendorFilter}
+              onChange={(e) => setVendorFilter(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-[12px] bg-white text-gray-800"
+            >
+              <option value="all">ALL</option>
+              {vendors.map((vendor) => (
+                <option key={vendor.id} value={vendor.id}>
+                  {vendor.name}
+                </option>
+              ))}
             </select>
           </div>
           <div className="flex items-center gap-2">
-            <label className="text-[12px] font-medium text-gray-600">Invoice Status:</label>
-            <select className="px-3 py-2 border border-gray-200 rounded-lg text-[12px] bg-white">
-              <option>All</option>
+            <label className="text-[12px] font-medium text-gray-800">Invoice Status:</label>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-[12px] bg-white text-gray-800"
+            >
+              <option value="all">All</option>
+              <option value="pending">Pending</option>
+              <option value="partial">Partial</option>
+              <option value="paid">Paid</option>
             </select>
           </div>
         </div>
       </div>
 
-      {/* Table */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
         <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200 justify-between flex-wrap">
           <div className="flex items-center gap-2 flex-1 min-w-[260px] max-w-[340px] bg-gray-50 rounded-lg px-3 py-2">
@@ -109,6 +159,8 @@ export default function VendorInvoicesPage() {
             <input
               type="text"
               placeholder="Search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
               className="flex-1 bg-transparent text-[13px] text-gray-700 outline-none placeholder:text-gray-400"
             />
           </div>
@@ -129,7 +181,13 @@ export default function VendorInvoicesPage() {
               </tr>
             </thead>
             <tbody>
-              {tableData.length > 0 ? (
+              {loading ? (
+                <tr>
+                  <td colSpan={tableHeaders.length} className="px-4 py-14 text-center text-[14px] text-gray-500">
+                    Loading records...
+                  </td>
+                </tr>
+              ) : tableData.length > 0 ? (
                 tableData.map((row, rowIdx) => (
                   <tr key={rowIdx} className="border-b border-gray-100 hover:bg-blue-50/50 transition-colors">
                     {tableHeaders.map((header, colIdx) => (
@@ -156,7 +214,7 @@ export default function VendorInvoicesPage() {
             <option>20</option>
             <option>50</option>
           </select>
-          <span>Showing 1 to 3 of 3 Vendor Invoices</span>
+          <span>Showing {tableData.length} Results</span>
         </div>
       </div>
     </MainLayout>
