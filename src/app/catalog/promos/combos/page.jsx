@@ -1,10 +1,5 @@
 'use client';
-import CatalogListPage from '@/components/CatalogListPage';
-
-const comboRows = [
-  { id: 1, sno: 1, name: 'Breakfast Combo', items: '3 items', price: '₹199', status: 'Active' },
-  { id: 2, sno: 2, name: 'Dal-Rice Combo',  items: '2 items', price: '₹149', status: 'Active' },
-];
+import CatalogDataPage from '@/components/CatalogDataPage';
 const comboColumns = [
   { key: 'sno',    label: 'S. No.',      sortable: true },
   { key: 'name',   label: 'Combo Name',  sortable: true },
@@ -17,10 +12,21 @@ const comboColumns = [
 
 export default function CombosPage() {
   return (
-    <CatalogListPage
+    <CatalogDataPage
+      endpoint="/api/catalog/combos"
       breadcrumbs={[{ label:'Catalog',href:'/catalog'},{ label:'Promotional Products',href:'/catalog/promos/combos'},{ label:'Combos'}]}
       title="Combos" description="Create product combos to boost sales."
-      createLabel="Create Combo" columns={comboColumns} rows={comboRows}
+      columns={comboColumns}
+      totalLabel="Combo(s)"
+      emptyMessage="No combos found"
+      mapRecord={(record, index, page, pageSize) => ({
+        id: record.id,
+        sno: (page - 1) * pageSize + index + 1,
+        name: record.name,
+        items: record.items,
+        price: `₹${record.price}`,
+        status: record.status,
+      })}
     />
   );
 }

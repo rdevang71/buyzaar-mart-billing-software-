@@ -1,10 +1,6 @@
-import CatalogListPage from '@/components/CatalogListPage';
+'use client';
 
-const rows = [
-  { id: 1, sno: 1, name: 'Grocery',     manager: 'Ramesh Kumar', sequence: 1 },
-  { id: 2, sno: 2, name: 'Electronics', manager: 'Suresh Singh', sequence: 2 },
-  { id: 3, sno: 3, name: 'Bakery',      manager: 'Priya Sharma', sequence: 3 },
-];
+import CatalogDataPage from '@/components/CatalogDataPage';
 
 const columns = [
   { key: 'sno',      label: 'S. No.',          sortable: true },
@@ -15,7 +11,8 @@ const columns = [
 
 export default function DepartmentPage() {
   return (
-    <CatalogListPage
+    <CatalogDataPage
+      endpoint="/api/catalog/departments"
       breadcrumbs={[
         { label: 'Catalog', href: '/catalog' },
         { label: 'Product Classification', href: '/catalog/category' },
@@ -23,9 +20,16 @@ export default function DepartmentPage() {
       ]}
       title="Department"
       description="Manage departments to organize your store sections."
-      createLabel="Create Department"
       columns={columns}
-      rows={rows}
+      totalLabel="Department(s)"
+      emptyMessage="No departments found"
+      mapRecord={(record, index, page, pageSize) => ({
+        id: record.id,
+        sno: (page - 1) * pageSize + index + 1,
+        name: record.name,
+        manager: record.code || '—',
+        sequence: index + 1,
+      })}
     />
   );
 }

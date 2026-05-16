@@ -21,8 +21,10 @@ export async function GET(request) {
     const total = parseInt(countResult.rows[0].count);
 
     const result = await query(
-      `SELECT id, name, description, category_id, is_active, created_at
+      `SELECT t.id, t.name, t.description, t.category_id, t.is_active, t.created_at,
+              COALESCE(c.name, '—') AS category_name
        FROM product_groups t
+       LEFT JOIN categories c ON t.category_id = c.id
        ${whereClause}
        ORDER BY t.id DESC
        LIMIT $1 OFFSET $2`,

@@ -1,10 +1,6 @@
-import CatalogListPage from '@/components/CatalogListPage';
+'use client';
 
-const rows = [
-  { id: 1, sno: 1, name: 'AC Repair',        group: 'Repair Services',   price: '₹500', duration: '2 hrs' },
-  { id: 2, sno: 2, name: 'Home Deep Clean',  group: 'Cleaning Services', price: '₹1200', duration: '4 hrs' },
-  { id: 3, sno: 3, name: 'Hair Cut',         group: 'Salon Services',    price: '₹200', duration: '30 min' },
-];
+import CatalogDataPage from '@/components/CatalogDataPage';
 
 const columns = [
   { key: 'sno',      label: 'S. No.',         sortable: true },
@@ -16,7 +12,8 @@ const columns = [
 
 export default function ServicesPage() {
   return (
-    <CatalogListPage
+    <CatalogDataPage
+      endpoint="/api/catalog/services"
       breadcrumbs={[
         { label: 'Catalog', href: '/catalog' },
         { label: 'Product', href: '/catalog/products' },
@@ -24,9 +21,17 @@ export default function ServicesPage() {
       ]}
       title="Services"
       description="Manage all services offered at your store."
-      createLabel="Create Service"
       columns={columns}
-      rows={rows}
+      totalLabel="Service(s)"
+      emptyMessage="No services found"
+      mapRecord={(record, index, page, pageSize) => ({
+        id: record.id,
+        sno: (page - 1) * pageSize + index + 1,
+        name: record.name,
+        group: record.service_group_name || '—',
+        price: `₹${record.price}`,
+        duration: record.duration_minutes ? `${record.duration_minutes} min` : '—',
+      })}
     />
   );
 }

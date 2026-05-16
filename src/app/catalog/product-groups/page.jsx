@@ -1,10 +1,6 @@
+'use client';
 
-import CatalogListPage from '@/components/CatalogListPage';
-
-const pgRows = [
-  { id: 1, sno: 1, name: 'Dairy Products',  category: 'FMCG-FOOD', count: 5 },
-  { id: 2, sno: 2, name: 'Grain & Pulses',  category: 'FMCG-FOOD', count: 3 },
-];
+import CatalogDataPage from '@/components/CatalogDataPage';
 const pgColumns = [
   { key: 'sno',      label: 'S. No.',         sortable: true },
   { key: 'name',     label: 'Group Name',     sortable: true },
@@ -14,7 +10,8 @@ const pgColumns = [
 
 export default function ProductGroupsPage() {
   return (
-    <CatalogListPage
+    <CatalogDataPage
+      endpoint="/api/catalog/product-groups"
       breadcrumbs={[
         { label: 'Catalog', href: '/catalog' },
         { label: 'Product', href: '/catalog/products' },
@@ -22,9 +19,16 @@ export default function ProductGroupsPage() {
       ]}
       title="Product Groups"
       description="Group similar products together for easier management."
-      createLabel="Create Product Group"
       columns={pgColumns}
-      rows={pgRows}
+      totalLabel="Product Group(s)"
+      emptyMessage="No product groups found"
+      mapRecord={(record, index, page, pageSize) => ({
+        id: record.id,
+        sno: (page - 1) * pageSize + index + 1,
+        name: record.name,
+        category: record.category_name || '—',
+        count: record.description ? String(record.description).length : 0,
+      })}
     />
   );
 }

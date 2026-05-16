@@ -24,3 +24,18 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+input,
+textarea,
+select {
+  color: #111827;
+  -webkit-text-fill-color: #111827;
+  caret-color: #111827;
+}
+
+input::placeholder,
+textarea::placeholder,
+select:invalid {
+  color: #9ca3af;
+  -webkit-text-fill-color: #9ca3af;
+}

@@ -1,10 +1,5 @@
 'use client';
-import CatalogListPage from '@/components/CatalogListPage';
-
-const rows = [
-  { id: 1, sno: 1, name: 'Weekend Sale',  type: 'Discount', discount: '15%', start: '01 Jun 2025', end: '30 Jun 2025', status: 'Active' },
-  { id: 2, sno: 2, name: 'Diwali Offer',  type: 'Flat Off', discount: '₹200', start: '01 Oct 2025', end: '31 Oct 2025', status: 'Inactive' },
-];
+import CatalogDataPage from '@/components/CatalogDataPage';
 const columns = [
   { key: 'sno',      label: 'S. No.',         sortable: true },
   { key: 'name',     label: 'Promotion Name', sortable: true },
@@ -19,10 +14,23 @@ const columns = [
 
 export default function PromotionsPage() {
   return (
-    <CatalogListPage
+    <CatalogDataPage
+      endpoint="/api/catalog/promotions"
       breadcrumbs={[{ label:'Catalog',href:'/catalog'},{ label:'Promotional Products'},{ label:'Promotions'}]}
       title="Promotions" description="Create promotional campaigns to drive more sales."
-      createLabel="Create Promotion" columns={columns} rows={rows}
+      columns={columns}
+      totalLabel="Promotion(s)"
+      emptyMessage="No promotions found"
+      mapRecord={(record, index, page, pageSize) => ({
+        id: record.id,
+        sno: (page - 1) * pageSize + index + 1,
+        name: record.name,
+        type: record.promotion_type,
+        discount: record.discount_value,
+        start: record.start_date || '—',
+        end: record.end_date || '—',
+        status: record.status,
+      })}
     />
   );
 }

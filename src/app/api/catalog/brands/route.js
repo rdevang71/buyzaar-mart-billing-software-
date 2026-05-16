@@ -21,8 +21,10 @@ export async function GET(request) {
     const total = parseInt(countResult.rows[0].count);
 
     const result = await query(
-      `SELECT id, name, description, is_active, manufacturer_id, created_at
+      `SELECT t.id, t.name, t.description, t.is_active, t.created_at,
+              t.manufacturer_id, COALESCE(m.name, '—') AS manufacturer_name
        FROM brands t
+       LEFT JOIN manufacturers m ON t.manufacturer_id = m.id
        ${whereClause}
        ORDER BY t.id DESC
        LIMIT $1 OFFSET $2`,

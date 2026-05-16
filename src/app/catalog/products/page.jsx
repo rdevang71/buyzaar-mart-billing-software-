@@ -1,12 +1,6 @@
-import CatalogListPage from '@/components/CatalogListPage';
+'use client';
 
-const rows = [
-  { id: 1, sno: 1, name: 'AMUL COW GHEE 1 LTR', category: 'FMCG-FOOD', brand: 'AMUL',    price: '₹645', stock: '-' },
-  { id: 2, sno: 2, name: 'AMUL GHEE 1 LTR RT',  category: 'FMCG-FOOD', brand: 'AMUL',    price: '₹610', stock: '-' },
-  { id: 3, sno: 3, name: 'BABUJI CHANA 200GM',   category: 'FMCG-FOOD', brand: 'Babu Ji', price: '₹80',  stock: '-' },
-  { id: 4, sno: 4, name: 'DIET MIX 300GM',       category: 'FMCG-FOOD', brand: 'Babu Ji', price: '₹129', stock: '-' },
-  { id: 5, sno: 5, name: 'FORTUNE RICE BRAN OIL',category: 'FMCG-FOOD', brand: 'Fortune', price: '₹180', stock: '24' },
-];
+import CatalogDataPage from '@/components/CatalogDataPage';
 
 const columns = [
   { key: 'sno',      label: 'S. No.',        sortable: true },
@@ -19,7 +13,8 @@ const columns = [
 
 export default function ProductsPage() {
   return (
-    <CatalogListPage
+    <CatalogDataPage
+      endpoint="/api/catalog/products"
       breadcrumbs={[
         { label: 'Catalog', href: '/catalog' },
         { label: 'Product', href: '/catalog/products' },
@@ -27,9 +22,18 @@ export default function ProductsPage() {
       ]}
       title="Products"
       description="Manage all products in your catalog."
-      createLabel="Create Product"
       columns={columns}
-      rows={rows}
+      totalLabel="Product(s)"
+      emptyMessage="No products found"
+      mapRecord={(record, index, page, pageSize) => ({
+        id: record.id,
+        sno: (page - 1) * pageSize + index + 1,
+        name: record.name,
+        category: record.category_name || '—',
+        brand: record.brand_name || '—',
+        price: `₹${record.selling_price ?? record.mrp ?? 0}`,
+        stock: record.available_stock ?? '—',
+      })}
     />
   );
 }

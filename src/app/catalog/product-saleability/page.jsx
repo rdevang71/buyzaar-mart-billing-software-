@@ -1,10 +1,5 @@
 'use client';
-import CatalogListPage from '@/components/CatalogListPage';
-
-const rows = [
-  { id: 1, sno: 1, product: 'AMUL COW GHEE 1 LTR', store: 'Main Store',  status: 'Active' },
-  { id: 2, sno: 2, product: 'FORTUNE RICE BRAN OIL', store: 'Main Store', status: 'Active' },
-];
+import CatalogDataPage from '@/components/CatalogDataPage';
 
 const columns = [
   { key: 'sno',     label: 'S. No.',        sortable: true },
@@ -22,7 +17,8 @@ const columns = [
 
 export default function ProductSaleabilityPage() {
   return (
-    <CatalogListPage
+    <CatalogDataPage
+      endpoint="/api/catalog/product-saleability"
       breadcrumbs={[
         { label: 'Catalog', href: '/catalog' },
         { label: 'Product', href: '/catalog/products' },
@@ -30,9 +26,16 @@ export default function ProductSaleabilityPage() {
       ]}
       title="Product Saleability"
       description="Control which products are available for sale at each store."
-      createLabel="Add Saleability"
       columns={columns}
-      rows={rows}
+      totalLabel="Saleability Record(s)"
+      emptyMessage="No saleability records found"
+      mapRecord={(record, index, page, pageSize) => ({
+        id: record.id,
+        sno: (page - 1) * pageSize + index + 1,
+        product: record.product || '—',
+        store: record.store || '—',
+        status: record.is_active ? 'Active' : 'Inactive',
+      })}
     />
   );
 }

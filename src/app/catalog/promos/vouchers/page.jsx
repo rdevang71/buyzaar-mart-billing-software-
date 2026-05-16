@@ -1,10 +1,5 @@
 'use client';
-import CatalogListPage from '@/components/CatalogListPage';
-
-const rows = [
-  { id: 1, sno: 1, code: 'SAVE50',   value: '₹50',  minOrder: '₹500',  expiry: '31 Dec 2025', used: 5 },
-  { id: 2, sno: 2, code: 'FLAT100',  value: '₹100', minOrder: '₹1000', expiry: '31 Mar 2026', used: 2 },
-];
+import CatalogDataPage from '@/components/CatalogDataPage';
 const columns = [
   { key: 'sno',      label: 'S. No.',       sortable: true },
   { key: 'code',     label: 'Voucher Code', sortable: true },
@@ -16,10 +11,22 @@ const columns = [
 
 export default function VouchersPage() {
   return (
-    <CatalogListPage
+    <CatalogDataPage
+      endpoint="/api/catalog/vouchers"
       breadcrumbs={[{ label:'Catalog',href:'/catalog'},{ label:'Promotional Products'},{ label:'Vouchers'}]}
       title="Vouchers" description="Create and manage discount vouchers for customers."
-      createLabel="Create Voucher" columns={columns} rows={rows}
+      columns={columns}
+      totalLabel="Voucher(s)"
+      emptyMessage="No vouchers found"
+      mapRecord={(record, index, page, pageSize) => ({
+        id: record.id,
+        sno: (page - 1) * pageSize + index + 1,
+        code: record.code,
+        value: `₹${record.value}`,
+        minOrder: `₹${record.min_order}`,
+        expiry: record.expiry_date || '—',
+        used: record.used_count,
+      })}
     />
   );
 }

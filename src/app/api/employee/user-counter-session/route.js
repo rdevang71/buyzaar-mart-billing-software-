@@ -8,7 +8,7 @@ function parseDate(value) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
 }
 
-function mapUserCounterSessionRow(row) {
+function normalizeSessionRow(row) {
   return {
     id: row.id,
     userId: row.user_id,
@@ -23,6 +23,8 @@ function mapUserCounterSessionRow(row) {
     storeName: row.store_name || '',
     counterName: row.counter_name || '',
     userName: row.user_name || '',
+    openingCash: Number(row.opening_cash || 0),
+    meta: row.meta || {},
   };
 }
 
@@ -61,6 +63,7 @@ export async function GET(request) {
               ucs.is_active,
               ucs.serial_number,
               ucs.counter_name,
+              ucs.meta,
               u.name AS user_name,
               s.name AS store_name
        FROM user_counter_sessions ucs
@@ -71,9 +74,50 @@ export async function GET(request) {
       params
     );
 
-    return NextResponse.json(res.rows.map(mapUserCounterSessionRow));
+    return NextResponse.json(res.rows.map(normalizeSessionRow));
   } catch (err) {
     console.error('[employee user counter session GET]', err.message);
     return NextResponse.json([]);
+  }
+}
+
+export async function POST(request) {
+  try {
+    await ensureUserCounterSessionSchema();
+
+    const body = await request.json();
+    const userId = Number(body.userId || body.user_id);
+    const storeId = body.storeId || body.store_id ? Number(body.storeId || body.store_id) : null;
+    const counterId = body.counterId || body.counter_id ? Number(body.counterId || body.counter_id) : null;
+    const deviceId = body.deviceId || body.device_id ? Number(body.deviceId || body.device_id) : null;
+    const serialNumber = String(body.serialNumber || body.serial_number || '').trim();
+    const counterName = String(body.counterName || body.counter_name || '').trim();
+    const openingCash = Number(body.openingCash || body.opening_cash || 0);
+
+    if (!Number.isFinite(userId) || userId <= 0) {
+      return NextResponse.json({ error: 'User id is required' }, { status: 400 });
+    }
+
+    const sessionId = `SESSION-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const meta = {
+      opening_cash: openingCash,
+      source: 'pos',
+      opened_at: new Date().toISOString(),
+      ...(body.meta || {}),
+    };
+
+    const result = await query(
+      `INSERT INTO user_counter_sessions (
+        user_id, counter_id, device_id, store_id, session_id,
+        session_start_at, is_active, serial_number, counter_name, meta
+       ) VALUES ($1, $2, $3, $4, $5, NOW(), TRUE, $6, $7, $8::jsonb)
+       RETURNING id, user_id, counter_id, device_id, store_id, session_id, session_start_at, session_end_at, is_active, serial_number, counter_name, meta`,
+      [userId, counterId, deviceId, storeId, sessionId, serialNumber || null, counterName || null, JSON.stringify(meta)]
+    );
+
+    return NextResponse.json(normalizeSessionRow(result.rows[0]), { status: 201 });
+  } catch (err) {
+    console.error('[employee user counter session POST]', err.message);
+    return NextResponse.json({ error: 'Failed to open user counter session' }, { status: 500 });
   }
 }

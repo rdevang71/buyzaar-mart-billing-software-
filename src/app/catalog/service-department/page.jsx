@@ -1,9 +1,6 @@
-import CatalogListPage from '@/components/CatalogListPage';
+'use client';
 
-const rows = [
-  { id: 1, sno: 1, name: 'Home Services',  group: 'Repair Services',   sequence: 1 },
-  { id: 2, sno: 2, name: 'Salon Services', group: 'Cleaning Services', sequence: 2 },
-];
+import CatalogDataPage from '@/components/CatalogDataPage';
 
 const columns = [
   { key: 'sno',      label: 'S. No.',                sortable: true },
@@ -14,7 +11,8 @@ const columns = [
 
 export default function ServiceDepartmentPage() {
   return (
-    <CatalogListPage
+    <CatalogDataPage
+      endpoint="/api/catalog/service-departments"
       breadcrumbs={[
         { label: 'Catalog', href: '/catalog' },
         { label: 'Product Classification', href: '/catalog/category' },
@@ -22,9 +20,16 @@ export default function ServiceDepartmentPage() {
       ]}
       title="Service Department"
       description="Manage service departments under your service groups."
-      createLabel="Create Service Department"
       columns={columns}
-      rows={rows}
+      totalLabel="Service Department(s)"
+      emptyMessage="No service departments found"
+      mapRecord={(record, index, page, pageSize) => ({
+        id: record.id,
+        sno: (page - 1) * pageSize + index + 1,
+        name: record.name,
+        group: record.service_group_name || '—',
+        sequence: record.sort_sequence,
+      })}
     />
   );
 }

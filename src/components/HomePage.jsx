@@ -58,10 +58,10 @@ export default function HomePage() {
             Your store is set up. Add a few products and open the POS to make your first sale.
           </p>
         </div>
-        <button className="self-start flex items-center gap-2 px-4 py-2 border border-blue-300 rounded-lg text-[13px] font-semibold text-blue-600 hover:bg-blue-50 transition-colors flex-shrink-0">
+        <Link href="/sales-order/pos" className="self-start flex items-center gap-2 px-4 py-2 border border-blue-300 rounded-lg text-[13px] font-semibold text-blue-600 hover:bg-blue-50 transition-colors flex-shrink-0">
           <i className="ti ti-bolt text-[15px]" />
           Open POS
-        </button>
+        </Link>
       </div>
 
       {/* Stats — 2-col on mobile, 4-col on desktop */}

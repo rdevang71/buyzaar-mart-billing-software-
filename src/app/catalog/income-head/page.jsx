@@ -1,10 +1,6 @@
-import CatalogListPage from '@/components/CatalogListPage';
+'use client';
 
-const rows = [
-  { id: 1, sno: 1, name: 'Sales Revenue',    type: 'INCOME', sequence: 1 },
-  { id: 2, sno: 2, name: 'Service Revenue',  type: 'INCOME', sequence: 2 },
-  { id: 3, sno: 3, name: 'Other Income',     type: 'INCOME', sequence: 3 },
-];
+import CatalogDataPage from '@/components/CatalogDataPage';
 
 const columns = [
   { key: 'sno',      label: 'S. No.',         sortable: true },
@@ -15,7 +11,8 @@ const columns = [
 
 export default function IncomeHeadPage() {
   return (
-    <CatalogListPage
+    <CatalogDataPage
+      endpoint="/api/catalog/income-heads"
       breadcrumbs={[
         { label: 'Catalog', href: '/catalog' },
         { label: 'Product Classification', href: '/catalog/category' },
@@ -23,9 +20,20 @@ export default function IncomeHeadPage() {
       ]}
       title="Income Head"
       description="Define income heads for your billing and accounting."
-      createLabel="Create Income Head"
       columns={columns}
-      rows={rows}
+      createLabel="Create Income Head"
+      onCreateClick={() => window.location.href = '/catalog/income-head/create'}
+      showRowActions={true}
+      onEdit={(row) => window.location.href = `/catalog/income-head/${row.id}/edit`}
+      totalLabel="Income Head(s)"
+      emptyMessage="No income heads found"
+      mapRecord={(record, index, page, pageSize) => ({
+        id: record.id,
+        sno: (page - 1) * pageSize + index + 1,
+        name: record.name,
+        type: record.code || '—',
+        sequence: index + 1,
+      })}
     />
   );
 }

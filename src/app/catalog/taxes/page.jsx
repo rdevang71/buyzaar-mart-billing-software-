@@ -1,12 +1,6 @@
-import CatalogListPage from '@/components/CatalogListPage';
+'use client';
 
-const rows = [
-  { id: 1, sno: 1, name: 'GST 5%',  rate: '5%',  type: 'GST',  hsn: '1905' },
-  { id: 2, sno: 2, name: 'GST 12%', rate: '12%', type: 'GST',  hsn: '2106' },
-  { id: 3, sno: 3, name: 'GST 18%', rate: '18%', type: 'GST',  hsn: '3304' },
-  { id: 4, sno: 4, name: 'GST 28%', rate: '28%', type: 'GST',  hsn: '8471' },
-  { id: 5, sno: 5, name: 'Exempt',  rate: '0%',  type: 'NONE', hsn: '-' },
-];
+import CatalogDataPage from '@/components/CatalogDataPage';
 
 const columns = [
   { key: 'sno',  label: 'S. No.',    sortable: true },
@@ -18,7 +12,8 @@ const columns = [
 
 export default function TaxesPage() {
   return (
-    <CatalogListPage
+    <CatalogDataPage
+      endpoint="/api/catalog/taxes"
       breadcrumbs={[
         { label: 'Catalog', href: '/catalog' },
         { label: 'Taxes & Charges', href: '/catalog/taxes' },
@@ -26,9 +21,17 @@ export default function TaxesPage() {
       ]}
       title="Taxes"
       description="Manage GST and other tax slabs for your products."
-      createLabel="Create Tax"
       columns={columns}
-      rows={rows}
+      totalLabel="Tax(es)"
+      emptyMessage="No taxes found"
+      mapRecord={(record, index, page, pageSize) => ({
+        id: record.id,
+        sno: (page - 1) * pageSize + index + 1,
+        name: record.name,
+        rate: `${record.rate}%`,
+        type: record.tax_type,
+        hsn: record.hsn_code || '-',
+      })}
     />
   );
 }

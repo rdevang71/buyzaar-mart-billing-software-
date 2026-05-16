@@ -1,11 +1,6 @@
-import CatalogListPage from '@/components/CatalogListPage';
+'use client';
 
-const rows = [
-  { id: 1, sno: 1, name: 'AMUL',    manufacturer: 'AMUL',    sequence: 1 },
-  { id: 2, sno: 2, name: 'Fortune', manufacturer: 'Adani',   sequence: 2 },
-  { id: 3, sno: 3, name: 'TATA',    manufacturer: 'TATA',    sequence: 3 },
-  { id: 4, sno: 4, name: 'Babu Ji', manufacturer: 'Babu Ji', sequence: 4 },
-];
+import CatalogDataPage from '@/components/CatalogDataPage';
 
 const columns = [
   { key: 'sno',          label: 'S. No.',       sortable: true },
@@ -16,7 +11,8 @@ const columns = [
 
 export default function BrandPage() {
   return (
-    <CatalogListPage
+    <CatalogDataPage
+      endpoint="/api/catalog/brands"
       breadcrumbs={[
         { label: 'Catalog', href: '/catalog' },
         { label: 'Product Classification', href: '/catalog/category' },
@@ -24,10 +20,21 @@ export default function BrandPage() {
       ]}
       title="Brand"
       description="Manage all brands associated with your products."
-      createLabel="Create Brand"
       columns={columns}
-      rows={rows}
-      rowAction="View Products"
+      createLabel="Create Brand"
+      onCreateClick={() => window.location.href = '/catalog/brand/create'}
+      showRowActions={true}
+      onEdit={(row) => window.location.href = `/catalog/brand/${row.id}/edit`}
+      onDelete={(row) => {/* delete handled by CatalogDataPage */}}
+      totalLabel="Brand(s)"
+      emptyMessage="No brands found"
+      mapRecord={(record, index, page, pageSize) => ({
+        id: record.id,
+        sno: (page - 1) * pageSize + index + 1,
+        name: record.name,
+        manufacturer: record.manufacturer_name || '—',
+        sequence: index + 1,
+      })}
     />
   );
 }

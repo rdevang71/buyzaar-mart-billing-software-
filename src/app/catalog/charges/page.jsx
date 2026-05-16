@@ -1,9 +1,6 @@
-import CatalogListPage from '@/components/CatalogListPage';
+'use client';
 
-const rows = [
-  { id: 1, sno: 1, name: 'Packaging Charge', amount: '₹10', applies: 'All Products', type: 'Fixed' },
-  { id: 2, sno: 2, name: 'Delivery Charge',  amount: '₹50', applies: 'eStore Orders', type: 'Fixed' },
-];
+import CatalogDataPage from '@/components/CatalogDataPage';
 
 const columns = [
   { key: 'sno',     label: 'S. No.',       sortable: true },
@@ -15,7 +12,8 @@ const columns = [
 
 export default function ChargesPage() {
   return (
-    <CatalogListPage
+    <CatalogDataPage
+      endpoint="/api/catalog/charges"
       breadcrumbs={[
         { label: 'Catalog', href: '/catalog' },
         { label: 'Taxes & Charges', href: '/catalog/taxes' },
@@ -23,9 +21,17 @@ export default function ChargesPage() {
       ]}
       title="Charges"
       description="Set up additional charges applied during billing."
-      createLabel="Create Charge"
       columns={columns}
-      rows={rows}
+      totalLabel="Charge(s)"
+      emptyMessage="No charges found"
+      mapRecord={(record, index, page, pageSize) => ({
+        id: record.id,
+        sno: (page - 1) * pageSize + index + 1,
+        name: record.name,
+        amount: `₹${record.amount}`,
+        applies: record.applies || '—',
+        type: record.charge_type,
+      })}
     />
   );
 }

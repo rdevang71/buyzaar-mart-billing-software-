@@ -1,5 +1,5 @@
 import { query } from '@/lib/db';
-import { successResponse, errorResponse, notFound, validationError } from '@/lib/apiResponse';
+import { successResponse, errorResponse, validationError } from '@/lib/apiResponse';
 
 // ─── GET /api/catalog/manufacturers ───────────────────────────────
 export async function GET(request) {
@@ -10,25 +10,29 @@ export async function GET(request) {
     const pageSize = parseInt(searchParams.get('pageSize') || '10');
     const offset   = (page - 1) * pageSize;
 
-    const whereClause = search
-      ? `WHERE t.name ILIKE $3`
-      : '';
+    const params = [];
+    let whereClause = '';
+
+    if (search) {
+      params.push(`%${search}%`);
+      whereClause = `WHERE t.name ILIKE $1 OR COALESCE(t.contact, '') ILIKE $1 OR COALESCE(t.email, '') ILIKE $1 OR COALESCE(t.phone, '') ILIKE $1 OR COALESCE(t.address, '') ILIKE $1`;
+    }
 
     const countResult = await query(
       `SELECT COUNT(*) FROM manufacturers t ${whereClause}`,
-      search ? [`%${search}%`] : []
+      params
     );
     const total = parseInt(countResult.rows[0].count);
+
+    params.push(pageSize, offset);
 
     const result = await query(
       `SELECT id, name, contact, email, phone, address, is_active, created_at
        FROM manufacturers t
        ${whereClause}
        ORDER BY t.id DESC
-       LIMIT $1 OFFSET $2`,
-      search
-        ? [pageSize, offset, `%${search}%`]
-        : [pageSize, offset]
+       LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
     );
 
     return successResponse({
