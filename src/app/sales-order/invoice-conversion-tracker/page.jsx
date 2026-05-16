@@ -1,7 +1,4 @@
-'use client';
-
-import { useState } from 'react';
-import SalesOrderListPage from '@/components/SalesOrderListPage';
+import SalesOrderSectionPage from '@/components/SalesOrderSectionPage';
 
 const columns = [
   { key: 'id',               label: 'ID' },
@@ -19,15 +16,9 @@ const columns = [
 ];
 
 export default function InvoiceConversionTrackerPage() {
-  const [rows, setRows] = useState([]);
-
-  const handleFetch = ({ dateRange, stores }) => {
-    // TODO: API call with dateRange and stores
-    setRows([]);
-  };
-
   return (
-    <SalesOrderListPage
+    <SalesOrderSectionPage
+      view="invoice-conversion-tracker"
       breadcrumbs={[
         { label: 'Sales Order', href: '/sales-order' },
         { label: 'Invoice Conversion Tracker' },
@@ -35,10 +26,7 @@ export default function InvoiceConversionTrackerPage() {
       title="Invoice Conversion Tracker"
       description="List of Invoice Conversion Tracker"
       columns={columns}
-      rows={rows}
-      onFetch={handleFetch}
-      totalLabel="Results"
-      emptyMessage="No matching record found"
+      bulkOperations={['Export']}
     />
   );
 }

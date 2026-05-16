@@ -1,8 +1,4 @@
-'use client';
-
-
-
-import SalesOrderListPage from '@/components/SalesOrderListPage';
+import SalesOrderSectionPage from '@/components/SalesOrderSectionPage';
 
 const columns = [
   { key: 'id',                      label: 'ID' },
@@ -23,7 +19,8 @@ const columns = [
 
 export default function UninvoicedSalesOrderPage() {
   return (
-    <SalesOrderListPage
+    <SalesOrderSectionPage
+      view="uninvoiced-sales-order"
       breadcrumbs={[
         { label: 'Sales Order', href: '/sales-order' },
         { label: 'Uninvoiced Sales Order' },
@@ -31,7 +28,7 @@ export default function UninvoicedSalesOrderPage() {
       title="Uninvoiced Sales Order"
       description="List of Uninvoiced Sales Order"
       columns={columns}
-      rows={[]}
+      bulkOperations={['Create Invoice', 'Write Off', 'Export']}
     />
   );
 }
