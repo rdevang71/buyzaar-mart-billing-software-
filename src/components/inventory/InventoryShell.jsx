@@ -1,4 +1,5 @@
 import MainLayout from '@/components/MainLayout';
+import Link from 'next/link';
 
 export default function InventoryShell({
   title,
@@ -12,9 +13,27 @@ export default function InventoryShell({
   cards = [],
   tableHeaders = [],
   tableData = [],
+  searchValue,
+  onSearchChange,
   emptyMessage = 'No Records Found',
   showTable = true,
 }) {
+  const renderActionElement = (item, className, content) => {
+    if (item.href) {
+      return (
+        <Link href={item.href} className={className}>
+          {content}
+        </Link>
+      );
+    }
+
+    return (
+      <button type="button" onClick={item.onClick} className={className}>
+        {content}
+      </button>
+    );
+  };
+
   return (
     <MainLayout>
       <div className="flex items-center gap-2 text-[12px] text-gray-500 mb-4">
@@ -39,6 +58,8 @@ export default function InventoryShell({
             {actions.map((action, index) => (
               <button
                 key={action.label}
+                type={action.type || 'button'}
+                onClick={action.onClick}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-medium transition-colors ${
                   index === actions.length - 1 && action.primary
                     ? 'bg-blue-600 text-white hover:bg-blue-700'
@@ -78,9 +99,11 @@ export default function InventoryShell({
               <div key={insight.title} className="bg-[#fff7ef] border border-orange-300 rounded-xl p-4 min-h-[130px]">
                 <h3 className="text-[13px] font-semibold text-orange-900">{insight.title}</h3>
                 <p className="text-[12px] text-orange-900/85 mt-2 leading-5">{insight.text}</p>
-                <button className="mt-4 px-4 py-2 rounded-md bg-black text-white text-[12px] font-semibold">
-                  {insight.button}
-                </button>
+                {renderActionElement(
+                  insight,
+                  'mt-4 inline-flex items-center px-4 py-2 rounded-md bg-black text-white text-[12px] font-semibold',
+                  insight.button
+                )}
               </div>
             ))}
           </div>
@@ -90,12 +113,18 @@ export default function InventoryShell({
       {cards.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
           {cards.map((card) => (
-            <div key={card.title} className="bg-white rounded-xl border border-gray-200 p-4 min-h-[78px] flex items-center justify-between shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-              <div>
-                <p className="text-[13px] font-semibold text-gray-900">{card.title}</p>
-                <p className="text-[12px] text-gray-400 mt-1">{card.text}</p>
-              </div>
-              <i className="ti ti-chevron-right text-gray-400 text-[16px]" />
+            <div key={card.title} className="bg-white rounded-xl border border-gray-200 min-h-[78px] shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+              {renderActionElement(
+                card,
+                'w-full h-full p-4 flex items-center justify-between text-left hover:bg-blue-50/50 rounded-xl transition-colors',
+                <>
+                  <span>
+                    <span className="text-[13px] font-semibold text-gray-900 block">{card.title}</span>
+                    <span className="text-[12px] text-gray-400 mt-1 block">{card.text}</span>
+                  </span>
+                  <i className="ti ti-chevron-right text-gray-400 text-[16px]" />
+                </>
+              )}
             </div>
           ))}
         </div>
@@ -109,6 +138,8 @@ export default function InventoryShell({
             <input
               type="text"
               placeholder={searchPlaceholder}
+              value={typeof onSearchChange === 'function' ? (searchValue || '') : undefined}
+              onChange={typeof onSearchChange === 'function' ? (e) => onSearchChange(e.target.value) : undefined}
               className="flex-1 bg-transparent text-[13px] text-gray-700 outline-none placeholder:text-gray-400"
             />
           </div>

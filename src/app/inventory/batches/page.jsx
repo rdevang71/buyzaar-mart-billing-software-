@@ -1,3 +1,7 @@
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import InventoryShell from '@/components/inventory/InventoryShell';
 
 const tableHeaders = [
@@ -13,79 +17,81 @@ const tableHeaders = [
   'View Products',
 ];
 
-const tableData = [
-  {
-    'S. No.': '1',
-    'Batch Name': 'Batch-2024-May-001',
-    'Barcode': '841856028456',
-    'Date': '12 May 2024',
-    'Time': '10:30 AM',
-    'Cost': '₹24,500',
-    'Items': 45,
-    'User': 'Amit Sharma',
-    'Remarks': 'Processed',
-    'View Products': 'View',
-  },
-  {
-    'S. No.': '2',
-    'Batch Name': 'Batch-2024-May-002',
-    'Barcode': '841856028457',
-    'Date': '11 May 2024',
-    'Time': '02:15 PM',
-    'Cost': '₹18,200',
-    'Items': 32,
-    'User': 'Priya Verma',
-    'Remarks': 'Processed',
-    'View Products': 'View',
-  },
-  {
-    'S. No.': '3',
-    'Batch Name': 'Batch-2024-May-003',
-    'Barcode': '841856028458',
-    'Date': '10 May 2024',
-    'Time': '09:45 AM',
-    'Cost': '₹31,800',
-    'Items': 58,
-    'User': 'Rajesh Kumar',
-    'Remarks': 'Processed',
-    'View Products': 'View',
-  },
-  {
-    'S. No.': '4',
-    'Batch Name': 'Batch-2024-May-004',
-    'Barcode': '841856028459',
-    'Date': '09 May 2024',
-    'Time': '11:20 AM',
-    'Cost': '₹15,300',
-    'Items': 27,
-    'User': 'Neha Singh',
-    'Remarks': 'Processed',
-    'View Products': 'View',
-  },
-  {
-    'S. No.': '5',
-    'Batch Name': 'Batch-2024-May-005',
-    'Barcode': '841856028460',
-    'Date': '08 May 2024',
-    'Time': '03:50 PM',
-    'Cost': '₹22,600',
-    'Items': 41,
-    'User': 'Vivek Patel',
-    'Remarks': 'Processed',
-    'View Products': 'View',
-  },
-];
+function formatDate(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function formatTime(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatCurrency(value) {
+  return `₹${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+}
+
+async function fetchBatches() {
+  const res = await fetch('/api/inventory/batches');
+  if (!res.ok) throw new Error('Failed to fetch batches');
+  return res.json();
+}
 
 export default function BatchesPage() {
+  const router = useRouter();
+  const [records, setRecords] = useState([]);
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    fetchBatches()
+      .then((data) => setRecords(Array.isArray(data) ? data : []))
+      .catch(() => setRecords([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return records;
+    return records.filter((row) =>
+      [row.batchName, row.barcode, row.user, row.remarks]
+        .filter(Boolean)
+        .some((field) => String(field).toLowerCase().includes(q))
+    );
+  }, [records, search]);
+
+  const tableData = useMemo(() => {
+    return filtered.map((row, idx) => ({
+      'S. No.': idx + 1,
+      'Batch Name': row.batchName || '-',
+      Barcode: row.barcode || '-',
+      Date: formatDate(row.timestamp),
+      Time: formatTime(row.timestamp),
+      Cost: formatCurrency(row.cost),
+      Items: row.items ?? 0,
+      User: row.user || 'System',
+      Remarks: row.remarks || '-',
+      'View Products': row.id ? 'Open Stock In' : '-',
+    }));
+  }, [filtered]);
+
   return (
     <InventoryShell
       breadcrumb={[{ label: 'Inventory' }, { label: 'Batches' }]}
       title="Batches"
       subtitle="List of all batches"
-      actions={[{ label: 'Add In Bulk (Excel)', primary: true }]}
+      actions={[{ label: 'Add In Bulk (Excel)', primary: true, onClick: () => router.push('/inventory/stockin') }]}
       searchPlaceholder="Search"
+      searchValue={search}
+      onSearchChange={setSearch}
       tableHeaders={tableHeaders}
-      tableData={tableData}
+      tableData={loading ? [] : tableData}
+      emptyMessage={loading ? 'Loading records...' : 'No Records Found'}
     />
   );
 }

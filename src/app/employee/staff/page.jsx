@@ -1,88 +1,462 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import MainLayout from '@/components/MainLayout';
 
 const PAGE_SIZES = [10, 25, 50, 100];
 
 const columns = [
-  { key: 'sno',              label: 'S.No' },
-  { key: 'username',         label: 'Username' },
-  { key: 'name',             label: 'Name' },
-  { key: 'employeeCode',     label: 'Employee Code' },
-  { key: 'role',             label: 'Role' },
-  { key: 'department',       label: 'Department' },
-  { key: 'employeeType',     label: 'Employee Type' },
-  { key: 'contractorName',   label: 'Contractor Name' },
-  { key: 'mobileNumber',     label: 'Mobile Number' },
-  { key: 'emailAddress',     label: 'Email Address' },
+  { key: 'sno', label: 'S.No' },
+  { key: 'username', label: 'Username' },
+  { key: 'name', label: 'Name' },
+  { key: 'employeeCode', label: 'Employee Code' },
+  { key: 'role', label: 'Role' },
+  { key: 'department', label: 'Department' },
+  { key: 'employeeType', label: 'Employee Type' },
+  { key: 'contractorName', label: 'Contractor Name' },
+  { key: 'mobileNumber', label: 'Mobile Number' },
+  { key: 'emailAddress', label: 'Email Address' },
   { key: 'employmentStatus', label: 'Employment Status' },
 ];
 
-// Sample rows — replace with real data / API call
-const sampleRows = [];
+function mapEmployeeRow(row) {
+  return {
+    id: row.id,
+    username: row.username || '',
+    name: row.name || [row.firstName, row.lastName].filter(Boolean).join(' ').trim(),
+    employeeCode: row.employeeCode || '',
+    role: row.role || '',
+    department: row.department || '',
+    employeeType: row.employeeType || '',
+    contractorName: row.contractorName || '',
+    mobileNumber: row.mobileNumber || '',
+    emailAddress: row.emailAddress || '',
+    employmentStatus: row.employmentStatus || 'Active',
+    firstName: row.firstName || '',
+    lastName: row.lastName || '',
+    gender: row.gender || '',
+    permissions: Array.isArray(row.permissions) ? row.permissions : [],
+    regionStore: row.regionStore || '',
+    warehouse: row.warehouse || '',
+    userType: row.userType || '',
+    dateOfBirth: row.dateOfBirth || null,
+    dateOfJoining: row.dateOfJoining || null,
+    dateOfLeaving: row.dateOfLeaving || null,
+    customerName: row.customerName || '',
+    address: row.address || '',
+    discountLimitType: row.discountLimitType || '',
+    discountLimitValue: row.discountLimitValue ?? null,
+    maximumDiscountAmount: row.maximumDiscountAmount ?? null,
+    createCustomerSameDetails: Boolean(row.createCustomerSameDetails),
+    createdAt: row.createdAt || null,
+  };
+}
 
-export default function EmployeeListPage({
-  rows = sampleRows,
-}) {
-  const [search,       setSearch]       = useState('');
-  const [pageSize,     setPageSize]     = useState(10);
-  const [page,         setPage]         = useState(1);
-  const [checkedRows,  setCheckedRows]  = useState([]);
-  const [allChecked,   setAllChecked]   = useState(false);
-  const [bulkOpen,     setBulkOpen]     = useState(false);
-  const [showCreate,   setShowCreate]   = useState(false);
+async function fetchEmployees() {
+  const res = await fetch('/api/employee/staff');
+  if (!res.ok) throw new Error('Failed to fetch employees');
+  return res.json();
+}
 
-  // Filter dropdowns
-  const [regionStore,   setRegionStore]   = useState('1 Regions & 2 Stores');
-  const [empDept,       setEmpDept]       = useState('ALL');
-  const [empType,       setEmpType]       = useState('ALL');
+async function fetchRoles() {
+  const res = await fetch('/api/employee/roles');
+  if (!res.ok) return [];
+  return res.json();
+}
 
+async function fetchPermissions() {
+  const res = await fetch('/api/employee/permissions');
+  if (!res.ok) return [];
+  return res.json();
+}
+
+async function fetchDepartments() {
+  const res = await fetch('/api/employee/departments');
+  if (!res.ok) return [];
+  return res.json();
+}
+
+async function fetchStores() {
+  const res = await fetch('/api/stores');
+  if (!res.ok) return [];
+  return res.json();
+}
+
+async function createEmployee(payload) {
+  const res = await fetch('/api/employee/staff', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to create employee');
+  return data;
+}
+
+function randomPassword() {
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  return `Emp${Array.from(bytes, (byte) => (byte % 36).toString(36)).join('')}`;
+}
+
+function MultiSelect({ label, options, value, onChange, placeholder = 'Select' }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const onDoc = (event) => {
+      if (ref.current && !ref.current.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
+
+  const labels = useMemo(() => {
+    const selected = options.filter((option) => value.includes(option.value));
+    if (selected.length === 0) return placeholder;
+    if (selected.length <= 2) return selected.map((option) => option.label).join(', ');
+    return `${selected.slice(0, 2).map((option) => option.label).join(', ')} +${selected.length - 2}`;
+  }, [options, placeholder, value]);
+
+  return (
+    <div ref={ref}>
+      <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">{label}</label>
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="w-full appearance-none border border-gray-200 rounded-lg px-3 py-2 pr-8 text-[13px] text-gray-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all bg-white flex items-center justify-between gap-3"
+      >
+        <span className="truncate text-left">{labels}</span>
+        <i className={`ti ti-chevron-down text-[12px] text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="relative z-30">
+          <div className="absolute mt-2 w-full rounded-lg border border-gray-200 bg-white shadow-lg max-h-56 overflow-auto">
+            {options.length === 0 ? (
+              <div className="px-3 py-2 text-[12.5px] text-gray-400">No options available</div>
+            ) : options.map((option) => {
+              const checked = value.includes(option.value);
+              return (
+                <label key={option.value} className="flex items-center gap-2 px-3 py-2 text-[13px] cursor-pointer hover:bg-gray-50">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(event) => {
+                      onChange(
+                        event.target.checked
+                          ? [...value, option.value]
+                          : value.filter((selected) => selected !== option.value)
+                      );
+                    }}
+                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="flex-1 text-gray-700">{option.label}</span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SelectField({ label, value, onChange, options }) {
+  return (
+    <div>
+      <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">{label}</label>
+      <div className="relative">
+        <select
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="w-full appearance-none border border-gray-200 rounded-lg px-3 py-2 pr-8 text-[13px] text-gray-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all bg-white"
+        >
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400">
+          <i className="ti ti-chevron-down text-[12px]" />
+        </span>
+      </div>
+    </div>
+  );
+}
+
+export default function EmployeeListPage({ rows = [] }) {
+  const [employees, setEmployees] = useState(Array.isArray(rows) ? rows.map(mapEmployeeRow) : []);
+  const [search, setSearch] = useState('');
+  const [pageSize, setPageSize] = useState(10);
+  const [page, setPage] = useState(1);
+  const [checkedRows, setCheckedRows] = useState([]);
+  const [allChecked, setAllChecked] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [roles, setRoles] = useState([]);
+  const [permissions, setPermissions] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [stores, setStores] = useState([]);
+  const [form, setForm] = useState({
+    firstName: '',
+    lastName: '',
+    username: '',
+    gender: 'Male',
+    password: '',
+    confirmPassword: '',
+    mobileNumber: '',
+    emailAddress: '',
+    roleId: '',
+    permissions: [],
+    regionStore: '',
+    warehouse: '',
+    departmentId: '',
+    customerName: '',
+    userType: 'Regular',
+    dateOfBirth: '',
+    dateOfJoining: '',
+    dateOfLeaving: '',
+    employeeCode: '',
+    createCustomerSameDetails: false,
+    employmentType: 'Payroll',
+    address: '',
+    employmentStatus: 'Active',
+    contractorName: '',
+    discountLimitType: 'Percentage',
+    discountLimitValue: '',
+    maximumDiscountAmount: '',
+  });
   const bulkRef = useRef(null);
 
   useEffect(() => {
-    const handler = (e) => {
-      if (bulkRef.current && !bulkRef.current.contains(e.target)) setBulkOpen(false);
+    document.title = 'Employees';
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    setLoading(true);
+    fetchEmployees()
+      .then((data) => {
+        if (!cancelled) setEmployees(Array.isArray(data) ? data.map(mapEmployeeRow) : []);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error('Failed to load employees', err);
+          setEmployees([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    Promise.all([fetchRoles(), fetchPermissions(), fetchDepartments(), fetchStores()])
+      .then(([roleData, permissionData, departmentData, storeData]) => {
+        if (cancelled) return;
+        setRoles(Array.isArray(roleData) ? roleData : []);
+        setPermissions(Array.isArray(permissionData) ? permissionData : []);
+        setDepartments(Array.isArray(departmentData) ? departmentData : []);
+        setStores(Array.isArray(storeData) ? storeData : []);
+      })
+      .catch((err) => {
+        if (!cancelled) console.error('Failed to load employee lookups', err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const handler = (event) => {
+      if (bulkRef.current && !bulkRef.current.contains(event.target)) setBulkOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const filtered = rows.filter((row) =>
-    Object.values(row).some((v) =>
-      String(v).toLowerCase().includes(search.toLowerCase())
-    )
+  const permissionOptions = useMemo(
+    () => permissions.map((permission) => ({
+      value: permission.permissionName || permission.permission_name,
+      label: permission.displayName || permission.display_name || permission.permissionName || permission.permission_name,
+    })).filter((permission) => permission.value),
+    [permissions]
   );
 
-  const totalPages  = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const paginated   = filtered.slice((page - 1) * pageSize, page * pageSize);
-  const totalCount  = filtered.length;
-  const startIndex  = totalCount === 0 ? 0 : (page - 1) * pageSize + 1;
-  const endIndex    = Math.min(page * pageSize, totalCount);
+  const roleOptions = useMemo(
+    () => [
+      { value: '', label: 'Select role' },
+      ...roles.map((role) => ({
+        value: String(role.id),
+        label: role.roleName || role.role_name || `Role ${role.id}`,
+      })),
+    ],
+    [roles]
+  );
+
+  const departmentOptions = useMemo(
+    () => [
+      { value: '', label: 'Select department' },
+      ...departments.map((department) => ({
+        value: String(department.id),
+        label: department.departmentName || department.department_name || `Department ${department.id}`,
+      })),
+    ],
+    [departments]
+  );
+
+  const storeOptions = useMemo(
+    () => [
+      { value: '', label: 'Select' },
+      ...stores.map((store) => ({
+        value: store.name,
+        label: store.name,
+      })),
+    ],
+    [stores]
+  );
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return employees;
+    return employees.filter((row) =>
+      Object.values(row).some((value) => String(value ?? '').toLowerCase().includes(q))
+    );
+  }, [employees, search]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const totalCount = filtered.length;
+  const startIndex = totalCount === 0 ? 0 : (page - 1) * pageSize + 1;
+  const endIndex = Math.min(page * pageSize, totalCount);
+
+  useEffect(() => {
+    setAllChecked(paginated.length > 0 && paginated.every((row) => checkedRows.includes(row.id)));
+  }, [checkedRows, paginated]);
 
   const handleAllCheck = () => {
-    if (allChecked) { setCheckedRows([]); setAllChecked(false); }
-    else            { setCheckedRows(paginated.map((r) => r.id)); setAllChecked(true); }
+    if (allChecked) {
+      setCheckedRows([]);
+      setAllChecked(false);
+    } else {
+      setCheckedRows(paginated.map((row) => row.id));
+      setAllChecked(true);
+    }
   };
 
-  const handleRowCheck = (id) =>
-    setCheckedRows((prev) =>
-      prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id]
-    );
+  const handleRowCheck = (id) => {
+    setCheckedRows((prev) => (
+      prev.includes(id) ? prev.filter((rowId) => rowId !== id) : [...prev, id]
+    ));
+  };
+
+  const resetForm = () => {
+    setForm({
+      firstName: '',
+      lastName: '',
+      username: '',
+      gender: 'Male',
+      password: '',
+      confirmPassword: '',
+      mobileNumber: '',
+      emailAddress: '',
+      roleId: '',
+      permissions: [],
+      regionStore: '',
+      warehouse: '',
+      departmentId: '',
+      customerName: '',
+      userType: 'Regular',
+      dateOfBirth: '',
+      dateOfJoining: '',
+      dateOfLeaving: '',
+      employeeCode: '',
+      createCustomerSameDetails: false,
+      employmentType: 'Payroll',
+      address: '',
+      employmentStatus: 'Active',
+      contractorName: '',
+      discountLimitType: 'Percentage',
+      discountLimitValue: '',
+      maximumDiscountAmount: '',
+    });
+  };
+
+  const handleSave = async () => {
+    if (!form.firstName.trim()) return alert('First name is required');
+    if (!form.username.trim()) return alert('Username is required');
+    if (!form.password.trim()) return alert('Password is required');
+    if (form.password !== form.confirmPassword) return alert('Passwords do not match');
+    if (form.permissions.length === 0) return alert('Select at least one permission');
+
+    setSaving(true);
+    try {
+      const created = await createEmployee({
+        first_name: form.firstName,
+        last_name: form.lastName,
+        username: form.username,
+        gender: form.gender,
+        password: form.password,
+        confirm_password: form.confirmPassword,
+        mobile_number: form.mobileNumber,
+        email_address: form.emailAddress,
+        role_id: form.roleId ? Number(form.roleId) : null,
+        role_name: roles.find((role) => String(role.id) === String(form.roleId))?.roleName || '',
+        permissions: form.permissions,
+        region_store: form.regionStore,
+        warehouse: form.warehouse,
+        department_id: form.departmentId ? Number(form.departmentId) : null,
+        department_name: departments.find((department) => String(department.id) === String(form.departmentId))?.departmentName || '',
+        customer_name: form.customerName,
+        user_type: form.userType,
+        date_of_birth: form.dateOfBirth || null,
+        date_of_joining: form.dateOfJoining || null,
+        date_of_leaving: form.dateOfLeaving || null,
+        employee_code: form.employeeCode,
+        create_customer_same_details: form.createCustomerSameDetails,
+        employment_type: form.employmentType,
+        address: form.address,
+        employment_status: form.employmentStatus,
+        contractor_name: form.contractorName,
+        discount_limit_type: form.discountLimitType,
+        discount_limit_value: form.discountLimitValue === '' ? null : Number(form.discountLimitValue),
+        maximum_discount_amount: form.maximumDiscountAmount === '' ? null : Number(form.maximumDiscountAmount),
+      });
+
+      setEmployees((current) => [mapEmployeeRow(created), ...current]);
+      setShowCreate(false);
+      resetForm();
+      setPage(1);
+    } catch (err) {
+      console.error(err);
+      alert(err.message || 'Failed to save employee');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <MainLayout>
       <div className="min-h-screen">
-
-        {/* Breadcrumb */}
         <nav className="flex items-center gap-1.5 text-[12.5px] text-gray-500 mb-5">
           <Link href="/employee" className="text-blue-600 hover:underline font-medium">Employee</Link>
           <i className="ti ti-chevron-right text-[11px] text-gray-400" />
           <span className="text-blue-600 font-semibold">Employees</span>
         </nav>
 
-        {/* Page Header */}
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-6">
           <div>
             <h1 className="text-[22px] font-bold text-gray-900">Employees</h1>
@@ -92,10 +466,9 @@ export default function EmployeeListPage({
             </p>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
-            {/* Bulk Operations */}
             <div className="relative" ref={bulkRef}>
               <button
-                onClick={() => setBulkOpen((o) => !o)}
+                onClick={() => setBulkOpen((current) => !current)}
                 className="flex items-center gap-1.5 px-4 py-2 border border-blue-600 text-blue-600 bg-white rounded-lg text-[12.5px] font-semibold hover:bg-blue-50 transition-colors shadow-sm"
               >
                 Bulk Operations
@@ -103,20 +476,19 @@ export default function EmployeeListPage({
               </button>
               {bulkOpen && (
                 <div className="absolute right-0 mt-1 w-44 bg-white border border-gray-200 rounded-lg shadow-lg z-20 py-1">
-                  {['Export', 'Deactivate Selected', 'Delete Selected'].map((op) => (
+                  {['Export', 'Deactivate Selected', 'Delete Selected'].map((operation) => (
                     <button
-                      key={op}
+                      key={operation}
                       onClick={() => setBulkOpen(false)}
                       className="block w-full text-left px-4 py-2 text-[12.5px] text-gray-700 hover:bg-gray-50 transition"
                     >
-                      {op}
+                      {operation}
                     </button>
                   ))}
                 </div>
               )}
             </div>
 
-            {/* Create Employee */}
             <button
               onClick={() => setShowCreate(true)}
               className="flex items-center gap-1.5 px-4 py-2 bg-blue-700 text-white rounded-lg text-[12.5px] font-semibold hover:bg-blue-800 transition-colors shadow-sm"
@@ -127,7 +499,6 @@ export default function EmployeeListPage({
           </div>
         </div>
 
-        {/* Search — top right */}
         <div className="flex justify-end mb-4">
           <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2 w-full sm:w-[280px] shadow-sm">
             <i className="ti ti-search text-gray-400 text-[15px]" />
@@ -135,7 +506,10 @@ export default function EmployeeListPage({
               type="text"
               placeholder="Search"
               value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                setPage(1);
+              }}
               className="bg-transparent text-[13px] text-gray-700 outline-none flex-1 placeholder-gray-400 min-w-0"
             />
             {search && (
@@ -146,71 +520,6 @@ export default function EmployeeListPage({
           </div>
         </div>
 
-        {/* Filter Card */}
-        <div className="bg-white border border-gray-200 rounded-xl px-5 py-4 mb-4 shadow-sm">
-          <div className="flex items-end gap-4 flex-wrap">
-            {/* Regions & Stores */}
-            <div className="flex-1 min-w-[160px] max-w-[220px]">
-              <p className="text-[11.5px] font-semibold text-gray-500 mb-1.5">Regions &amp; Stores</p>
-              <div className="relative">
-                <select
-                  value={regionStore}
-                  onChange={(e) => setRegionStore(e.target.value)}
-                  className="w-full appearance-none border border-gray-300 rounded-lg px-3 py-2 pr-8 bg-white text-[12.5px] text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400"
-                >
-                  <option>1 Regions &amp; 2 Stores</option>
-                  <option>All Regions &amp; Stores</option>
-                  <option>Region 1 Only</option>
-                </select>
-                <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400">
-                  <i className="ti ti-chevron-down text-[12px]" />
-                </span>
-              </div>
-            </div>
-
-            {/* Employee Department */}
-            <div className="flex-1 min-w-[160px] max-w-[220px]">
-              <p className="text-[11.5px] font-semibold text-gray-500 mb-1.5">Employee Department</p>
-              <div className="relative">
-                <select
-                  value={empDept}
-                  onChange={(e) => setEmpDept(e.target.value)}
-                  className="w-full appearance-none border border-gray-300 rounded-lg px-3 py-2 pr-8 bg-white text-[12.5px] text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400"
-                >
-                  <option>ALL</option>
-                  <option>Sales</option>
-                  <option>Operations</option>
-                  <option>Management</option>
-                </select>
-                <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400">
-                  <i className="ti ti-chevron-down text-[12px]" />
-                </span>
-              </div>
-            </div>
-
-            {/* Employee Type */}
-            <div className="flex-1 min-w-[160px] max-w-[220px]">
-              <p className="text-[11.5px] font-semibold text-gray-500 mb-1.5">Employee Type</p>
-              <div className="relative">
-                <select
-                  value={empType}
-                  onChange={(e) => setEmpType(e.target.value)}
-                  className="w-full appearance-none border border-gray-300 rounded-lg px-3 py-2 pr-8 bg-white text-[12.5px] text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400"
-                >
-                  <option>ALL</option>
-                  <option>Full-time</option>
-                  <option>Part-time</option>
-                  <option>Contractor</option>
-                </select>
-                <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400">
-                  <i className="ti ti-chevron-down text-[12px]" />
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Table Card */}
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1100px] text-[12.5px]">
@@ -224,14 +533,11 @@ export default function EmployeeListPage({
                       className="w-3.5 h-3.5 rounded border-gray-300 accent-blue-600 cursor-pointer"
                     />
                   </th>
-                  {columns.map((col) => (
-                    <th
-                      key={col.key}
-                      className="px-4 py-3 text-left font-semibold text-gray-600 whitespace-nowrap"
-                    >
+                  {columns.map((column) => (
+                    <th key={column.key} className="px-4 py-3 text-left font-semibold text-gray-600 whitespace-nowrap">
                       <span className="flex items-center gap-1">
-                        {col.label}
-                        {col.key !== 'employmentStatus' && (
+                        {column.label}
+                        {column.key !== 'employmentStatus' && (
                           <span className="text-gray-300 text-[10px] leading-none">↑↓</span>
                         )}
                       </span>
@@ -240,21 +546,21 @@ export default function EmployeeListPage({
                 </tr>
               </thead>
               <tbody>
-                {paginated.length === 0 ? (
+                {loading ? (
                   <tr>
-                    <td
-                      colSpan={columns.length + 1}
-                      className="text-center text-gray-400 py-16 text-[13px]"
-                    >
+                    <td colSpan={columns.length + 1} className="text-center text-gray-400 py-16 text-[13px]">
+                      Loading employees...
+                    </td>
+                  </tr>
+                ) : paginated.length === 0 ? (
+                  <tr>
+                    <td colSpan={columns.length + 1} className="text-center text-gray-400 py-16 text-[13px]">
                       Staff list empty
                     </td>
                   </tr>
                 ) : (
-                  paginated.map((row) => (
-                    <tr
-                      key={row.id}
-                      className="border-t border-gray-50 hover:bg-gray-50 transition-colors"
-                    >
+                  paginated.map((row, index) => (
+                    <tr key={row.id} className="border-t border-gray-50 hover:bg-gray-50 transition-colors">
                       <td className="px-4 py-3">
                         <input
                           type="checkbox"
@@ -263,21 +569,22 @@ export default function EmployeeListPage({
                           className="w-3.5 h-3.5 rounded border-gray-300 accent-blue-600 cursor-pointer"
                         />
                       </td>
-                      {columns.map((col) => (
-                        <td key={col.key} className="px-4 py-3 text-gray-700 whitespace-nowrap">
-                          {col.key === 'employmentStatus' && row[col.key] ? (
-                            <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold
-                              ${row[col.key] === 'Active'
-                                ? 'bg-green-50 text-green-600'
-                                : 'bg-red-50 text-red-500'
+                      {columns.map((column) => {
+                        const value = column.key === 'sno' ? startIndex + index : row[column.key];
+                        return (
+                          <td key={column.key} className="px-4 py-3 text-gray-700 whitespace-nowrap">
+                            {column.key === 'employmentStatus' && value ? (
+                              <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                                value === 'Active' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'
                               }`}>
-                              {row[col.key]}
-                            </span>
-                          ) : (
-                            row[col.key] ?? <span className="text-gray-300">—</span>
-                          )}
-                        </td>
-                      ))}
+                                {value}
+                              </span>
+                            ) : (
+                              value || <span className="text-gray-300">—</span>
+                            )}
+                          </td>
+                        );
+                      })}
                     </tr>
                   ))
                 )}
@@ -286,15 +593,17 @@ export default function EmployeeListPage({
           </div>
         </div>
 
-        {/* Pagination */}
         <div className="flex items-center gap-3 mt-4">
           <div className="relative">
             <select
               value={pageSize}
-              onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+              onChange={(event) => {
+                setPageSize(Number(event.target.value));
+                setPage(1);
+              }}
               className="appearance-none border border-gray-300 rounded-lg px-3 py-1.5 pr-7 bg-white text-[12.5px] text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400 shadow-sm"
             >
-              {PAGE_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
+              {PAGE_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}
             </select>
             <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400">
               <i className="ti ti-chevron-down text-[11px]" />
@@ -307,30 +616,26 @@ export default function EmployeeListPage({
           {totalPages > 1 && (
             <div className="flex items-center gap-1 ml-auto">
               <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
                 disabled={page === 1}
                 className="p-1.5 rounded-lg hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 <i className="ti ti-chevron-left text-gray-600 text-[14px]" />
               </button>
-              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                const pg = totalPages <= 5 ? i + 1
-                  : page <= 3 ? i + 1
-                  : page >= totalPages - 2 ? totalPages - 4 + i
-                  : page - 2 + i;
+              {Array.from({ length: Math.min(totalPages, 5) }, (_, index) => {
+                const pg = totalPages <= 5 ? index + 1 : page <= 3 ? index + 1 : page >= totalPages - 2 ? totalPages - 4 + index : page - 2 + index;
                 return (
                   <button
                     key={pg}
                     onClick={() => setPage(pg)}
-                    className={`w-8 h-8 rounded-lg text-[12.5px] font-semibold transition-colors
-                      ${page === pg ? 'bg-blue-700 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                    className={`w-8 h-8 rounded-lg text-[12.5px] font-semibold transition-colors ${page === pg ? 'bg-blue-700 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
                   >
                     {pg}
                   </button>
                 );
               })}
               <button
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
                 disabled={page === totalPages}
                 className="p-1.5 rounded-lg hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
               >
@@ -339,73 +644,313 @@ export default function EmployeeListPage({
             </div>
           )}
         </div>
-
       </div>
 
-      {/* Create Employee Modal */}
       {showCreate && (
-        <div
-          className="fixed inset-0 z-[70] flex items-center justify-center p-4"
-          style={{ background: 'rgba(0,0,0,0.4)' }}
-        >
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.4)' }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl p-6 max-h-[92vh] overflow-auto">
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-[16px] font-bold text-gray-900">Create Employee</h2>
-              <button onClick={() => setShowCreate(false)} className="p-1.5 rounded-lg hover:bg-gray-100">
+              <div>
+                <h2 className="text-[16px] font-bold text-gray-900">Create Employee</h2>
+                <p className="text-[12.5px] text-gray-500 mt-1">Fill the employee information and save it to the database.</p>
+              </div>
+              <button onClick={() => { setShowCreate(false); resetForm(); }} className="p-1.5 rounded-lg hover:bg-gray-100">
                 <i className="ti ti-x text-gray-500 text-[16px]" />
               </button>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              {[
-                { label: 'Username',       placeholder: 'Enter username' },
-                { label: 'Name',           placeholder: 'Enter full name' },
-                { label: 'Employee Code',  placeholder: 'e.g. EMP001' },
-                { label: 'Mobile Number',  placeholder: 'Enter mobile' },
-                { label: 'Email Address',  placeholder: 'Enter email' },
-              ].map((field) => (
-                <div key={field.label} className={field.label === 'Email Address' ? 'col-span-2' : ''}>
-                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">
-                    {field.label}
-                  </label>
+
+            <div className="border border-gray-200 rounded-xl p-5">
+              <h4 className="text-sm text-blue-700 font-semibold mb-6">Staff Information</h4>
+
+              <div className="grid grid-cols-2 gap-x-12 gap-y-6">
+                <div>
+                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">First Name *</label>
                   <input
-                    type="text"
-                    placeholder={field.placeholder}
+                    value={form.firstName}
+                    onChange={(event) => setForm({ ...form, firstName: event.target.value })}
+                    placeholder="First Name"
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-gray-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all"
                   />
                 </div>
-              ))}
-              {[
-                { label: 'Role',            options: ['Select role', 'Manager', 'Cashier', 'Staff'] },
-                { label: 'Department',      options: ['Select department', 'Sales', 'Operations', 'Management'] },
-                { label: 'Employee Type',   options: ['Select type', 'Full-time', 'Part-time', 'Contractor'] },
-              ].map((field) => (
-                <div key={field.label}>
-                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">
-                    {field.label}
-                  </label>
-                  <div className="relative">
-                    <select className="w-full appearance-none border border-gray-200 rounded-lg px-3 py-2 pr-8 text-[13px] text-gray-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all bg-white">
-                      {field.options.map((o) => <option key={o}>{o}</option>)}
-                    </select>
-                    <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400">
-                      <i className="ti ti-chevron-down text-[12px]" />
-                    </span>
+
+                <div>
+                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Last Name</label>
+                  <input
+                    value={form.lastName}
+                    onChange={(event) => setForm({ ...form, lastName: event.target.value })}
+                    placeholder="Last Name"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-gray-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Username *</label>
+                  <input
+                    value={form.username}
+                    onChange={(event) => setForm({ ...form, username: event.target.value })}
+                    placeholder="Username"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-gray-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all"
+                  />
+                </div>
+
+                <SelectField
+                  label="Gender"
+                  value={form.gender}
+                  onChange={(gender) => setForm({ ...form, gender })}
+                  options={[
+                    { value: 'Male', label: 'Male' },
+                    { value: 'Female', label: 'Female' },
+                    { value: 'Other', label: 'Other' },
+                  ]}
+                />
+
+                <div>
+                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Password *</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      value={form.password}
+                      onChange={(event) => setForm({ ...form, password: event.target.value })}
+                      placeholder="Password"
+                      className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-gray-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const password = randomPassword();
+                        setForm((current) => ({ ...current, password, confirmPassword: password }));
+                      }}
+                      className="px-3 py-2 border border-blue-300 rounded-lg text-[12px] font-semibold text-blue-600 hover:bg-blue-50 transition-colors whitespace-nowrap"
+                    >
+                      Auto Generate Password
+                    </button>
                   </div>
                 </div>
-              ))}
+
+                <div>
+                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Confirm Password *</label>
+                  <input
+                    type="password"
+                    value={form.confirmPassword}
+                    onChange={(event) => setForm({ ...form, confirmPassword: event.target.value })}
+                    placeholder="Confirm Password"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-gray-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Mobile Number *</label>
+                  <input
+                    value={form.mobileNumber}
+                    onChange={(event) => setForm({ ...form, mobileNumber: event.target.value })}
+                    placeholder="Mobile Number"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-gray-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Email Address *</label>
+                  <input
+                    value={form.emailAddress}
+                    onChange={(event) => setForm({ ...form, emailAddress: event.target.value })}
+                    placeholder="Email Address"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-gray-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all"
+                  />
+                </div>
+
+                <SelectField
+                  label="Role"
+                  value={form.roleId}
+                  onChange={(roleId) => setForm({ ...form, roleId })}
+                  options={roleOptions}
+                />
+
+                <MultiSelect
+                  label="Permissions"
+                  options={permissionOptions}
+                  value={form.permissions}
+                  onChange={(permissionsSelected) => setForm({ ...form, permissions: permissionsSelected })}
+                  placeholder="Select permissions"
+                />
+
+                <SelectField
+                  label="Regions & Stores"
+                  value={form.regionStore}
+                  onChange={(regionStore) => setForm({ ...form, regionStore })}
+                  options={storeOptions}
+                />
+
+                <SelectField
+                  label="Warehouse"
+                  value={form.warehouse}
+                  onChange={(warehouse) => setForm({ ...form, warehouse })}
+                  options={storeOptions}
+                />
+
+                <SelectField
+                  label="Employee Department"
+                  value={form.departmentId}
+                  onChange={(departmentId) => setForm({ ...form, departmentId })}
+                  options={departmentOptions}
+                />
+
+                <SelectField
+                  label="Employment Type"
+                  value={form.employmentType}
+                  onChange={(employmentType) => setForm({ ...form, employmentType })}
+                  options={[
+                    { value: 'Payroll', label: 'Payroll' },
+                    { value: 'Contractor', label: 'Contractor' },
+                    { value: 'Temporary', label: 'Temporary' },
+                  ]}
+                />
+
+                <div className="col-span-2">
+                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">IP Address / Address</label>
+                  <textarea
+                    value={form.address}
+                    onChange={(event) => setForm({ ...form, address: event.target.value })}
+                    placeholder="Please enter the IP Address and press Enter"
+                    rows={4}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-gray-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all resize-none"
+                  />
+                </div>
+
+                <SelectField
+                  label="User Type"
+                  value={form.userType}
+                  onChange={(userType) => setForm({ ...form, userType })}
+                  options={[
+                    { value: 'Regular', label: 'Regular' },
+                    { value: 'Sales Person', label: 'Sales Person' },
+                  ]}
+                />
+
+                <div>
+                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Date of Birth</label>
+                  <input
+                    type="date"
+                    value={form.dateOfBirth}
+                    onChange={(event) => setForm({ ...form, dateOfBirth: event.target.value })}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-gray-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Date of Joining</label>
+                  <input
+                    type="date"
+                    value={form.dateOfJoining}
+                    onChange={(event) => setForm({ ...form, dateOfJoining: event.target.value })}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-gray-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Date of Leaving</label>
+                  <input
+                    type="date"
+                    value={form.dateOfLeaving}
+                    onChange={(event) => setForm({ ...form, dateOfLeaving: event.target.value })}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-gray-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Employee Code</label>
+                  <input
+                    value={form.employeeCode}
+                    onChange={(event) => setForm({ ...form, employeeCode: event.target.value })}
+                    placeholder="Employee Code"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-gray-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 pt-6">
+                  <input
+                    type="checkbox"
+                    checked={form.createCustomerSameDetails}
+                    onChange={(event) => setForm({ ...form, createCustomerSameDetails: event.target.checked })}
+                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-[12px] text-gray-700">Create a customer with same details</span>
+                </div>
+              </div>
             </div>
+
+            <div className="border border-gray-200 rounded-xl p-5 mt-6">
+              <h4 className="text-sm text-blue-700 font-semibold mb-6">Discount Limits</h4>
+
+              <div className="grid grid-cols-2 gap-x-12 gap-y-6">
+                <SelectField
+                  label="Discount Limit Type"
+                  value={form.discountLimitType}
+                  onChange={(discountLimitType) => setForm({ ...form, discountLimitType })}
+                  options={[
+                    { value: 'Percentage', label: 'Percentage' },
+                    { value: 'Amount', label: 'Amount' },
+                  ]}
+                />
+
+                <div>
+                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Discount Limit Value</label>
+                  <input
+                    type="number"
+                    value={form.discountLimitValue}
+                    onChange={(event) => setForm({ ...form, discountLimitValue: event.target.value })}
+                    placeholder="0"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-gray-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all"
+                  />
+                </div>
+
+                <div className="col-span-2">
+                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Maximum Discount Amount</label>
+                  <input
+                    type="number"
+                    value={form.maximumDiscountAmount}
+                    onChange={(event) => setForm({ ...form, maximumDiscountAmount: event.target.value })}
+                    placeholder="0"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-gray-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-x-12 gap-y-6 mt-6">
+              <div>
+                <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Contractor Name</label>
+                <input
+                  value={form.contractorName}
+                  onChange={(event) => setForm({ ...form, contractorName: event.target.value })}
+                  placeholder="Contractor Name"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-gray-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all"
+                />
+              </div>
+
+              <SelectField
+                label="Employment Status"
+                value={form.employmentStatus}
+                onChange={(employmentStatus) => setForm({ ...form, employmentStatus })}
+                options={[
+                  { value: 'Active', label: 'Active' },
+                  { value: 'Inactive', label: 'Inactive' },
+                ]}
+              />
+            </div>
+
             <div className="flex gap-2 mt-6">
               <button
-                onClick={() => setShowCreate(false)}
+                onClick={() => { setShowCreate(false); resetForm(); }}
                 className="flex-1 py-2.5 border border-gray-200 rounded-lg text-[13px] font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
               >
                 Cancel
               </button>
               <button
-                onClick={() => setShowCreate(false)}
+                onClick={handleSave}
                 className="flex-1 py-2.5 bg-blue-700 text-white rounded-lg text-[13px] font-semibold hover:bg-blue-800 transition-colors"
+                disabled={saving}
               >
-                Create Employee
+                {saving ? 'Saving...' : 'Save'}
               </button>
             </div>
           </div>

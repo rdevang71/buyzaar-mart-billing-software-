@@ -1,0 +1,82 @@
+import { NextResponse } from 'next/server';
+import { getClient, query } from '@/lib/db';
+import { ensureStockValidationSchema } from '@/lib/stockValidationSchema';
+
+export async function GET() {
+  try {
+    await ensureStockValidationSchema();
+    const res = await query(
+      `SELECT
+        sv.id,
+        sv.transaction_id,
+        sv.invoice_number,
+        sv.invoice_date,
+        sv.other_charges,
+        sv.total_items,
+        sv.total_cost,
+        sv.total_tax,
+        sv.created_at,
+        stores.name AS source_name,
+        COALESCE(SUM(svi.qty), 0) AS item_qty_sum,
+        COALESCE(SUM(svi.qty * svi.cost_price), 0) AS items_cost_sum
+      FROM stock_validation sv
+      LEFT JOIN stores ON stores.id = sv.destination_id
+      LEFT JOIN stock_validation_items svi ON svi.stock_validation_id = sv.id
+      WHERE sv.status = 'confirmed'
+      GROUP BY sv.id, stores.name
+      ORDER BY sv.confirmed_at DESC NULLS LAST, sv.created_at DESC
+      LIMIT 200`
+    );
+
+    return NextResponse.json(
+      res.rows.map((row) => ({
+        id: row.id,
+        transactionId: row.transaction_id || `AUD-${String(row.id).padStart(4, '0')}`,
+        invoiceNumber: row.invoice_number || '-',
+        sourceName: row.source_name || 'None',
+        invoiceDate: row.invoice_date,
+        totalItems: Number(row.total_items || row.item_qty_sum || 0),
+        cost: Number(row.total_cost || Number(row.items_cost_sum || 0) + Number(row.other_charges || 0)),
+        totalTax: Number(row.total_tax || 0),
+        createdAt: row.created_at,
+      }))
+    );
+  } catch (err) {
+    console.error('[stockvalidation GET]', err.message);
+    return NextResponse.json([], { status: 200 });
+  }
+}
+
+export async function POST(request) {
+  try {
+    await ensureStockValidationSchema();
+    const payload = await request.json();
+    const client = await getClient();
+
+    try {
+      await client.query('BEGIN');
+      const destinationId = payload.destination && payload.destination !== 'none' ? Number(payload.destination) : null;
+      const res = await client.query(
+        `INSERT INTO stock_validation (
+          destination_id, apply_taxes, meta, status, created_at
+        ) VALUES ($1, $2, $3, 'draft', NOW())
+        RETURNING id`,
+        [destinationId, payload.applyTaxes ?? true, JSON.stringify(payload)]
+      );
+
+      const id = res.rows[0].id;
+      const transactionId = `AUD-${String(id).padStart(4, '0')}`;
+      await client.query('UPDATE stock_validation SET transaction_id = $1 WHERE id = $2', [transactionId, id]);
+      await client.query('COMMIT');
+      return NextResponse.json({ id, transactionId }, { status: 201 });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    console.error('[stockvalidation POST]', err.message);
+    return NextResponse.json({ error: 'Failed to create stock validation' }, { status: 500 });
+  }
+}
