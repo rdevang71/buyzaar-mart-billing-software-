@@ -1,4 +1,4 @@
-import SalesOrderListPage from '@/components/SalesOrderListPage';
+import SalesOrderSectionPage from '@/components/SalesOrderSectionPage';
 
 const columns = [
   { key: 'id',                      label: 'ID' },
@@ -21,7 +21,8 @@ const columns = [
 
 export default function AutoInvoicePage() {
   return (
-    <SalesOrderListPage
+    <SalesOrderSectionPage
+      view="auto-invoice"
       breadcrumbs={[
         { label: 'Sales Order', href: '/sales-order' },
         { label: 'Auto Invoice' },
@@ -29,7 +30,7 @@ export default function AutoInvoicePage() {
       title="Auto Invoice"
       description="List of Auto Invoice"
       columns={columns}
-      rows={[]}
+      bulkOperations={['Auto Invoice', 'Export']}
     />
   );
 }

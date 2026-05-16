@@ -1,7 +1,4 @@
-'use client';
-
-import { useState } from 'react';
-import SalesOrderListPage from '@/components/SalesOrderListPage';
+import SalesOrderSectionPage from '@/components/SalesOrderSectionPage';
 
 const columns = [
   { key: 'id',                label: 'ID' },
@@ -19,15 +16,9 @@ const columns = [
 ];
 
 export default function WriteOffPage() {
-  const [rows, setRows] = useState([]);
-
-  const handleFetch = ({ dateRange, stores }) => {
-    // TODO: API call with dateRange and stores
-    setRows([]);
-  };
-
   return (
-    <SalesOrderListPage
+    <SalesOrderSectionPage
+      view="write-off"
       breadcrumbs={[
         { label: 'Sales Order', href: '/sales-order' },
         { label: 'Write Off' },
@@ -35,10 +26,7 @@ export default function WriteOffPage() {
       title="Write Off"
       description="List of Write Off"
       columns={columns}
-      rows={rows}
-      onFetch={handleFetch}
-      totalLabel="Results"
-      emptyMessage="No matching record found"
+      bulkOperations={['Write Off', 'Export']}
     />
   );
 }

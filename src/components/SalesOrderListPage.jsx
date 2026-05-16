@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import MainLayout from '@/components/MainLayout';
 
@@ -28,26 +28,38 @@ export default function SalesOrderListPage({
   columns        = [],
   rows           = [],
   onFetch,
+  onBulkOperation,
   totalLabel     = 'Results',
   emptyMessage   = 'No matching record found',
   bulkOperations = ['Create Invoice', 'Write Off', 'Export'],
   showBulkOps    = true,
+  storeOptions   = [{ value: 'all', label: 'All Regions & Stores' }],
+  loading        = false,
 }) {
   /* ── date helper ── */
-  const fmt = (d) =>
-    d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-  const todayFmt  = fmt(new Date());
-  const todayStr  = `${todayFmt} - ${todayFmt}`;
+  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const normalizedStoreOptions = useMemo(() => {
+    return Array.isArray(storeOptions) && storeOptions.length > 0
+      ? storeOptions
+      : [{ value: 'all', label: 'All Regions & Stores' }];
+  }, [storeOptions]);
 
   /* ── state ── */
-  const [dateRange,    setDateRange]    = useState(todayStr);
-  const [storeLabel,   setStoreLabel]   = useState('1 Regions & 2 Stores');
+  const [startDate,    setStartDate]    = useState(todayIso);
+  const [endDate,      setEndDate]      = useState(todayIso);
+  const [storeLabel,   setStoreLabel]   = useState(normalizedStoreOptions[0]?.value || 'all');
   const [search,       setSearch]       = useState('');
   const [pageSize,     setPageSize]     = useState(10);
   const [checkedRows,  setCheckedRows]  = useState([]);
   const [allChecked,   setAllChecked]   = useState(false);
   const [bulkOpen,     setBulkOpen]     = useState(false);
   const bulkRef = useRef(null);
+
+  useEffect(() => {
+    if (!normalizedStoreOptions.some((option) => option.value === storeLabel)) {
+      setStoreLabel(normalizedStoreOptions[0]?.value || 'all');
+    }
+  }, [normalizedStoreOptions, storeLabel]);
 
   /* close bulk dropdown on outside click */
   useEffect(() => {
@@ -59,11 +71,48 @@ export default function SalesOrderListPage({
   }, []);
 
   /* ── handlers ── */
-  const handleFetch = () => onFetch?.({ dateRange, stores: storeLabel });
+  const validateDateRange = () => {
+    if (startDate && endDate && startDate > endDate) {
+      alert('Start date cannot be later than end date');
+      return false;
+    }
+
+    return true;
+  };
+
+  const getDateRange = () => `${startDate} - ${endDate}`;
+
+  const handleFetch = () => {
+    if (!validateDateRange()) return;
+    onFetch?.({ dateRange: getDateRange(), stores: storeLabel });
+  };
+
+  const handleBulkOperation = (operation) => {
+    if (!validateDateRange()) return;
+
+    const selectedRows = rows.filter((row) => checkedRows.includes(row.id));
+
+    if (selectedRows.length === 0) {
+      alert('Please select at least one record');
+      return;
+    }
+
+    onBulkOperation?.({
+      operation,
+      selectedRows,
+      selectedRowIds: checkedRows,
+      dateRange: getDateRange(),
+      stores: storeLabel,
+    });
+
+    setBulkOpen(false);
+  };
 
   const handleAllCheck = () => {
+    const visibleRows = filtered.slice(0, pageSize);
+
     if (allChecked) { setCheckedRows([]); setAllChecked(false); }
-    else            { setCheckedRows(rows.map((r) => r.id)); setAllChecked(true); }
+    else            { setCheckedRows(visibleRows.map((r) => r.id)); setAllChecked(true); }
   };
 
   const handleRowCheck = (id) =>
@@ -153,7 +202,7 @@ export default function SalesOrderListPage({
                     {bulkOperations.map((op) => (
                       <button
                         key={op}
-                        onClick={() => setBulkOpen(false)}
+                        onClick={() => handleBulkOperation(op)}
                         className="block w-full text-left px-4 py-2 text-xs text-gray-700 hover:bg-gray-50 transition"
                       >
                         {op}
@@ -173,19 +222,24 @@ export default function SalesOrderListPage({
             {/* Date Range */}
             <div>
               <p className="text-xs text-gray-500 mb-1.5 font-medium">Date Range</p>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={dateRange}
-                  onChange={(e) => setDateRange(e.target.value)}
-                  className="w-52 border border-gray-300 rounded-md px-3 py-[7px] pr-9 text-xs bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400"
-                />
-                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
-                  <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none">
-                    <rect x="3" y="4" width="14" height="13" rx="2" stroke="currentColor" strokeWidth="1.3"/>
-                    <path d="M3 8h14M7 2v3M13 2v3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-                  </svg>
-                </span>
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="w-36 border border-gray-300 rounded-md px-3 py-[7px] text-xs bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  />
+                </div>
+                <span className="text-gray-400 text-xs">to</span>
+                <div className="relative">
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="w-36 border border-gray-300 rounded-md px-3 py-[7px] text-xs bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  />
+                </div>
               </div>
             </div>
 
@@ -198,9 +252,11 @@ export default function SalesOrderListPage({
                   onChange={(e) => setStoreLabel(e.target.value)}
                   className="w-48 appearance-none border border-gray-300 rounded-md px-3 py-[7px] pr-8 bg-white text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400"
                 >
-                  <option>1 Regions &amp; 2 Stores</option>
-                  <option>All Regions &amp; Stores</option>
-                  <option>Region 1 Only</option>
+                  {normalizedStoreOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
                 <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400">
                   <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none">
@@ -213,9 +269,10 @@ export default function SalesOrderListPage({
             {/* Fetch button */}
             <button
               onClick={handleFetch}
-              className="px-6 py-[7px] bg-[#1a6fbe] hover:bg-[#155fa0] active:scale-95 text-white text-xs font-semibold rounded-md transition shadow-sm"
+              disabled={loading}
+              className="px-6 py-[7px] bg-[#1a6fbe] hover:bg-[#155fa0] active:scale-95 disabled:cursor-not-allowed disabled:opacity-70 text-white text-xs font-semibold rounded-md transition shadow-sm"
             >
-              Fetch
+              {loading ? 'Loading…' : 'Fetch'}
             </button>
 
             {/* Download icon — pushed to far right */}

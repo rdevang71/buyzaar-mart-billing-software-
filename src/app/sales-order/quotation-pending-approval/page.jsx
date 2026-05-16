@@ -1,4 +1,4 @@
-import SalesOrderListPage from '@/components/SalesOrderListPage';
+import SalesOrderSectionPage from '@/components/SalesOrderSectionPage';
 
 const columns = [
   { key: 'id',               label: 'ID' },
@@ -17,7 +17,8 @@ const columns = [
 
 export default function QuotationPendingApprovalPage() {
   return (
-    <SalesOrderListPage
+    <SalesOrderSectionPage
+      view="quotation-pending-approval"
       breadcrumbs={[
         { label: 'Sales Order', href: '/sales-order' },
         { label: 'Quotation Pending Approval' },
@@ -25,7 +26,7 @@ export default function QuotationPendingApprovalPage() {
       title="Quotation Pending Approval"
       description="List of Quotation Pending Approval"
       columns={columns}
-      rows={[]}
+      bulkOperations={['Approve Quotation', 'Reject Quotation', 'Export']}
     />
   );
 }

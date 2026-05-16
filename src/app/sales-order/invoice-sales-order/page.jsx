@@ -1,33 +1,31 @@
-'use client';
-import CatalogListPage from '@/components/CatalogListPage';
-
-const rows = [
-  { id: 1, sno: 1, name: 'Default category (none)', type: 'OTHER', sequence: null },
-  { id: 2, sno: 2, name: 'FMCG-FOOD',               type: 'OTHER', sequence: 0 },
-  { id: 3, sno: 3, name: 'Chocolates',               type: 'OTHER', sequence: 0 },
-];
+import SalesOrderSectionPage from '@/components/SalesOrderSectionPage';
 
 const columns = [
-  { key: 'sno',      label: 'S. No.',        sortable: true },
-  { key: 'name',     label: 'Category Name', sortable: true },
-  { key: 'type',     label: 'Category Type', sortable: true },
-  { key: 'sequence', label: 'Sort Sequence', sortable: true },
+  { key: 'id', label: 'ID' },
+  { key: 'sales_order_id', label: 'Sales Order ID' },
+  { key: 'booking_id', label: 'Booking ID' },
+  { key: 'booking_date', label: 'Booking Date' },
+  { key: 'billing_username', label: 'Billing Username' },
+  { key: 'gross_bill', label: 'Gross Bill' },
+  { key: 'total_discount', label: 'Total Discount' },
+  { key: 'invoice_id', label: 'Invoice ID' },
+  { key: 'invoice_date', label: 'Invoice Date' },
+  { key: 'status', label: 'Status' },
+  { key: 'channel', label: 'Channel' },
 ];
 
-export default function CategoryPage() {
+export default function InvoiceSalesOrderPage() {
   return (
-    <CatalogListPage
+    <SalesOrderSectionPage
+      view="invoice-sales-order"
       breadcrumbs={[
-        { label: 'Catalog', href: '/catalog' },
-        { label: 'Product Classification', href: '/catalog/category' },
-        { label: 'Category' },
+        { label: 'Sales Order', href: '/sales-order' },
+        { label: 'Invoice Sales Order' },
       ]}
-      title="Category"
-      description="Categorize all your products according to your choice"
-      createLabel="Create Category"
+      title="Invoice Sales Order"
+      description="List of Invoice Sales Order"
       columns={columns}
-      rows={rows}
-      rowAction="View Products"
+      bulkOperations={['Create Invoice', 'Write Off', 'Export']}
     />
   );
 }
