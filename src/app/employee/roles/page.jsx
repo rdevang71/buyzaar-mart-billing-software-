@@ -35,7 +35,8 @@ async function deleteRole(id) {
   return data;
 }
 
-const PERMISSION_OPTIONS = [
+// fallback options in case API fails
+const FALLBACK_PERMISSION_OPTIONS = [
   { value: 'MANAGE_ROLES', label: 'Manage Roles' },
   { value: 'MANAGE_USERS', label: 'Manage Users' },
   { value: 'ACCESS_DASHBOARD', label: 'Access Module' },
@@ -65,12 +66,13 @@ export default function RolesPage() {
   const [page, setPage] = useState(1);
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [openMenuId, setOpenMenuId] = useState(null);
+  const [openMenu, setOpenMenu] = useState(null); // { id, top, right }
   const [editingRole, setEditingRole] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [savingRole, setSavingRole] = useState(false);
   const [deletingRole, setDeletingRole] = useState(false);
   const menuRef = useRef(null);
+  const [permissionOptions, setPermissionOptions] = useState(FALLBACK_PERMISSION_OPTIONS);
 
   useEffect(() => {
     let cancelled = false;
@@ -97,8 +99,28 @@ export default function RolesPage() {
   }, []);
 
   useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/employee/permissions');
+        if (!res.ok) throw new Error('Failed to load permissions');
+        const data = await res.json();
+        if (!mounted) return;
+        const opts = data.map((p) => ({
+          value: p.permissionName || p.permission_name,
+          label: p.displayName || p.display_name || p.permissionName || p.permission_name,
+        }));
+        if (opts.length > 0) setPermissionOptions(opts);
+      } catch (err) {
+        console.error('Failed to fetch permissions', err.message);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
     const handler = (e) => {
-      if (menuRef.current && !menuRef.current.contains(e.target)) setOpenMenuId(null);
+      if (menuRef.current && !menuRef.current.contains(e.target)) setOpenMenu(null);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -256,22 +278,28 @@ export default function RolesPage() {
                     >
                       <td className="px-5 py-3.5 text-gray-700">{row.roleId}</td>
                       <td className="px-5 py-3.5 text-gray-700">{row.roleName}</td>
-                      <td
-                        className="px-4 py-3.5 relative"
-                        ref={openMenuId === row.id ? menuRef : null}
-                      >
+                      <td className="px-4 py-3.5 relative">
                         <button
-                          onClick={() => setOpenMenuId(openMenuId === row.id ? null : row.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            if (openMenu?.id === row.id) return setOpenMenu(null);
+                            setOpenMenu({ id: row.id, top: rect.bottom + window.scrollY, right: window.innerWidth - rect.right });
+                          }}
                           className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
                         >
                           <i className="ti ti-dots-vertical text-gray-400 text-[14px]" />
                         </button>
-                        {openMenuId === row.id && (
-                          <div className="absolute right-4 top-10 w-36 bg-white border border-gray-200 rounded-lg shadow-lg z-20 py-1">
+                        {openMenu?.id === row.id && (
+                          <div
+                            ref={menuRef}
+                            style={{ position: 'fixed', top: openMenu.top + 'px', right: openMenu.right + 'px', zIndex: 99999 }}
+                            className="w-36 bg-white border border-gray-200 rounded-lg shadow-lg py-1"
+                          >
                             <button
                               className="block w-full text-left px-4 py-2 text-[12.5px] text-gray-700 hover:bg-gray-50 transition"
                               onClick={() => {
-                                setOpenMenuId(null);
+                                setOpenMenu(null);
                                 setEditingRole({
                                   id: row.id,
                                   roleName: row.roleName,
@@ -286,7 +314,7 @@ export default function RolesPage() {
                             <button
                               className="block w-full text-left px-4 py-2 text-[12.5px] text-red-600 hover:bg-red-50 transition"
                               onClick={() => {
-                                setOpenMenuId(null);
+                                setOpenMenu(null);
                                 setDeleteTarget(row);
                               }}
                             >
@@ -392,7 +420,7 @@ export default function RolesPage() {
                 <label className="text-[12px] text-gray-700 font-medium">Permissions *</label>
                 <div className="mt-2 rounded-lg border border-gray-300 bg-white p-3 max-h-64 overflow-auto">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {PERMISSION_OPTIONS.map((option) => {
+                    {permissionOptions.map((option) => {
                       const checked = editingRole.permissions.includes(option.value);
                       return (
                         <label

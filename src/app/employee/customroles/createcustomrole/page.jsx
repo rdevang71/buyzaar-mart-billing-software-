@@ -1,10 +1,11 @@
-'use client';
+"use client";
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import MainLayout from '@/components/MainLayout';
 
-const PERMISSION_OPTIONS = [
+// fallback options in case API fails
+const FALLBACK_PERMISSION_OPTIONS = [
   { value: 'MANAGE_ROLES', label: 'Manage Roles' },
   { value: 'MANAGE_USERS', label: 'Manage Users' },
   { value: 'ACCESS_DASHBOARD', label: 'Access Module' },
@@ -31,11 +32,35 @@ async function createRole(payload) {
 export default function CreateCustomRolePage() {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
+  const [permissionOptions, setPermissionOptions] = useState(FALLBACK_PERMISSION_OPTIONS);
   const [form, setForm] = useState({
     roleName: '',
     permissions: [],
     description: '',
   });
+
+  useEffect(() => {
+    // fetch permissions from API and map to option list
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/employee/permissions');
+        if (!res.ok) throw new Error('Failed to load permissions');
+        const data = await res.json();
+        if (!mounted) return;
+        const opts = data.map((p) => ({
+          value: p.permissionName || p.permission_name,
+          label: p.displayName || p.display_name || p.permissionName || p.permission_name,
+        }));
+        if (opts.length > 0) setPermissionOptions(opts);
+      } catch (err) {
+        console.error('Failed to fetch permissions', err.message);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     document.title = 'Create Custom Role';
@@ -119,7 +144,7 @@ export default function CreateCustomRolePage() {
               <label className="text-[12px] text-gray-700 font-medium">Permissions *</label>
               <div className="mt-2 rounded-lg border border-gray-300 bg-white p-3">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {PERMISSION_OPTIONS.map((option) => {
+                  {permissionOptions.map((option) => {
                     const checked = form.permissions.includes(option.value);
                     return (
                       <label
@@ -150,7 +175,7 @@ export default function CreateCustomRolePage() {
               {form.permissions.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-2">
                   {form.permissions.map((permission) => {
-                    const option = PERMISSION_OPTIONS.find((item) => item.value === permission);
+                    const option = permissionOptions.find((item) => item.value === permission);
                     return (
                       <span
                         key={permission}

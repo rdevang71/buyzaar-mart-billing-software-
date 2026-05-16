@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import MainLayout from '@/components/MainLayout';
 
@@ -32,6 +32,23 @@ function formatDisplayDate(iso) {
   });
 }
 
+function formatCellValue(key, value) {
+  if (value === null || value === undefined || value === '') return '—';
+  if (key === 'sessionStartAt' || key === 'sessionEndAt') {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.toLocaleString('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  return value;
+}
+
 export default function UserCounterSessionPage() {
   const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [dateFrom, setDateFrom] = useState(todayIso);
@@ -40,12 +57,36 @@ export default function UserCounterSessionPage() {
   const [search, setSearch] = useState('');
   const [pageSize, setPageSize] = useState(10);
   const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const rangeLabel = `${formatDisplayDate(dateFrom)} - ${formatDisplayDate(dateTo)}`;
 
-  const handleFetch = () => {
-    setRows([]);
-    setPage(1);
+  useEffect(() => {
+    handleFetch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleFetch = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const params = new URLSearchParams();
+      if (dateFrom) params.set('dateFrom', dateFrom);
+      if (dateTo) params.set('dateTo', dateTo);
+
+      const res = await fetch(`/api/employee/user-counter-session?${params.toString()}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to fetch user counter sessions');
+      setRows(Array.isArray(data) ? data : []);
+      setPage(1);
+    } catch (err) {
+      console.error(err);
+      setRows([]);
+      setError(err.message || 'Failed to fetch user counter sessions');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const filtered = rows.filter((row) =>
@@ -157,13 +198,22 @@ export default function UserCounterSessionPage() {
                 </tr>
               </thead>
               <tbody>
-                {paginated.length === 0 ? (
+                {loading ? (
                   <tr>
                     <td
                       colSpan={columns.length}
                       className="text-center text-gray-400 py-16 text-[13px]"
                     >
-                      No matching record found
+                      Loading user counter sessions...
+                    </td>
+                  </tr>
+                ) : paginated.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={columns.length}
+                      className="text-center text-gray-400 py-16 text-[13px]"
+                    >
+                      {error || 'No matching record found'}
                     </td>
                   </tr>
                 ) : (
@@ -174,7 +224,7 @@ export default function UserCounterSessionPage() {
                     >
                       {columns.map((col) => (
                         <td key={col.key} className="px-3 py-3 text-gray-700 whitespace-nowrap">
-                          {row[col.key] ?? '—'}
+                          {formatCellValue(col.key, row[col.key])}
                         </td>
                       ))}
                     </tr>

@@ -6,83 +6,16 @@ import MainLayout from '@/components/MainLayout';
 
 const PAGE_SIZES = [10, 25, 50, 100];
 
-const PERMISSION_TEMPLATES = [
-  [
-    'ACCESS_DASHBOARD',
-    'Access Module',
-    'Permission to login and view the dashboard on both the web and app',
-  ],
-  [
-    'MANAGE_ROLES',
-    'Manage Roles',
-    'Create, edit and assign roles across merchant interfaces',
-  ],
-  [
-    'MANAGE_USERS',
-    'Manage Users',
-    'Invite users, reset access and manage employee profiles',
-  ],
-  [
-    'MANAGE_DEVICES',
-    'Manage Devices',
-    'Register POS devices and manage activation for stores',
-  ],
-  [
-    'MANAGE_PAYMENT_TYPES',
-    'Manage Payment Types',
-    'Configure tenders, wallets and settlement preferences',
-  ],
-  [
-    'MANAGE_INVENTORY',
-    'Manage Inventory',
-    'View and adjust stock, transfers and stock validations',
-  ],
-  [
-    'MANAGE_CATALOG',
-    'Manage Catalog',
-    'Maintain products, services, pricing and promotional items',
-  ],
-  [
-    'VIEW_REPORTS',
-    'View Reports',
-    'Access operational and financial reporting modules',
-  ],
-  [
-    'MANAGE_STORES',
-    'Manage Stores',
-    'Create stores, counters and assign staff to locations',
-  ],
-  [
-    'MANAGE_BILLING',
-    'Manage Billing',
-    'Configure billing plans, taxes and invoice templates',
-  ],
-];
-
-function buildPermissionRows(total = 475) {
-  const rows = [];
-  for (let i = 0; i < total; i++) {
-    const [name, display, desc] = PERMISSION_TEMPLATES[i % PERMISSION_TEMPLATES.length];
-    const n = Math.floor(i / PERMISSION_TEMPLATES.length);
-    rows.push({
-      id: i + 1,
-      permissionForOrg: 'MERCHANT',
-      permissionForInterface: 'BOTH',
-      permissionName: n === 0 ? name : `${name}_${n}`,
-      displayName: n === 0 ? display : `${display} (${n})`,
-      description: desc,
-    });
-  }
-  return rows;
-}
-
-const ALL_ROWS = buildPermissionRows(475);
+// Permissions are loaded from the database via /api/employee/permissions
 
 export default function PermissionsPage() {
   const [search, setSearch] = useState('');
   const [pageSize, setPageSize] = useState(10);
   const [page, setPage] = useState(1);
   const [openMenuId, setOpenMenuId] = useState(null);
+  const [permissions, setPermissions] = useState([]);
+  const [loading, setLoading] = useState(true);
+
 
   useEffect(() => {
     if (openMenuId == null) return undefined;
@@ -96,18 +29,37 @@ export default function PermissionsPage() {
     return () => document.removeEventListener('mousedown', onDoc);
   }, [openMenuId]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    fetch('/api/employee/permissions')
+      .then((res) => res.ok ? res.json() : Promise.reject(new Error('Failed')))
+      .then((data) => {
+        if (cancelled) return;
+        setPermissions(Array.isArray(data) ? data : []);
+      })
+      .catch((err) => {
+        if (!cancelled) console.error('Failed to load permissions', err);
+        setPermissions([]);
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+
+    return () => { cancelled = true; };
+  }, []);
+
   const filtered = useMemo(() => {
+    const rows = permissions;
     const q = search.trim().toLowerCase();
-    if (!q) return ALL_ROWS;
-    return ALL_ROWS.filter(
+    if (!q) return rows;
+    return rows.filter(
       (r) =>
         String(r.id).includes(q) ||
-        r.permissionName.toLowerCase().includes(q) ||
-        r.displayName.toLowerCase().includes(q) ||
-        r.description.toLowerCase().includes(q) ||
-        r.permissionForOrg.toLowerCase().includes(q)
+        String(r.permissionName).toLowerCase().includes(q) ||
+        String(r.displayName).toLowerCase().includes(q) ||
+        String(r.description).toLowerCase().includes(q) ||
+        String(r.permissionForOrg).toLowerCase().includes(q)
     );
-  }, [search]);
+  }, [search, permissions]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
@@ -215,7 +167,13 @@ export default function PermissionsPage() {
                 </tr>
               </thead>
               <tbody>
-                {paginated.length === 0 ? (
+                {loading ? (
+                  <tr>
+                    <td colSpan={8} className="text-center text-gray-400 py-16 text-[13px]">
+                      Loading permissions...
+                    </td>
+                  </tr>
+                ) : paginated.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="text-center text-gray-400 py-16 text-[13px]">
                       No matching record found
@@ -286,6 +244,7 @@ export default function PermissionsPage() {
             </table>
           </div>
         </div>
+
 
         <div className="flex flex-wrap items-center gap-3 mt-4">
           <div className="relative">
