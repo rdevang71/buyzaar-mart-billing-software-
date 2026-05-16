@@ -1,10 +1,5 @@
 'use client';
-import CatalogListPage from '@/components/CatalogListPage';
-
-const rows = [
-  { id: 1, sno: 1, promotion: 'Weekend Sale',  requestedBy: 'Manager A', date: '28 May 2025', status: 'Pending' },
-  { id: 2, sno: 2, promotion: 'Diwali Offer',  requestedBy: 'Manager B', date: '15 May 2025', status: 'Approved' },
-];
+import CatalogDataPage from '@/components/CatalogDataPage';
 const columns = [
   { key: 'sno',         label: 'S. No.',         sortable: true },
   { key: 'promotion',   label: 'Promotion',      sortable: true },
@@ -22,10 +17,21 @@ const columns = [
 
 export default function PromotionApprovalPage() {
   return (
-    <CatalogListPage
+    <CatalogDataPage
+      endpoint="/api/catalog/promotion-approvals"
       breadcrumbs={[{ label:'Catalog',href:'/catalog'},{ label:'Promotional Products'},{ label:'Promotion Approval'}]}
       title="Promotion Approval" description="Review and approve promotion requests from your team."
-      createLabel="Request Approval" columns={columns} rows={rows}
+      columns={columns}
+      totalLabel="Approval(s)"
+      emptyMessage="No approval requests found"
+      mapRecord={(record, index, page, pageSize) => ({
+        id: record.id,
+        sno: (page - 1) * pageSize + index + 1,
+        promotion: record.promotion,
+        requestedBy: record.requested_by,
+        date: record.request_date,
+        status: record.status,
+      })}
     />
   );
 }

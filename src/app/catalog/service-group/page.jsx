@@ -1,9 +1,6 @@
-import CatalogListPage from '@/components/CatalogListPage';
+'use client';
 
-const rows = [
-  { id: 1, sno: 1, name: 'Repair Services',   code: 'REP', sequence: 1 },
-  { id: 2, sno: 2, name: 'Cleaning Services', code: 'CLN', sequence: 2 },
-];
+import CatalogDataPage from '@/components/CatalogDataPage';
 
 const columns = [
   { key: 'sno',      label: 'S. No.',          sortable: true },
@@ -14,7 +11,8 @@ const columns = [
 
 export default function ServiceGroupPage() {
   return (
-    <CatalogListPage
+    <CatalogDataPage
+      endpoint="/api/catalog/service-groups"
       breadcrumbs={[
         { label: 'Catalog', href: '/catalog' },
         { label: 'Product Classification', href: '/catalog/category' },
@@ -22,9 +20,16 @@ export default function ServiceGroupPage() {
       ]}
       title="Service Group"
       description="Group your services for better catalog management."
-      createLabel="Create Service Group"
       columns={columns}
-      rows={rows}
+      totalLabel="Service Group(s)"
+      emptyMessage="No service groups found"
+      mapRecord={(record, index, page, pageSize) => ({
+        id: record.id,
+        sno: (page - 1) * pageSize + index + 1,
+        name: record.name,
+        code: record.code || '—',
+        sequence: record.sort_sequence,
+      })}
     />
   );
 }

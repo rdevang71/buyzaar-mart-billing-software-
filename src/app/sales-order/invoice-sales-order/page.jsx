@@ -1,33 +1,29 @@
 'use client';
-import CatalogListPage from '@/components/CatalogListPage';
 
-const rows = [
-  { id: 1, sno: 1, name: 'Default category (none)', type: 'OTHER', sequence: null },
-  { id: 2, sno: 2, name: 'FMCG-FOOD',               type: 'OTHER', sequence: 0 },
-  { id: 3, sno: 3, name: 'Chocolates',               type: 'OTHER', sequence: 0 },
-];
+import SalesOrderListPage from '@/components/SalesOrderListPage';
 
 const columns = [
-  { key: 'sno',      label: 'S. No.',        sortable: true },
-  { key: 'name',     label: 'Category Name', sortable: true },
-  { key: 'type',     label: 'Category Type', sortable: true },
-  { key: 'sequence', label: 'Sort Sequence', sortable: true },
+  { key: 'id',           label: 'ID' },
+  { key: 'billNumber',   label: 'Bill Number' },
+  { key: 'customerName', label: 'Customer' },
+  { key: 'billingUser',  label: 'Billing User' },
+  { key: 'grandTotal',   label: 'Amount' },
+  { key: 'paymentMode',  label: 'Mode' },
+  { key: 'status',       label: 'Status' },
+  { key: 'createdAt',    label: 'Date' },
 ];
 
-export default function CategoryPage() {
+export default function InvoiceSalesOrderPage() {
   return (
-    <CatalogListPage
+    <SalesOrderListPage
       breadcrumbs={[
-        { label: 'Catalog', href: '/catalog' },
-        { label: 'Product Classification', href: '/catalog/category' },
-        { label: 'Category' },
+        { label: 'Sales Order', href: '/sales-order' },
+        { label: 'Invoice Sales Order' },
       ]}
-      title="Category"
-      description="Categorize all your products according to your choice"
-      createLabel="Create Category"
+      title="Invoice Sales Order"
+      description="List of invoice sales orders"
       columns={columns}
-      rows={rows}
-      rowAction="View Products"
+      rows={[]}
     />
   );
 }
