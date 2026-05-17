@@ -21,6 +21,8 @@ export default function ServiceDepartmentPage() {
       title="Service Department"
       description="Manage service departments under your service groups."
       columns={columns}
+      createLabel="Create Department"
+      onCreateClick={() => window.location.href = '/catalog/department/create'}
       totalLabel="Service Department(s)"
       emptyMessage="No service departments found"
       mapRecord={(record, index, page, pageSize) => ({

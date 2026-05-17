@@ -19,6 +19,8 @@ export default function CatalogDataPage({
   showRowActions = false,
   onEdit,
   onDelete,
+  filters = null,
+  extraQueryParams = {},
 }) {
   const [records, setRecords] = useState([]);
   const [total, setTotal] = useState(0);
@@ -47,6 +49,12 @@ export default function CatalogDataPage({
         params.set('search', search);
       }
 
+      Object.entries(extraQueryParams || {}).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && String(value).trim() !== '') {
+          params.set(key, String(value));
+        }
+      });
+
       const res = await fetch(`${endpoint}?${params.toString()}`);
       const json = await res.json();
 
@@ -62,7 +70,7 @@ export default function CatalogDataPage({
     } finally {
       setLoading(false);
     }
-  }, [endpoint, page, pageSize, search, showToast, title]);
+  }, [endpoint, page, pageSize, search, showToast, title, extraQueryParams]);
 
   useEffect(() => {
     fetchData();
@@ -71,6 +79,10 @@ export default function CatalogDataPage({
   useEffect(() => {
     setPage(1);
   }, [search]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [JSON.stringify(extraQueryParams)]);
 
   const handleDelete = async () => {
     if (!deleteId) return;
@@ -131,6 +143,7 @@ export default function CatalogDataPage({
         breadcrumbs={breadcrumbs}
         title={title}
         description={description}
+        filters={filters}
         createLabel={createLabel}
         onCreateClick={onCreateClick}
         bulkOperations={bulkOperations}

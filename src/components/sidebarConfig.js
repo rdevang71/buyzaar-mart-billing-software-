@@ -1,5 +1,5 @@
 export const menuItems = [
-  { label: 'Home',         icon: 'ti-home',           href: '/home',         subSidebar: null },
+  { label: 'Home',         icon: 'ti-home',           href: '/',         subSidebar: null },
 
   { label: 'Catalog',      icon: 'ti-layout-grid',    href: '/catalog', subSidebar: {
     title: 'Catalog Dashboard',
@@ -94,6 +94,7 @@ export const menuItems = [
         items: [
           { label: 'Vendors',            href: '/purchase/vendors' },
           { label: 'Purchase Orders',    href: '/purchase/purchase-orders' },
+          { label: 'GRN',                href: '/purchase/grn' },
           { label: 'Vendor Invoices',    href: '/purchase/vendor-invoices' },
           { label: 'Invoice Settlement', href: '/purchase/invoice-settlement' },
         ],

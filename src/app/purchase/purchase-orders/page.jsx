@@ -263,6 +263,10 @@ export default function PurchaseOrdersPage() {
             <i className="ti ti-file-document text-[16px]" />
             Create PO Using Requisition
           </button>
+          <button onClick={() => router.push('/purchase/grn/create')} className="flex items-center gap-2 px-4 py-2 rounded-lg border border-green-300 text-[13px] font-medium text-green-600 hover:bg-green-50 transition-colors">
+            <i className="ti ti-box text-[16px]" />
+            Create GRN
+          </button>
           <button onClick={handleOpen} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-[13px] font-medium text-white hover:bg-blue-700 transition-colors">
             <i className="ti ti-plus text-[16px]" />
             Create Purchase Order

@@ -6,6 +6,7 @@ export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
     const search      = searchParams.get('search')   || '';
+    const department_id = searchParams.get('department_id') || '';
     const category_id = searchParams.get('category_id') || '';
     const brand_id    = searchParams.get('brand_id')    || '';
     const is_active   = searchParams.get('is_active');
@@ -25,6 +26,11 @@ export async function GET(request) {
     if (category_id) {
       conditions.push(`p.category_id = $${i}`);
       params.push(category_id);
+      i++;
+    }
+    if (department_id) {
+      conditions.push(`p.department_id = $${i}`);
+      params.push(department_id);
       i++;
     }
     if (brand_id) {

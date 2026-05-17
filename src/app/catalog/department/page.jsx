@@ -21,6 +21,11 @@ export default function DepartmentPage() {
       title="Department"
       description="Manage departments to organize your store sections."
       columns={columns}
+      createLabel="Create Department"
+      onCreateClick={() => window.location.href = '/catalog/department/create'}
+      showRowActions={true}
+      onEdit={(row) => window.location.href = `/catalog/department/${row.id}/edit`}
+      onDelete={(row) => {/* delete handled by CatalogDataPage */}}
       totalLabel="Department(s)"
       emptyMessage="No departments found"
       mapRecord={(record, index, page, pageSize) => ({

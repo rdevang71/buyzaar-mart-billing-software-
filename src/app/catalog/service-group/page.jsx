@@ -21,6 +21,11 @@ export default function ServiceGroupPage() {
       title="Service Group"
       description="Group your services for better catalog management."
       columns={columns}
+      createLabel="Create Service Group"
+      onCreateClick={() => window.location.href = '/catalog/service-group/create'}
+      showRowActions={true}
+      onEdit={(row) => window.location.href = `/catalog/service-group/${row.id}/edit`}
+      onDelete={(row) => {/* delete handled by CatalogDataPage */}}
       totalLabel="Service Group(s)"
       emptyMessage="No service groups found"
       mapRecord={(record, index, page, pageSize) => ({

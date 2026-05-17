@@ -9,8 +9,10 @@ export default function Sidebar({ activeMenu, setActiveMenu, mobileOpen, onMobil
 
   const handleClick = (e, item) => {
     if (item.subSidebar) {
-      e.preventDefault(); // ← navigation rokta hai, sirf subSidebar toggle karta hai
-      setActiveMenu(activeMenu?.label === item.label ? null : item);
+      // allow navigation to the menu href (so dashboard pages open),
+      // but also set active menu for subSidebar display
+      setActiveMenu(item);
+      onMobileClose?.();
     } else {
       setActiveMenu(null);
       onMobileClose?.();

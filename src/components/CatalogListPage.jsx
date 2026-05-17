@@ -10,6 +10,7 @@ export default function CatalogListPage({
   breadcrumbs = [],
   title = '',
   description = '',
+  filters = null,
   createLabel = null,
   onCreateClick,
   bulkOperations = true,
@@ -287,6 +288,12 @@ export default function CatalogListPage({
           )}
         </div>
       </div>
+
+      {filters && (
+        <div className="mb-5">
+          {filters}
+        </div>
+      )}
 
       {/* Store Selector */}
       {showStoreSelector && (

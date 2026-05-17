@@ -3,6 +3,7 @@
 import AuthScreen from '@/components/AuthScreen';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { apiClient } from '@/lib/api-client';
 
 const highlights = [
   {
@@ -29,7 +30,7 @@ const highlights = [
 
 export default function LoginPage() {
   const router = useRouter();
-  const [form, setForm] = useState({ emailOrPhone: '', password: '' });
+  const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -44,23 +45,47 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+      // Use new API client to call backend
+      // Phase 1: Call backend auth endpoint
+      const result = await apiClient.post('/auth/login', {
+        email: form.email,
+        password: form.password,
       });
 
-      const json = await res.json();
-
-      if (!res.ok || !json.success) {
-        setError(json.message || 'Unable to login. Please try again.');
-        return;
+      // Store token
+      if (result.token) {
+        apiClient.setToken(result.token);
       }
 
+      // Navigate to home
       router.push('/home');
       router.refresh();
     } catch (err) {
-      setError(err.message || 'Something went wrong');
+      // Fallback: Try old monolith API if backend not ready
+      console.warn('Backend not ready, trying monolith:', err.message);
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            emailOrPhone: form.email,
+            password: form.password,
+          }),
+        });
+
+        const json = await res.json();
+
+        if (!res.ok || !json.success) {
+          setError(json.message || 'Unable to login. Please try again.');
+          return;
+        }
+
+        router.push('/home');
+        router.refresh();
+      } catch (fallbackErr) {
+        setError(err.message || 'Something went wrong');
+      }
     } finally {
       setLoading(false);
     }
@@ -82,17 +107,17 @@ export default function LoginPage() {
       <form className="space-y-3.5" onSubmit={handleSubmit}>
         <div>
           <label htmlFor="login-email" className="mb-1.5 block text-[12px] font-medium text-gray-700">
-            Email or Phone
+            Email
           </label>
           <div className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-3.5 py-2.5 focus-within:border-blue-400 focus-within:bg-white">
             <i className="ti ti-user text-[16px] text-gray-400" />
             <input
               id="login-email"
-              type="text"
-              name="emailOrPhone"
-              value={form.emailOrPhone}
+              type="email"
+              name="email"
+              value={form.email}
               onChange={onChange}
-              placeholder="Enter email or phone"
+              placeholder="Enter email"
               required
               className="w-full bg-transparent text-[13px] text-gray-900 outline-none placeholder:text-gray-400"
             />
@@ -111,7 +136,7 @@ export default function LoginPage() {
               name="password"
               value={form.password}
               onChange={onChange}
-              placeholder="at least 8 characters"
+              placeholder="at least 6 characters"
               required
               className="w-full bg-transparent text-[13px] text-gray-900 outline-none placeholder:text-gray-400"
             />
@@ -131,7 +156,7 @@ export default function LoginPage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-2xl bg-blue-600 px-4 py-2.5 text-[13px] font-semibold text-white shadow-lg shadow-blue-600/20 transition-colors hover:bg-blue-700"
+          className="w-full rounded-2xl bg-blue-600 px-4 py-2.5 text-[13px] font-semibold text-white shadow-lg shadow-blue-600/20 transition-colors hover:bg-blue-700 disabled:opacity-50"
         >
           {loading ? 'Signing in...' : 'Sign in'}
         </button>

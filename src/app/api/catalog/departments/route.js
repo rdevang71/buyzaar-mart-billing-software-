@@ -60,7 +60,17 @@ export async function POST(request) {
       [body.name?.trim(), body.code || null, body.is_active ?? true]
     );
 
-    return successResponse(result.rows[0], 'Department created successfully', 201);
+    const dept = result.rows[0];
+
+    // If category_ids provided, assign those categories to this department
+    if (Array.isArray(body.category_ids) && body.category_ids.length) {
+      await query(
+        `UPDATE categories SET department_id = $1 WHERE id = ANY($2::bigint[])`,
+        [dept.id, body.category_ids]
+      );
+    }
+
+    return successResponse(dept, 'Department created successfully', 201);
   } catch (err) {
     if (err.code === '23505') {
       return errorResponse('Department already exists', 409);
