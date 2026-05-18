@@ -3,7 +3,6 @@
 import AuthScreen from '@/components/AuthScreen';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { apiClient } from '@/lib/api-client';
 
 const highlights = [
   {
@@ -45,47 +44,26 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      // Use new API client to call backend
-      // Phase 1: Call backend auth endpoint
-      const result = await apiClient.post('/auth/login', {
-        email: form.email,
-        password: form.password,
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          emailOrPhone: form.email,
+          password: form.password,
+        }),
       });
 
-      // Store token
-      if (result.token) {
-        apiClient.setToken(result.token);
+      const json = await res.json();
+
+      if (!res.ok || !json.success) {
+        setError(json.message || 'Unable to login. Please try again.');
+        return;
       }
 
-      // Navigate to home
       router.push('/home');
       router.refresh();
     } catch (err) {
-      // Fallback: Try old monolith API if backend not ready
-      console.warn('Backend not ready, trying monolith:', err.message);
-
-      try {
-        const res = await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            emailOrPhone: form.email,
-            password: form.password,
-          }),
-        });
-
-        const json = await res.json();
-
-        if (!res.ok || !json.success) {
-          setError(json.message || 'Unable to login. Please try again.');
-          return;
-        }
-
-        router.push('/home');
-        router.refresh();
-      } catch (fallbackErr) {
-        setError(err.message || 'Something went wrong');
-      }
+      setError(err.message || 'Something went wrong');
     } finally {
       setLoading(false);
     }

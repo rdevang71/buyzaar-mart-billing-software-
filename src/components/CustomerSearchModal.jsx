@@ -10,10 +10,15 @@ export default function CustomerSearchModal({ open, onClose, onSelect }) {
 
   useEffect(() => {
     if (!open) return;
-    const fetchCustomers = async () => {
+    const fetchCustomers = async (query = '', queryBy = searchBy) => {
       setLoading(true);
       try {
-        const res = await fetch('/api/customers');
+        const qs = new URLSearchParams();
+        if (query.trim()) {
+          qs.set('search', query.trim());
+          qs.set('searchBy', queryBy);
+        }
+        const res = await fetch(`/api/customers${qs.toString() ? `?${qs.toString()}` : ''}`);
         const data = await res.json();
         setCustomers(Array.isArray(data) ? data : []);
       } catch (err) {
@@ -23,8 +28,29 @@ export default function CustomerSearchModal({ open, onClose, onSelect }) {
         setLoading(false);
       }
     };
-    fetchCustomers();
+    fetchCustomers(search, searchBy);
   }, [open]);
+
+  const handleSearch = async () => {
+    await (async () => {
+      setLoading(true);
+      try {
+        const qs = new URLSearchParams();
+        if (search.trim()) {
+          qs.set('search', search.trim());
+          qs.set('searchBy', searchBy);
+        }
+        const res = await fetch(`/api/customers${qs.toString() ? `?${qs.toString()}` : ''}`);
+        const data = await res.json();
+        setCustomers(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error(err);
+        setCustomers([]);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  };
 
   const filtered = useMemo(() => {
     const q = String(search || '').trim().toLowerCase();
@@ -80,7 +106,7 @@ export default function CustomerSearchModal({ open, onClose, onSelect }) {
               placeholder="Value"
               className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-gray-700 bg-white placeholder:text-gray-400"
             />
-            <button onClick={() => {}} className="px-4 py-2 rounded-lg bg-blue-600 text-white">Search</button>
+            <button onClick={handleSearch} className="px-4 py-2 rounded-lg bg-blue-600 text-white">Search</button>
           </div>
 
           <div className="overflow-x-auto">

@@ -1,26 +1,14 @@
-import CatalogListPage from '@/components/CatalogListPage';
-
-const columns = [
-  { key: 'sno', label: 'S. No.', sortable: true },
-  { key: 'date', label: 'Date', sortable: true },
-  { key: 'credits_added', label: 'Credits Added', sortable: true },
-  { key: 'credits_used', label: 'Credits Used', sortable: true },
-  { key: 'balance', label: 'Balance', sortable: true },
-  { key: 'remarks', label: 'Remarks', sortable: true },
-];
+import CreditPurchasePage from '@/components/CreditPurchasePage';
 
 export default function WhatsappCreditPage() {
   return (
-    <CatalogListPage
-      breadcrumbs={[
-        { label: 'Customer', href: '/customer/dashboard' },
-        { label: 'WhatsApp Credit' },
-      ]}
-      title="WhatsApp Credit"
-      description="Manage WhatsApp credits"
-      createLabel="Create WhatsApp Credit"
-      columns={columns}
-      rows={[]}
+    <CreditPurchasePage
+      creditLabel="WhatsApp"
+      pageTitle="WhatsApp Credit Purchase"
+      description="Description of the WhatsApp Credit is to mentioned here"
+      apiBase="/api/customer-whatsapp-credit"
+      buttonLabel="Buy WhatsApp"
+      modalTitle="Buy WhatsApp"
     />
   );
 }
