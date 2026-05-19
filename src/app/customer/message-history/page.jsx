@@ -1,26 +1,29 @@
-import CatalogListPage from '@/components/CatalogListPage';
+import MessageLogsPage from '@/components/MessageLogsPage';
 
 const columns = [
-  { key: 'sno', label: 'S. No.', sortable: true },
-  { key: 'customer', label: 'Customer', sortable: true },
-  { key: 'type', label: 'Type', sortable: true },
-  { key: 'message', label: 'Message', sortable: true },
-  { key: 'sent_at', label: 'Sent At', sortable: true },
-  { key: 'status', label: 'Status', sortable: true },
+  { key: 'store', label: 'Store' },
+  { key: 'orderId', label: 'Order ID' },
+  { key: 'mobile', label: 'Mobile' },
+  { key: 'messageType', label: 'Message Type' },
+  { key: 'message', label: 'Message' },
+  { key: 'creditsUsed', label: 'Credits Used' },
+  { key: 'deliveryDate', label: 'Date' },
+  { key: 'deliveryTime', label: 'Time' },
 ];
 
 export default function MessageHistoryPage() {
   return (
-    <CatalogListPage
+    <MessageLogsPage
       breadcrumbs={[
         { label: 'Customer', href: '/customer/dashboard' },
         { label: 'Message History' },
       ]}
       title="Message History"
       description="Customer message history"
-      createLabel="Create Message History"
+      apiBase="/api/customer-message-history"
       columns={columns}
-      rows={[]}
+      defaultMessageType=""
+      showMessageTypeFilter
     />
   );
 }

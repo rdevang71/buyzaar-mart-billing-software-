@@ -155,6 +155,7 @@ export const menuItems = [
           { label: 'Credit Note History',           href: '/customer/credit-note-history' },
           { label: 'Customers Sales Report',        href: '/customer/customers-sales-report' },
           { label: 'Credit Advanced Configs List',  href: '/customer/credit-advanced-configs-list' },
+          { label: 'Credit Advanced Approval',       href: '/customer/credit-advanced-configs-approval' },
           { label: 'Credit Advanced Configuration', href: '/customer/credit-advanced-configuration' },
           { label: 'Unsettled Orders',              href: '/customer/unsettled-orders' },
           { label: 'Customer Advance Payment',      href: '/customer/customer-advance-payment' },
