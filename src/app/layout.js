@@ -1,4 +1,5 @@
 import './globals.css';
+import { RootClientWrapper } from './RootClientWrapper';
 
 export const metadata = {
   title: 'BillingPro',
@@ -14,7 +15,9 @@ export default function RootLayout({ children }) {
           href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css"
         />
       </head>
-      <body>{children}</body>
+      <body>
+        <RootClientWrapper>{children}</RootClientWrapper>
+      </body>
     </html>
   );
 }

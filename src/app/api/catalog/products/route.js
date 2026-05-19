@@ -1,5 +1,5 @@
 import { query, getClient } from '@/lib/db';
-import { successResponse, errorResponse, notFound, validationError } from '@/lib/apiResponse';
+import { successResponse, errorResponse, notFoundError, validationError } from '@/lib/api-response';
 import { ensureStockInSchema } from '@/lib/stockInSchema';
 
 // ─── GET /api/catalog/products ───────────────────────────────

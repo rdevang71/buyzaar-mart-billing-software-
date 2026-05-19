@@ -1,5 +1,5 @@
 import { query } from '@/lib/db';
-import { successResponse, errorResponse, notFound, validationError } from '@/lib/apiResponse';
+import { successResponse, errorResponse, notFoundError, validationError } from '@/lib/api-response';
 
 const SELECT = `
   SELECT
@@ -16,7 +16,7 @@ export async function GET(request, { params }) {
   try {
     const { id } = await params;
     const result = await query(`${SELECT} WHERE c.id = $1`, [id]);
-    if (!result.rows.length) return notFound('Category not found');
+    if (!result.rows.length) return notFoundError('Category not found');
     return successResponse(result.rows[0]);
   } catch (err) {
     return errorResponse(err.message);

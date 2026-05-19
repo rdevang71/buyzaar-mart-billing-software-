@@ -1,6 +1,6 @@
-import bcrypt from 'bcryptjs';
+﻿import bcrypt from 'bcryptjs';
 import { cookies } from 'next/headers';
-import { errorResponse, successResponse, validationError } from '@/lib/apiResponse';
+import { errorResponse, successResponse, validationError } from '@/lib/api-response';
 import { verifyAuthToken } from '@/lib/auth';
 import { ensureUsersTable } from '@/lib/userAuth';
 import { query } from '@/lib/db';

@@ -5,7 +5,9 @@ const publicRoutes = ['/login', '/', '/sales-order/pos'];
 
 export function middleware(request) {
   const pathname = request.nextUrl.pathname;
-  const token = request.cookies.get('auth_token')?.value || request.cookies.get('token')?.value;
+  const token = request.cookies.get('access_token')?.value || 
+                request.cookies.get('auth_token')?.value || 
+                request.cookies.get('token')?.value;
 
   // Allow public routes without token
   if (publicRoutes.includes(pathname)) {

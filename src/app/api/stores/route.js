@@ -1,4 +1,4 @@
-import { successResponse, errorResponse, validationError } from '@/lib/apiResponse';
+import { successResponse, errorResponse, validationError } from '@/lib/api-response';
 import { query } from '@/lib/db';
 import { ensureStoresSchema } from '@/lib/storesSchema';
 

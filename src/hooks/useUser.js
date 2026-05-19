@@ -1,0 +1,138 @@
+'use client';
+
+import { useEffect, useState, useCallback, createContext, useContext } from 'react';
+
+/**
+ * UserContext - Global user state
+ */
+const UserContext = createContext(null);
+
+export function UserProvider({ children }) {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const fetchUser = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await fetch('/api/auth/me', {
+        cache: 'no-store',
+        credentials: 'include',
+      });
+
+      const json = await res.json();
+
+      if (!res.ok || !json.success) {
+        setUser(null);
+        setError(json.message || 'Failed to fetch user');
+        return;
+      }
+
+      setUser(json.data.user);
+      setError(null);
+    } catch (err) {
+      console.error('[useUser] Error fetching user:', err);
+      setUser(null);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchUser();
+  }, [fetchUser]);
+
+  const logout = useCallback(async () => {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      setUser(null);
+      window.location.href = '/login';
+    } catch (err) {
+      console.error('[useUser] Logout error:', err);
+    }
+  }, []);
+
+  const refetch = useCallback(() => {
+    fetchUser();
+  }, [fetchUser]);
+
+  return (
+    <UserContext.Provider value={{ user, loading, error, logout, refetch }}>
+      {children}
+    </UserContext.Provider>
+  );
+}
+
+/**
+ * useUser() - Hook to access user data and functions
+ * 
+ * Usage:
+ * const { user, loading, error, logout } = useUser();
+ * 
+ * if (loading) return <div>Loading...</div>;
+ * if (!user) return <div>Not authenticated</div>;
+ * 
+ * return <div>Welcome, {user.name}!</div>;
+ */
+export function useUser() {
+  const context = useContext(UserContext);
+  if (!context) {
+    throw new Error('useUser must be used within <UserProvider>');
+  }
+  return context;
+}
+
+/**
+ * useCanAccess() - Check if user has permission
+ * 
+ * Usage:
+ * const canCreate = useCanAccess('users:create');
+ * if (!canCreate) return null;
+ */
+export function useCanAccess(permission) {
+  const { user } = useUser();
+  
+  if (!user) return false;
+  
+  // Super admin has all permissions
+  if (user.role === 'super_admin') return true;
+  
+  // Check if user has the permission
+  return user.permissions?.includes(permission) || false;
+}
+
+/**
+ * useHasRole() - Check if user has specific role
+ * 
+ * Usage:
+ * const isAdmin = useHasRole('super_admin', 'admin');
+ */
+export function useHasRole(...roles) {
+  const { user } = useUser();
+  
+  if (!user) return false;
+  
+  return roles.includes(user.role);
+}
+
+/**
+ * useCanAccessStore() - Check if user can access store
+ * 
+ * Usage:
+ * const canAccess = useCanAccessStore(storeId);
+ */
+export function useCanAccessStore(storeId) {
+  const { user } = useUser();
+  
+  if (!user) return false;
+  
+  // Super admin can access all stores
+  if (user.role === 'super_admin') return true;
+  
+  // Check if store is in assigned stores
+  return user.assigned_stores?.includes(Number(storeId)) || false;
+}

@@ -15,7 +15,7 @@ export default function StoresListPage() {
         const res = await fetch('/api/stores');
         const json = await res.json();
         if (mounted && res.ok && json.success) {
-          setStores(json.data.stores || []);
+          setStores(Array.isArray(json.data?.stores) ? json.data.stores : []);
         }
       } catch (e) {
         // ignore
@@ -30,10 +30,16 @@ export default function StoresListPage() {
     <MainLayout>
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-bold">Stores List</h2>
-        <Link href="/setup/storeslist/store/create" className="px-3 py-2 bg-blue-600 text-white rounded">Create Store</Link>
+        <Link href="/setup/storeslist/store/create" className="px-3 py-2 bg-blue-600 text-white rounded">
+          Create Store
+        </Link>
       </div>
 
-      {loading ? <p>Loading...</p> : (
+      {loading ? (
+        <p>Loading...</p>
+      ) : stores.length === 0 ? (
+        <p className="text-gray-500">No stores available.</p>
+      ) : (
         <div className="bg-white rounded border p-4">
           <table className="w-full text-left">
             <thead>

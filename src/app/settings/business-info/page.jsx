@@ -2,7 +2,7 @@
 
 import MainLayout from '@/components/MainLayout';
 
-export default function BusinessInfoPage() {
+function BusinessInfoPage() {
   return (
     <MainLayout>
       <h1 className="text-2xl font-bold">Business Info</h1>

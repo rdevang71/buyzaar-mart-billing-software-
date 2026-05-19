@@ -1,4 +1,4 @@
-import { successResponse, errorResponse, notFound } from '@/lib/apiResponse';
+import { successResponse, errorResponse, notFoundError } from '@/lib/api-response';
 import { query } from '@/lib/db';
 import { ensureStoresSchema } from '@/lib/storesSchema';
 
@@ -53,7 +53,7 @@ export async function GET(request, { params }) {
     );
 
     if (!res.rows.length) {
-      return notFound('Store not found');
+      return notFoundError('Store not found');
     }
 
     return successResponse({ store: res.rows[0] });

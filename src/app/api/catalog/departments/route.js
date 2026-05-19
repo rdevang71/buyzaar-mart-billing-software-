@@ -1,5 +1,5 @@
 import { query } from '@/lib/db';
-import { successResponse, errorResponse, notFound, validationError } from '@/lib/apiResponse';
+import { successResponse, errorResponse, notFoundError, validationError } from '@/lib/api-response';
 
 // ─── GET /api/catalog/departments ───────────────────────────────
 export async function GET(request) {

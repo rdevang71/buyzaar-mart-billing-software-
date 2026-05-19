@@ -1,5 +1,5 @@
 import { query } from '@/lib/db';
-import { successResponse, errorResponse } from '@/lib/apiResponse';
+import { successResponse, errorResponse } from '@/lib/api-response';
 
 export async function POST(request) {
   try {

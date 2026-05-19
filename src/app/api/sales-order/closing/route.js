@@ -1,5 +1,5 @@
 import { query, getClient } from '@/lib/db';
-import { successResponse, errorResponse, validationError, notFound } from '@/lib/apiResponse';
+import { successResponse, errorResponse, validationError, notFoundError } from '@/lib/api-response';
 import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
 
 function toNumber(value, fallback = 0) {
@@ -113,7 +113,7 @@ export async function POST(request) {
 
       const session = sessionResult.rows[0];
       if (!session) {
-        return notFound('Session not found');
+        return notFoundError('Session not found');
       }
       if (!session.is_active) {
         return errorResponse('Session is already closed', 409);
