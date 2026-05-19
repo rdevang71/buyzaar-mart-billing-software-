@@ -5,11 +5,26 @@ import { getClient, query } from '@/lib/db';
 import { ensureEmployeesSchema } from '@/lib/employeesSchema';
 import { ensureUsersTable, normalizePhone } from '@/lib/userAuth';
 
+// FIXED: Properly handle date strings without timezone corruption
 function toDate(value) {
   if (!value) return null;
+  
+  // If it's already a YYYY-MM-DD string, validate and return as-is
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const date = new Date(value + 'T00:00:00Z');
+    if (Number.isNaN(date.getTime())) return null;
+    return value; // Return the original string
+  }
+  
+  // For other formats, parse and convert to YYYY-MM-DD
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  return date.toISOString().slice(0, 10);
+  
+  // Use UTC to avoid timezone issues
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function toString(value) {

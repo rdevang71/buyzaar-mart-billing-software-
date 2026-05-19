@@ -12,14 +12,14 @@ export async function GET() {
     const token = cookieStore.get('auth_token')?.value;
 
     if (!token) {
-      return errorResponse('Unauthorized', 401);
+      return successResponse({ user: null }, 'Not authenticated');
     }
 
     let payload;
     try {
       payload = verifyAuthToken(token);
     } catch {
-      return errorResponse('Unauthorized', 401);
+      return successResponse({ user: null }, 'Not authenticated');
     }
 
     const result = await query(
@@ -33,7 +33,7 @@ export async function GET() {
     const user = result.rows[0];
 
     if (!user || !user.is_active) {
-      return errorResponse('Unauthorized', 401);
+      return successResponse({ user: null }, 'Not authenticated');
     }
 
     return successResponse({ user }, 'Authenticated');

@@ -55,11 +55,23 @@ export async function POST(request) {
     if (!body.product_id) return validationError({ product_id: 'Product is required' });
 
     const result = await query(
-      `INSERT INTO product_saleability (product_id, store_id, is_active)
-       VALUES ($1, $2, COALESCE($3, true))
-       ON CONFLICT (product_id, store_id) DO UPDATE SET is_active = EXCLUDED.is_active, updated_at = NOW()
+      `INSERT INTO product_saleability (product_id, store_id, is_active, selling_price, mrp, low_stock_value)
+       VALUES ($1, $2, COALESCE($3, true), COALESCE($4, 0), COALESCE($5, 0), COALESCE($6, 0))
+       ON CONFLICT (product_id, store_id) DO UPDATE SET
+         is_active = EXCLUDED.is_active,
+         selling_price = EXCLUDED.selling_price,
+         mrp = EXCLUDED.mrp,
+         low_stock_value = EXCLUDED.low_stock_value,
+         updated_at = NOW()
        RETURNING *`,
-      [body.product_id, body.store_id || null, body.is_active ?? true]
+      [
+        body.product_id,
+        body.store_id || null,
+        body.is_active ?? true,
+        Number(body.selling_price || 0),
+        Number(body.mrp || 0),
+        Number(body.low_stock_value || 0),
+      ]
     );
 
     return successResponse(result.rows[0], 'Saleability saved successfully', 201);

@@ -18,6 +18,7 @@ const columns = [
   { key: 'mobileNumber', label: 'Mobile Number' },
   { key: 'emailAddress', label: 'Email Address' },
   { key: 'employmentStatus', label: 'Employment Status' },
+  { key: 'actions', label: 'Actions' },
 ];
 
 function mapEmployeeRow(row) {
@@ -54,33 +55,76 @@ function mapEmployeeRow(row) {
 }
 
 async function fetchEmployees() {
-  const res = await fetch('/api/employee/staff');
-  if (!res.ok) throw new Error('Failed to fetch employees');
-  return res.json();
+  try {
+    const res = await fetch('/api/employee/staff');
+    if (!res.ok) throw new Error('Failed to fetch employees');
+    return res.json();
+  } catch (err) {
+    console.error('Fetch employees error:', err);
+    return [];
+  }
 }
 
 async function fetchRoles() {
-  const res = await fetch('/api/employee/roles');
-  if (!res.ok) return [];
-  return res.json();
+  try {
+    const res = await fetch('/api/employee/roles');
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
 }
 
 async function fetchPermissions() {
-  const res = await fetch('/api/employee/permissions');
-  if (!res.ok) return [];
-  return res.json();
+  try {
+    const res = await fetch('/api/employee/permissions');
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
 }
 
 async function fetchDepartments() {
-  const res = await fetch('/api/employee/departments');
-  if (!res.ok) return [];
-  return res.json();
+  try {
+    const res = await fetch('/api/employee/departments');
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
 }
 
+// FIXED: Better error handling for stores API
 async function fetchStores() {
-  const res = await fetch('/api/stores');
-  if (!res.ok) return [];
-  return res.json();
+  try {
+    const res = await fetch('/api/stores?page=1&pageSize=1000');
+    
+    if (!res.ok) {
+      console.warn('Stores API returned status:', res.status);
+      return [];
+    }
+    
+    const contentType = res.headers.get('content-type');
+    if (!contentType?.includes('application/json')) {
+      console.warn('Invalid content type:', contentType);
+      return [];
+    }
+    
+    const data = await res.json();
+    
+    // Handle different response structures
+    if (Array.isArray(data)) return data;
+    if (data.data?.stores && Array.isArray(data.data.stores)) return data.data.stores;
+    if (data.stores && Array.isArray(data.stores)) return data.stores;
+    if (data.success && Array.isArray(data.data)) return data.data;
+    
+    console.warn('Unexpected stores response structure:', data);
+    return [];
+  } catch (err) {
+    console.error('Failed to fetch stores:', err.message);
+    return [];
+  }
 }
 
 async function createEmployee(payload) {
@@ -92,6 +136,16 @@ async function createEmployee(payload) {
 
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Failed to create employee');
+  return data;
+}
+
+async function deleteEmployee(id) {
+  const res = await fetch(`/api/employee/staff/${id}`, {
+    method: 'DELETE',
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to delete employee');
   return data;
 }
 
@@ -187,8 +241,8 @@ function SelectField({ label, value, onChange, options }) {
   );
 }
 
-export default function EmployeeListPage({ rows = [] }) {
-  const [employees, setEmployees] = useState(Array.isArray(rows) ? rows.map(mapEmployeeRow) : []);
+export default function EmployeeStaffPage() {
+  const [employees, setEmployees] = useState([]);
   const [search, setSearch] = useState('');
   const [pageSize, setPageSize] = useState(10);
   const [page, setPage] = useState(1);
@@ -202,6 +256,8 @@ export default function EmployeeListPage({ rows = [] }) {
   const [permissions, setPermissions] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [stores, setStores] = useState([]);
+  const [editingId, setEditingId] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [form, setForm] = useState({
     firstName: '',
     lastName: '',
@@ -319,13 +375,34 @@ export default function EmployeeListPage({ rows = [] }) {
   );
 
   const storeOptions = useMemo(
-    () => [
-      { value: '', label: 'Select' },
-      ...stores.map((store) => ({
-        value: store.name,
-        label: store.name,
-      })),
-    ],
+    () => {
+      if (stores.length === 0) {
+        return [{ value: '', label: 'Select Store/Region' }];
+      }
+      return [
+        { value: '', label: 'Select Store/Region' },
+        ...stores.map((store) => ({
+          value: store.name || String(store.id),
+          label: `${store.name}${store.city ? ` (${store.city}, ${store.state || ''})` : ''}`.trim(),
+        })),
+      ];
+    },
+    [stores]
+  );
+
+  const warehouseOptions = useMemo(
+    () => {
+      if (stores.length === 0) {
+        return [{ value: '', label: 'Select Warehouse' }];
+      }
+      return [
+        { value: '', label: 'Select Warehouse' },
+        ...stores.map((store) => ({
+          value: store.name || String(store.id),
+          label: `${store.name}${store.manager_name ? ` - Mgr: ${store.manager_name}` : ''}`,
+        })),
+      ];
+    },
     [stores]
   );
 
@@ -393,24 +470,71 @@ export default function EmployeeListPage({ rows = [] }) {
       discountLimitValue: '',
       maximumDiscountAmount: '',
     });
+    setEditingId(null);
+  };
+
+  const handleEdit = (employee) => {
+    setForm({
+      firstName: employee.firstName,
+      lastName: employee.lastName,
+      username: employee.username,
+      gender: employee.gender,
+      password: '',
+      confirmPassword: '',
+      mobileNumber: employee.mobileNumber,
+      emailAddress: employee.emailAddress,
+      roleId: employee.role ? String(roles.find((r) => (r.roleName || r.role_name) === employee.role)?.id || '') : '',
+      permissions: employee.permissions,
+      regionStore: employee.regionStore,
+      warehouse: employee.warehouse,
+      departmentId: employee.department ? String(departments.find((d) => (d.departmentName || d.department_name) === employee.department)?.id || '') : '',
+      customerName: employee.customerName,
+      userType: employee.userType,
+      dateOfBirth: employee.dateOfBirth || '',
+      dateOfJoining: employee.dateOfJoining || '',
+      dateOfLeaving: employee.dateOfLeaving || '',
+      employeeCode: employee.employeeCode,
+      createCustomerSameDetails: employee.createCustomerSameDetails,
+      employmentType: employee.employeeType,
+      address: employee.address,
+      employmentStatus: employee.employmentStatus,
+      contractorName: employee.contractorName,
+      discountLimitType: employee.discountLimitType,
+      discountLimitValue: employee.discountLimitValue ?? '',
+      maximumDiscountAmount: employee.maximumDiscountAmount ?? '',
+    });
+    setEditingId(employee.id);
+    setShowCreate(true);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteConfirm) return;
+
+    try {
+      await deleteEmployee(deleteConfirm);
+      setEmployees((current) => current.filter((emp) => emp.id !== deleteConfirm));
+      setDeleteConfirm(null);
+      alert('Employee deleted successfully!');
+    } catch (err) {
+      console.error(err);
+      alert(err.message || 'Failed to delete employee');
+    }
   };
 
   const handleSave = async () => {
     if (!form.firstName.trim()) return alert('First name is required');
     if (!form.username.trim()) return alert('Username is required');
-    if (!form.password.trim()) return alert('Password is required');
-    if (form.password !== form.confirmPassword) return alert('Passwords do not match');
+    if (!editingId && !form.password.trim()) return alert('Password is required');
+    if (form.password && form.password !== form.confirmPassword) return alert('Passwords do not match');
     if (form.permissions.length === 0) return alert('Select at least one permission');
 
     setSaving(true);
     try {
-      const created = await createEmployee({
+      const payload = {
         first_name: form.firstName,
         last_name: form.lastName,
         username: form.username,
         gender: form.gender,
-        password: form.password,
-        confirm_password: form.confirmPassword,
         mobile_number: form.mobileNumber,
         email_address: form.emailAddress,
         role_id: form.roleId ? Number(form.roleId) : null,
@@ -434,12 +558,24 @@ export default function EmployeeListPage({ rows = [] }) {
         discount_limit_type: form.discountLimitType,
         discount_limit_value: form.discountLimitValue === '' ? null : Number(form.discountLimitValue),
         maximum_discount_amount: form.maximumDiscountAmount === '' ? null : Number(form.maximumDiscountAmount),
-      });
+      };
 
-      setEmployees((current) => [mapEmployeeRow(created), ...current]);
+      if (form.password) {
+        payload.password = form.password;
+        payload.confirm_password = form.confirmPassword;
+      }
+
+      if (editingId) {
+        alert('Edit API endpoint needed - please create PUT /api/employee/staff/[id]');
+      } else {
+        const created = await createEmployee(payload);
+        setEmployees((current) => [mapEmployeeRow(created), ...current]);
+      }
+
       setShowCreate(false);
       resetForm();
       setPage(1);
+      alert(editingId ? 'Employee updated successfully!' : 'Employee created successfully!');
     } catch (err) {
       console.error(err);
       alert(err.message || 'Failed to save employee');
@@ -490,7 +626,7 @@ export default function EmployeeListPage({ rows = [] }) {
             </div>
 
             <button
-              onClick={() => setShowCreate(true)}
+              onClick={() => { setEditingId(null); setShowCreate(true); resetForm(); }}
               className="flex items-center gap-1.5 px-4 py-2 bg-blue-700 text-white rounded-lg text-[12.5px] font-semibold hover:bg-blue-800 transition-colors shadow-sm"
             >
               <i className="ti ti-plus text-[14px]" />
@@ -537,7 +673,7 @@ export default function EmployeeListPage({ rows = [] }) {
                     <th key={column.key} className="px-4 py-3 text-left font-semibold text-gray-600 whitespace-nowrap">
                       <span className="flex items-center gap-1">
                         {column.label}
-                        {column.key !== 'employmentStatus' && (
+                        {column.key !== 'employmentStatus' && column.key !== 'actions' && (
                           <span className="text-gray-300 text-[10px] leading-none">↑↓</span>
                         )}
                       </span>
@@ -570,6 +706,29 @@ export default function EmployeeListPage({ rows = [] }) {
                         />
                       </td>
                       {columns.map((column) => {
+                        if (column.key === 'actions') {
+                          return (
+                            <td key={column.key} className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => handleEdit(row)}
+                                  className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                                  title="Edit"
+                                >
+                                  <i className="ti ti-edit text-[16px]" />
+                                </button>
+                                <button
+                                  onClick={() => setDeleteConfirm(row.id)}
+                                  className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition"
+                                  title="Delete"
+                                >
+                                  <i className="ti ti-trash text-[16px]" />
+                                </button>
+                              </div>
+                            </td>
+                          );
+                        }
+
                         const value = column.key === 'sno' ? startIndex + index : row[column.key];
                         return (
                           <td key={column.key} className="px-4 py-3 text-gray-700 whitespace-nowrap">
@@ -646,12 +805,39 @@ export default function EmployeeListPage({ rows = [] }) {
         </div>
       </div>
 
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.4)' }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <h2 className="text-[16px] font-bold text-gray-900 mb-3">Delete Employee?</h2>
+            <p className="text-[13px] text-gray-600 mb-6">
+              Are you sure you want to delete this employee? This action cannot be undone.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                className="flex-1 py-2.5 border border-gray-200 rounded-lg text-[13px] font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-lg text-[13px] font-semibold hover:bg-red-700 transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create/Edit Modal */}
       {showCreate && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.4)' }}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl p-6 max-h-[92vh] overflow-auto">
             <div className="flex items-center justify-between mb-5">
               <div>
-                <h2 className="text-[16px] font-bold text-gray-900">Create Employee</h2>
+                <h2 className="text-[16px] font-bold text-gray-900">{editingId ? 'Edit Employee' : 'Create Employee'}</h2>
                 <p className="text-[12.5px] text-gray-500 mt-1">Fill the employee information and save it to the database.</p>
               </div>
               <button onClick={() => { setShowCreate(false); resetForm(); }} className="p-1.5 rounded-lg hover:bg-gray-100">
@@ -705,7 +891,7 @@ export default function EmployeeListPage({ rows = [] }) {
                 />
 
                 <div>
-                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Password *</label>
+                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Password {editingId ? '(leave blank to keep current)' : '*'}</label>
                   <div className="flex gap-2">
                     <input
                       type="password"
@@ -714,21 +900,23 @@ export default function EmployeeListPage({ rows = [] }) {
                       placeholder="Password"
                       className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-gray-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all"
                     />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const password = randomPassword();
-                        setForm((current) => ({ ...current, password, confirmPassword: password }));
-                      }}
-                      className="px-3 py-2 border border-blue-300 rounded-lg text-[12px] font-semibold text-blue-600 hover:bg-blue-50 transition-colors whitespace-nowrap"
-                    >
-                      Auto Generate Password
-                    </button>
+                    {!editingId && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const password = randomPassword();
+                          setForm((current) => ({ ...current, password, confirmPassword: password }));
+                        }}
+                        className="px-3 py-2 border border-blue-300 rounded-lg text-[12px] font-semibold text-blue-600 hover:bg-blue-50 transition-colors whitespace-nowrap"
+                      >
+                        Auto Generate
+                      </button>
+                    )}
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Confirm Password *</label>
+                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Confirm Password {editingId ? '(if changing)' : '*'}</label>
                   <input
                     type="password"
                     value={form.confirmPassword}
@@ -739,7 +927,7 @@ export default function EmployeeListPage({ rows = [] }) {
                 </div>
 
                 <div>
-                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Mobile Number *</label>
+                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Mobile Number</label>
                   <input
                     value={form.mobileNumber}
                     onChange={(event) => setForm({ ...form, mobileNumber: event.target.value })}
@@ -749,7 +937,7 @@ export default function EmployeeListPage({ rows = [] }) {
                 </div>
 
                 <div>
-                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Email Address *</label>
+                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Email Address</label>
                   <input
                     value={form.emailAddress}
                     onChange={(event) => setForm({ ...form, emailAddress: event.target.value })}
@@ -784,7 +972,7 @@ export default function EmployeeListPage({ rows = [] }) {
                   label="Warehouse"
                   value={form.warehouse}
                   onChange={(warehouse) => setForm({ ...form, warehouse })}
-                  options={storeOptions}
+                  options={warehouseOptions}
                 />
 
                 <SelectField
@@ -950,7 +1138,7 @@ export default function EmployeeListPage({ rows = [] }) {
                 className="flex-1 py-2.5 bg-blue-700 text-white rounded-lg text-[13px] font-semibold hover:bg-blue-800 transition-colors"
                 disabled={saving}
               >
-                {saving ? 'Saving...' : 'Save'}
+                {saving ? 'Saving...' : editingId ? 'Update' : 'Save'}
               </button>
             </div>
           </div>

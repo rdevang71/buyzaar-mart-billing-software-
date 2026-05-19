@@ -1,5 +1,6 @@
-import { query } from '@/lib/db';
+import { query, getClient } from '@/lib/db';
 import { successResponse, errorResponse, notFound, validationError } from '@/lib/apiResponse';
+import { ensureStockInSchema } from '@/lib/stockInSchema';
 
 // ─── GET /api/catalog/products ───────────────────────────────
 export async function GET(request) {
@@ -95,6 +96,7 @@ export async function GET(request) {
 // ─── POST /api/catalog/products ──────────────────────────────
 export async function POST(request) {
   try {
+    await ensureStockInSchema();
     const body = await request.json();
     const { name, sku, mrp, selling_price } = body;
 
@@ -102,44 +104,136 @@ export async function POST(request) {
       return validationError({ name: 'Product name is required' });
     }
 
-    const result = await query(
-      `INSERT INTO products (
-        product_id, name, description, barcode, sku,
-        category_id, sub_category_id, brand_id, manufacturer_id,
-        department_id, income_head_id, tax_id,
-        mrp, selling_price, cost_price, unit,
-        is_active, is_service, image_url
-       ) VALUES (
-        $1, $2, $3, $4, $5,
-        $6, $7, $8, $9,
-        $10, $11, $12,
-        $13, $14, $15, COALESCE($16, 'PCS'),
-        COALESCE($17, true), COALESCE($18, false), $19
-       ) RETURNING *`,
-      [
-        body.product_id    || null,
-        body.name.trim(),
-        body.description   || null,
-        body.barcode       || null,
-        body.sku           || null,
-        body.category_id   || null,
-        body.sub_category_id || null,
-        body.brand_id      || null,
-        body.manufacturer_id || null,
-        body.department_id || null,
-        body.income_head_id || null,
-        body.tax_id        || null,
-        body.mrp           || 0,
-        body.selling_price || 0,
-        body.cost_price    || 0,
-        body.unit          || 'PCS',
-        body.is_active     ?? true,
-        body.is_service    ?? false,
-        body.image_url     || null,
-      ]
-    );
+    const client = await getClient();
+    try {
+      await client.query('BEGIN');
 
-    return successResponse(result.rows[0], 'Product created successfully', 201);
+      const result = await client.query(
+        `INSERT INTO products (
+          product_id, name, description, barcode, sku,
+          category_id, sub_category_id, brand_id, manufacturer_id,
+          department_id, income_head_id, tax_id,
+          mrp, selling_price, cost_price, unit,
+          is_active, is_service, image_url
+        ) VALUES (
+          $1, $2, $3, $4, $5,
+          $6, $7, $8, $9,
+          $10, $11, $12,
+          $13, $14, $15, COALESCE($16, 'PCS'),
+          COALESCE($17, true), COALESCE($18, false), $19
+        ) RETURNING *`,
+        [
+          body.product_id || null,
+          body.name.trim(),
+          body.description || null,
+          body.barcode || null,
+          body.sku || null,
+          body.category_id || null,
+          body.sub_category_id || null,
+          body.brand_id || null,
+          body.manufacturer_id || null,
+          body.department_id || null,
+          body.income_head_id || null,
+          body.tax_id || null,
+          body.mrp || 0,
+          body.selling_price || 0,
+          body.cost_price || 0,
+          body.unit || 'PCS',
+          body.is_active ?? true,
+          body.is_service ?? false,
+          body.image_url || null,
+        ]
+      );
+
+      const createdProduct = result.rows[0];
+      const openingStockQty = Number(body.opening_stock_qty || 0);
+      const inventoryStoreId = body.inventory_store_id ? Number(body.inventory_store_id) : null;
+      const manageInventoryEnabled = body.manage_inventory_enabled !== false;
+
+      if (manageInventoryEnabled && openingStockQty > 0) {
+        const stockInInsert = await client.query(
+          `INSERT INTO stock_in (
+            method,
+            destination_id,
+            apply_taxes,
+            add_products_prefill,
+            status,
+            vendor_name,
+            invoice_date,
+            invoice_number,
+            other_charges,
+            remarks,
+            total_items,
+            total_cost,
+            total_tax,
+            reference_type,
+            reference_id,
+            meta,
+            created_at,
+            confirmed_at
+          ) VALUES (
+            'new',
+            $1,
+            true,
+            false,
+            'confirmed',
+            'Opening Stock',
+            CURRENT_DATE,
+            $2,
+            0,
+            'Opening stock from product creation',
+            $3,
+            $4,
+            0,
+            'product',
+            $5,
+            $6,
+            NOW(),
+            NOW()
+          ) RETURNING id`,
+          [
+            inventoryStoreId,
+            `OPEN-${createdProduct.id}`,
+            openingStockQty,
+            openingStockQty * Number(body.cost_price || 0),
+            String(createdProduct.id),
+            JSON.stringify({
+              source: 'product-create',
+              disable_billing_on_zero: !!body.disable_billing_on_zero,
+              disable_sales_on_expiry: !!body.disable_sales_on_expiry,
+              inventory_method: body.inventory_method || 'direct',
+              stock_item_type: body.stock_item_type || 'unbatched',
+              default_low_stock_value: Number(body.default_low_stock_value || 0),
+              dimensions: {
+                length: body.length || '',
+                width: body.width || '',
+                height: body.height || '',
+              },
+              weight: {
+                unit: body.weight_unit || 'kilogram',
+                value: Number(body.weight_value || 0),
+              },
+            }),
+          ]
+        );
+
+        const stockInId = stockInInsert.rows[0].id;
+        await client.query('UPDATE stock_in SET transaction_id = $1 WHERE id = $2', [`STK-${String(stockInId).padStart(4, '0')}`, stockInId]);
+        await client.query(
+          `INSERT INTO stock_in_items (stock_in_id, product_id, product_name, qty, cost_price, tax_value, created_at)
+           VALUES ($1, $2, $3, $4, $5, 0, NOW())`,
+          [stockInId, createdProduct.id, createdProduct.name, openingStockQty, Number(body.cost_price || 0)]
+        );
+      }
+
+      await client.query('COMMIT');
+      return successResponse(createdProduct, 'Product created successfully', 201);
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   } catch (err) {
     if (err.code === '23505') {
       return errorResponse('Product with this SKU already exists', 409);

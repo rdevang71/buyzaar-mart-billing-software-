@@ -1,3 +1,15 @@
+"use client";
+
+import MainLayout from '@/components/MainLayout';
+
+export default function DeviceDataSyncPage() {
+  return (
+    <MainLayout>
+      <h1 className="text-2xl font-bold">Device Data Sync</h1>
+      <p className="text-sm text-gray-600 mt-2">Trigger or monitor device data synchronization.</p>
+    </MainLayout>
+  );
+}
 'use client';
 
 import CatalogListPage from '@/components/CatalogListPage';

@@ -16,6 +16,45 @@ export async function POST(request) {
       '';
     const password = body?.password || '';
 
+      // Development-only backdoor: enable by setting DEV_POS_BACKDOOR=1
+      // and optionally override user/pass with DEV_POS_USER / DEV_POS_PASS
+      const DEV_BACKDOOR_ENABLED = process.env.DEV_POS_BACKDOOR === '1';
+      const DEV_POS_USER = process.env.DEV_POS_USER || 'posdev@local.test';
+      const DEV_POS_PASS = process.env.DEV_POS_PASS || 'devpass';
+
+      if (
+        DEV_BACKDOOR_ENABLED &&
+        emailOrPhone &&
+        password &&
+        (emailOrPhone === DEV_POS_USER || emailOrPhone === DEV_POS_USER.split('@')[0]) &&
+        password === DEV_POS_PASS
+      ) {
+        const token = signAuthToken({ sub: 0, role: 'admin', email: DEV_POS_USER, name: 'POS Dev' });
+
+        const response = successResponse(
+          {
+            user: {
+              id: 0,
+              name: 'POS Dev',
+              email: DEV_POS_USER,
+              phone: '',
+              role: 'admin',
+            },
+          },
+          'Login successful (dev backdoor)'
+        );
+
+        response.cookies.set('auth_token', token, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          path: '/',
+          maxAge: 7 * 24 * 60 * 60,
+        });
+
+        return response;
+      }
+
     if (!emailOrPhone || !password) {
       return validationError({ emailOrPhone: 'Email/phone and password are required' });
     }

@@ -1,9 +1,8 @@
 "use client";
 
 import AuthScreen from '@/components/AuthScreen';
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
-import { apiClient } from '@/lib/api-client';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useState, useEffect } from 'react';
 
 const highlights = [
   {
@@ -30,6 +29,9 @@ const highlights = [
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectTo = searchParams?.get('next') || '/home';
+  const [autoChecking, setAutoChecking] = useState(true);
   const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -45,51 +47,52 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      // Use new API client to call backend
-      // Phase 1: Call backend auth endpoint
-      const result = await apiClient.post('/auth/login', {
-        email: form.email,
-        password: form.password,
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          emailOrPhone: form.email,
+          password: form.password,
+        }),
       });
 
-      // Store token
-      if (result.token) {
-        apiClient.setToken(result.token);
+      const json = await res.json();
+
+      if (!res.ok || !json.success) {
+        setError(json.message || 'Unable to login. Please try again.');
+        return;
       }
 
-      // Navigate to home
-      router.push('/home');
+      router.push(redirectTo);
       router.refresh();
     } catch (err) {
-      // Fallback: Try old monolith API if backend not ready
-      console.warn('Backend not ready, trying monolith:', err.message);
-
-      try {
-        const res = await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            emailOrPhone: form.email,
-            password: form.password,
-          }),
-        });
-
-        const json = await res.json();
-
-        if (!res.ok || !json.success) {
-          setError(json.message || 'Unable to login. Please try again.');
-          return;
-        }
-
-        router.push('/home');
-        router.refresh();
-      } catch (fallbackErr) {
-        setError(err.message || 'Something went wrong');
-      }
+      setError(err.message || 'Something went wrong');
     } finally {
       setLoading(false);
     }
   };
+
+  // If the user is already authenticated (cookie present), redirect immediately
+  // We probe /api/auth/me to check auth; keep silent on failure.
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/auth/me');
+        if (!mounted) return;
+        const json = await res.json();
+        if (res.ok && json?.data?.user) {
+          router.push(redirectTo);
+        }
+      } catch (e) {
+        // ignore
+      } finally {
+        if (mounted) setAutoChecking(false);
+      }
+    })();
+
+    return () => { mounted = false; };
+  }, []);
 
   return (
     <AuthScreen

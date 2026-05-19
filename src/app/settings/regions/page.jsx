@@ -1,3 +1,15 @@
+"use client";
+
+import MainLayout from '@/components/MainLayout';
+
+export default function RegionsPage() {
+  return (
+    <MainLayout>
+      <h1 className="text-2xl font-bold">Regions</h1>
+      <p className="text-sm text-gray-600 mt-2">Manage geographical regions for stores and reporting.</p>
+    </MainLayout>
+  );
+}
 'use client';
 
 import CatalogListPage from '@/components/CatalogListPage';

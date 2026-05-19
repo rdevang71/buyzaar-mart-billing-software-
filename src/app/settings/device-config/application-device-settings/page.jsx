@@ -1,3 +1,15 @@
+"use client";
+
+import MainLayout from '@/components/MainLayout';
+
+export default function ApplicationDeviceSettingsPage() {
+  return (
+    <MainLayout>
+      <h1 className="text-2xl font-bold">Application Device Settings</h1>
+      <p className="text-sm text-gray-600 mt-2">Configure application-level device settings.</p>
+    </MainLayout>
+  );
+}
 'use client';
 
 import CatalogListPage from '@/components/CatalogListPage';

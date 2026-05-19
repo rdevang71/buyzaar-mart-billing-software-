@@ -1,3 +1,15 @@
+"use client";
+
+import MainLayout from '@/components/MainLayout';
+
+export default function RoomsTablesPage() {
+  return (
+    <MainLayout>
+      <h1 className="text-2xl font-bold">Rooms & Tables</h1>
+      <p className="text-sm text-gray-600 mt-2">Manage room and table definitions for dine-in POS.</p>
+    </MainLayout>
+  );
+}
 'use client';
 
 import CatalogListPage from '@/components/CatalogListPage';

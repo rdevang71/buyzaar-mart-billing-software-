@@ -44,6 +44,9 @@ const CREATE_PRODUCT_SALEABILITY_SQL = `
     product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     store_id BIGINT REFERENCES stores(id) ON DELETE CASCADE,
     is_active BOOLEAN NOT NULL DEFAULT true,
+    selling_price NUMERIC(14, 2) NOT NULL DEFAULT 0,
+    mrp NUMERIC(14, 2) NOT NULL DEFAULT 0,
+    low_stock_value NUMERIC(14, 2) NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (product_id, store_id)
@@ -124,6 +127,12 @@ export async function ensureCatalogExtrasSchema() {
       await query(CREATE_SERVICE_DEPARTMENTS_SQL);
       await query(CREATE_SERVICES_SQL);
       await query(CREATE_PRODUCT_SALEABILITY_SQL);
+      await query(`
+        ALTER TABLE product_saleability
+          ADD COLUMN IF NOT EXISTS selling_price NUMERIC(14, 2) NOT NULL DEFAULT 0,
+          ADD COLUMN IF NOT EXISTS mrp NUMERIC(14, 2) NOT NULL DEFAULT 0,
+          ADD COLUMN IF NOT EXISTS low_stock_value NUMERIC(14, 2) NOT NULL DEFAULT 0;
+      `);
       await query(CREATE_PROMOTIONS_SQL);
       await query(CREATE_VOUCHERS_SQL);
       await query(CREATE_MEMBERSHIPS_SQL);

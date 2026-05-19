@@ -35,6 +35,20 @@ const initialForm = {
   is_sellable_on_pos: true,
   allow_variable_pricing: false,
   include_tax: false,
+  manage_inventory_enabled: true,
+  inventory_store_id: '',
+  opening_stock_qty: '',
+  default_low_stock_value: '',
+  disable_billing_on_zero: true,
+  disable_sales_on_expiry: false,
+  inventory_method: 'direct',
+  stock_item_type: 'unbatched',
+  dimension_unit: 'metre',
+  length: '',
+  width: '',
+  height: '',
+  weight_unit: 'kilogram',
+  weight_value: '',
   image_url: '',
 };
 
@@ -95,7 +109,11 @@ export default function CreateProductPage() {
     try {
       const response = await fetch(url);
       const json = await response.json();
-      if (json.success) setter(json.data.records || []);
+      if (json.success) {
+        if (Array.isArray(json.data?.records)) setter(json.data.records);
+        else if (Array.isArray(json.data?.stores)) setter(json.data.stores);
+        else setter([]);
+      }
     } catch {
       setter([]);
     }
@@ -212,6 +230,20 @@ export default function CreateProductPage() {
           include_tax: form.include_tax,
           is_sellable_on_pos: form.is_sellable_on_pos,
           allow_variable_pricing: form.allow_variable_pricing,
+          manage_inventory_enabled: form.manage_inventory_enabled,
+          inventory_store_id: form.inventory_store_id || null,
+          opening_stock_qty: Number(form.opening_stock_qty || 0),
+          default_low_stock_value: Number(form.default_low_stock_value || 0),
+          disable_billing_on_zero: form.disable_billing_on_zero,
+          disable_sales_on_expiry: form.disable_sales_on_expiry,
+          inventory_method: form.inventory_method,
+          stock_item_type: form.stock_item_type,
+          dimension_unit: form.dimension_unit,
+          length: form.length || '',
+          width: form.width || '',
+          height: form.height || '',
+          weight_unit: form.weight_unit,
+          weight_value: Number(form.weight_value || 0),
         }),
       });
       const json = await response.json();
@@ -228,7 +260,14 @@ export default function CreateProductPage() {
         await Promise.allSettled(activeStores.map(([storeId, row]) => fetch('/api/catalog/product-saleability', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ product_id: productId, store_id: storeId, is_active: row.enabled }),
+          body: JSON.stringify({
+            product_id: productId,
+            store_id: storeId,
+            is_active: row.enabled,
+            selling_price: Number(row.selling_price || form.selling_price || 0),
+            mrp: Number(row.mrp || form.mrp || 0),
+            low_stock_value: Number(row.low_stock_value || form.default_low_stock_value || 0),
+          }),
         })));
       }
 
@@ -523,6 +562,161 @@ export default function CreateProductPage() {
               </table>
             </div>
             <div className="text-xs text-gray-500">Store rows are saved as product saleability records after the product is created.</div>
+          </div>
+        </Card>
+
+        <Card title="Manage Inventory" description="Define opening stock and inventory behavior; opening stock is posted directly to inventory.">
+          <div className="space-y-5">
+            <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-gray-800">Enable Inventory Controls</p>
+                <p className="text-xs text-gray-500">Turn this on to configure stock settings for this product.</p>
+              </div>
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={form.manage_inventory_enabled}
+                  onChange={(event) => set('manage_inventory_enabled', event.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+              </label>
+            </div>
+
+            {form.manage_inventory_enabled && (
+              <>
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div>
+                    <Label>Opening Stock Store</Label>
+                    <select
+                      value={form.inventory_store_id}
+                      onChange={(event) => set('inventory_store_id', event.target.value)}
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500"
+                    >
+                      <option value="">Select store</option>
+                      {stores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <Label>Opening Stock Qty</Label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={form.opening_stock_qty}
+                      onChange={(event) => set('opening_stock_qty', event.target.value)}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <Label>Default Low Stock Value</Label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={form.default_low_stock_value}
+                      onChange={(event) => set('default_low_stock_value', event.target.value)}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <label className="flex items-start gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={form.disable_billing_on_zero}
+                      onChange={(event) => set('disable_billing_on_zero', event.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span>
+                      <span className="block font-medium text-gray-800">Product not available for billing if stock is zero</span>
+                      <span className="mt-0.5 block text-xs text-gray-500">Disable billing when stock reaches zero.</span>
+                    </span>
+                  </label>
+
+                  <label className="flex items-start gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={form.disable_sales_on_expiry}
+                      onChange={(event) => set('disable_sales_on_expiry', event.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span>
+                      <span className="block font-medium text-gray-800">Disable sales on stock expiry</span>
+                      <span className="mt-0.5 block text-xs text-gray-500">Prevents billing for expired stock.</span>
+                    </span>
+                  </label>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Select Inventory Method</p>
+                    <div className="mt-3 space-y-2">
+                      <label className="flex items-center gap-2 text-sm text-gray-700">
+                        <input type="radio" checked={form.inventory_method === 'direct'} onChange={() => set('inventory_method', 'direct')} className="h-4 w-4 text-blue-600" />
+                        <span>Direct</span>
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-gray-700">
+                        <input type="radio" checked={form.inventory_method === 'indirect'} onChange={() => set('inventory_method', 'indirect')} className="h-4 w-4 text-blue-600" />
+                        <span>Indirect</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Stock Item Type</p>
+                    <div className="mt-3 space-y-2">
+                      <label className="flex items-center gap-2 text-sm text-gray-700">
+                        <input type="radio" checked={form.stock_item_type === 'batched'} onChange={() => set('stock_item_type', 'batched')} className="h-4 w-4 text-blue-600" />
+                        <span>Batched Product</span>
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-gray-700">
+                        <input type="radio" checked={form.stock_item_type === 'unbatched'} onChange={() => set('stock_item_type', 'unbatched')} className="h-4 w-4 text-blue-600" />
+                        <span>Unbatched Product</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-4">
+                  <div>
+                    <Label>Unit & Dimensions</Label>
+                    <select value={form.dimension_unit} onChange={(event) => set('dimension_unit', event.target.value)} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500">
+                      <option value="metre">Metre</option>
+                      <option value="cm">Centimetre</option>
+                      <option value="inch">Inch</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label>Length</Label>
+                    <input type="number" min="0" value={form.length} onChange={(event) => set('length', event.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <Label>Width</Label>
+                    <input type="number" min="0" value={form.width} onChange={(event) => set('width', event.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <Label>Height</Label>
+                    <input type="number" min="0" value={form.height} onChange={(event) => set('height', event.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500" />
+                  </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <Label>Weight Unit</Label>
+                    <select value={form.weight_unit} onChange={(event) => set('weight_unit', event.target.value)} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500">
+                      <option value="kilogram">Kilogram</option>
+                      <option value="gram">Gram</option>
+                      <option value="pound">Pound</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label>Weight Value</Label>
+                    <input type="number" min="0" value={form.weight_value} onChange={(event) => set('weight_value', event.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500" />
+                  </div>
+                </div>
+
+                <p className="text-xs text-gray-500">If opening stock qty is greater than 0, a confirmed inventory stock-in entry is created automatically.</p>
+              </>
+            )}
           </div>
         </Card>
       </div>

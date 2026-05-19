@@ -1,3 +1,15 @@
+"use client";
+
+import MainLayout from '@/components/MainLayout';
+
+export default function BusinessInfoPage() {
+  return (
+    <MainLayout>
+      <h1 className="text-2xl font-bold">Business Info</h1>
+      <p className="text-sm text-gray-600 mt-2">Manage company/business profile and registration details.</p>
+    </MainLayout>
+  );
+}
 'use client';
 
 import CatalogListPage from '@/components/CatalogListPage';

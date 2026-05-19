@@ -1,3 +1,15 @@
+"use client";
+
+import MainLayout from '@/components/MainLayout';
+
+export default function DeviceSyncLogsPage() {
+  return (
+    <MainLayout>
+      <h1 className="text-2xl font-bold">Device Sync Logs</h1>
+      <p className="text-sm text-gray-600 mt-2">View device synchronization logs.</p>
+    </MainLayout>
+  );
+}
 'use client';
 
 import CatalogListPage from '@/components/CatalogListPage';
