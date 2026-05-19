@@ -53,14 +53,64 @@ export async function POST(request) {
     await ensureCatalogExtrasSchema();
     const body = await request.json();
     if (!body.name?.trim()) return validationError({ name: 'Name is required' });
+    // normalize duration fields
+    const duration_minutes = Number(body.duration_minutes || 0);
+    const extra_time_minutes = Number(body.extra_time_minutes || 0);
 
     const result = await query(
-      `INSERT INTO services (name, service_group_id, service_department_id, price, duration_minutes, is_active)
-       VALUES ($1, $2, $3, $4, $5, COALESCE($6, true)) RETURNING *`,
-      [body.name.trim(), body.service_group_id || null, body.service_department_id || null, body.price || 0, body.duration_minutes || 0, body.is_active ?? true]
+      `INSERT INTO services (
+         name, service_group_id, service_department_id, income_head_id, price, duration_minutes, hsn_code, sku,
+         is_active, image_url, description, sub_category_id, show_in_receipt, dynamic_pricing, variable_pricing,
+         tax_id, barcode, extra_time_minutes, manage_inventory, security_amount, reclaim_type, reclaim_value, includes_tax, metadata
+       ) VALUES (
+         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24
+       ) RETURNING *`,
+      [
+        body.name.trim(),
+        body.service_group_id || null,
+        body.service_department_id || null,
+        body.income_head_id || null,
+        body.price || 0,
+        duration_minutes,
+        body.hsn_code || null,
+        body.sku || null,
+        body.is_active ?? true,
+        body.image_url || null,
+        body.description || null,
+        body.sub_category_id || null,
+        body.show_in_receipt ?? true,
+        body.dynamic_pricing ?? false,
+        body.variable_pricing ?? false,
+        body.tax_id || null,
+        body.barcode || null,
+        extra_time_minutes,
+        body.manage_inventory ?? false,
+        body.security_amount || 0,
+        body.reclaim_type || null,
+        body.reclaim_value || 0,
+        body.includes_tax ?? false,
+        body.metadata || null,
+      ]
     );
 
-    return successResponse(result.rows[0], 'Service created successfully', 201);
+    const created = result.rows[0];
+
+    // handle per-store prices if provided
+    if (Array.isArray(body.storePrices) && body.storePrices.length) {
+      for (const sp of body.storePrices) {
+        try {
+          await query(
+            `INSERT INTO service_saleability (service_id, store_id, price, is_active) VALUES ($1,$2,$3,COALESCE($4,true))
+             ON CONFLICT (service_id, store_id) DO UPDATE SET price = EXCLUDED.price, is_active = EXCLUDED.is_active, updated_at = NOW()`,
+            [created.id, sp.store_id, sp.price || 0, sp.is_active ?? true]
+          );
+        } catch (err) {
+          // ignore individual store price errors
+        }
+      }
+    }
+
+    return successResponse(created, 'Service created successfully', 201);
   } catch (err) {
     if (err.code === '23505') return errorResponse('Service already exists', 409);
     return errorResponse(err.message);

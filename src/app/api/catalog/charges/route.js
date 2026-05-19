@@ -1,9 +1,33 @@
 import { query } from '@/lib/db';
-import { successResponse, errorResponse, notFoundError, validationError } from '@/lib/api-response';
+import { successResponse, errorResponse, notFound, validationError } from '@/lib/apiResponse';
+import { ensureCatalogExtrasSchema } from '@/lib/catalogExtrasSchema';
 
 // ─── GET /api/catalog/charges ───────────────────────────────
 export async function GET(request) {
   try {
+    await ensureCatalogExtrasSchema();
+    // Ensure charges table has extended columns (in case schema migrations ran earlier)
+    try {
+      const ensureColumn = async (colName, sql) => {
+        const res = await query(`SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'charges' AND column_name = $1`, [colName]);
+        const has = parseInt(res.rows[0].count) > 0;
+        if (!has) await query(sql);
+      };
+
+      await ensureColumn('tax_id', `ALTER TABLE charges ADD COLUMN IF NOT EXISTS tax_id BIGINT REFERENCES taxes(id) ON DELETE SET NULL`);
+      await ensureColumn('store_id', `ALTER TABLE charges ADD COLUMN IF NOT EXISTS store_id BIGINT REFERENCES stores(id) ON DELETE SET NULL`);
+      await ensureColumn('department_id', `ALTER TABLE charges ADD COLUMN IF NOT EXISTS department_id BIGINT REFERENCES departments(id) ON DELETE SET NULL`);
+
+      // Add application-specific columns that may be missing
+      await ensureColumn('charge_applied_on', `ALTER TABLE charges ADD COLUMN IF NOT EXISTS charge_applied_on VARCHAR(50) NOT NULL DEFAULT 'Product'`);
+      await ensureColumn('apply_on_order_delivery', `ALTER TABLE charges ADD COLUMN IF NOT EXISTS apply_on_order_delivery BOOLEAN NOT NULL DEFAULT false`);
+      await ensureColumn('max_order_value', `ALTER TABLE charges ADD COLUMN IF NOT EXISTS max_order_value NUMERIC`);
+      await ensureColumn('apply_only_online_orders', `ALTER TABLE charges ADD COLUMN IF NOT EXISTS apply_only_online_orders BOOLEAN NOT NULL DEFAULT false`);
+      await ensureColumn('order_type', `ALTER TABLE charges ADD COLUMN IF NOT EXISTS order_type VARCHAR(50) DEFAULT 'Any'`);
+      await ensureColumn('channel', `ALTER TABLE charges ADD COLUMN IF NOT EXISTS channel VARCHAR(50) DEFAULT 'Both'`);
+    } catch (e) {
+      // ignore migration/race errors so API returns a controllable error instead of crashing
+    }
     const { searchParams } = new URL(request.url);
     const search   = searchParams.get('search')   || '';
     const page     = parseInt(searchParams.get('page')     || '1');
@@ -21,8 +45,16 @@ export async function GET(request) {
     const total = parseInt(countResult.rows[0].count);
 
     const result = await query(
-      `SELECT id, name, charge_type, amount, is_active, created_at
+      `SELECT t.id, t.name, t.charge_type, t.amount, t.is_active, t.created_at,
+              t.charge_applied_on, t.apply_on_order_delivery, t.max_order_value,
+              t.tax_id, tx.name AS tax_name,
+              t.store_id, s.name AS store_name,
+              t.apply_only_online_orders, t.order_type, t.channel, t.department_id,
+              d.name AS department_name
        FROM charges t
+       LEFT JOIN taxes tx ON tx.id = t.tax_id
+       LEFT JOIN stores s ON s.id = t.store_id
+       LEFT JOIN departments d ON d.id = t.department_id
        ${whereClause}
        ORDER BY t.id DESC
        LIMIT $1 OFFSET $2`,
@@ -46,6 +78,7 @@ export async function GET(request) {
 // ─── POST /api/catalog/charges ──────────────────────────────
 export async function POST(request) {
   try {
+    await ensureCatalogExtrasSchema();
     const body = await request.json();
     const { name } = body;
 
@@ -54,10 +87,33 @@ export async function POST(request) {
     }
 
     const result = await query(
-      `INSERT INTO charges (name, charge_type, amount, is_active)
-       VALUES ($1, COALESCE($2,'FIXED'), COALESCE($3,0), COALESCE($4, true))
+      `INSERT INTO charges (
+         name, charge_type, amount, is_active,
+         charge_applied_on, apply_on_order_delivery, max_order_value,
+         tax_id, store_id, apply_only_online_orders,
+         order_type, channel, department_id
+       ) VALUES (
+         $1, COALESCE($2,'FIXED'), COALESCE($3,0), COALESCE($4, true),
+         COALESCE($5,'Product'), COALESCE($6,false), COALESCE($7,0),
+         $8, $9, COALESCE($10,false),
+         $11, $12, $13
+       )
        RETURNING *`,
-      [body.name?.trim(), body.charge_type || 'FIXED', body.amount || 0, body.is_active ?? true]
+      [
+        body.name?.trim(),
+        body.charge_type || 'FIXED',
+        body.amount || 0,
+        body.is_active ?? true,
+        body.charge_applied_on || 'Product',
+        body.apply_on_order_delivery ?? false,
+        body.max_order_value || 0,
+        body.tax_id || null,
+        body.store_id || null,
+        body.apply_only_online_orders ?? false,
+        body.order_type || null,
+        body.channel || null,
+        body.department_id || null,
+      ]
     );
 
     return successResponse(result.rows[0], 'Charge created successfully', 201);

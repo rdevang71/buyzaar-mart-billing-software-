@@ -62,13 +62,45 @@ export async function GET(request) {
 
     const { searchParams } = new URL(request.url);
     const statusFilter = normalizeText(searchParams.get('status'));
+    const search = normalizeText(searchParams.get('search'));
+    const searchBy = normalizeText(searchParams.get('searchBy'));
     const params = [];
-    const whereClause = statusFilter
-      ? (() => {
-          params.push(statusFilter);
-          return `WHERE status = $${params.length}`;
-        })()
-      : '';
+    const where = [];
+
+    if (statusFilter) {
+      params.push(statusFilter);
+      where.push(`status = $${params.length}`);
+    }
+
+    if (search) {
+      params.push(`%${search}%`);
+      const idx = params.length;
+
+      if (searchBy === 'Name') {
+        where.push(`TRIM(COALESCE(first_name, '') || ' ' || COALESCE(last_name, '')) ILIKE $${idx}`);
+      } else if (searchBy === 'Phone') {
+        where.push(`COALESCE(mobile_number, '') ILIKE $${idx}`);
+      } else if (searchBy === 'Email') {
+        where.push(`COALESCE(email_address, '') ILIKE $${idx}`);
+      } else if (searchBy === 'GST Number') {
+        where.push(`COALESCE(gst_number, '') ILIKE $${idx}`);
+      } else if (searchBy === 'PAN Number') {
+        where.push(`COALESCE(pan_number, '') ILIKE $${idx}`);
+      } else if (searchBy === 'ID') {
+        where.push(`CAST(id AS TEXT) ILIKE $${idx}`);
+      } else {
+        where.push(`(
+          COALESCE(first_name, '') ILIKE $${idx}
+          OR COALESCE(last_name, '') ILIKE $${idx}
+          OR TRIM(COALESCE(first_name, '') || ' ' || COALESCE(last_name, '')) ILIKE $${idx}
+          OR COALESCE(customer_code, '') ILIKE $${idx}
+          OR COALESCE(mobile_number, '') ILIKE $${idx}
+          OR COALESCE(email_address, '') ILIKE $${idx}
+        )`);
+      }
+    }
+
+    const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
     const res = await query(
       `SELECT id, first_name, last_name, customer_type, customer_code, email_address, birthday, mobile_number,

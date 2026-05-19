@@ -2,36 +2,83 @@ import { query } from '@/lib/db';
 import { successResponse, errorResponse, validationError } from '@/lib/api-response';
 import { ensureCatalogExtrasSchema } from '@/lib/catalogExtrasSchema';
 
+function toDateString(v) {
+  if (!v) return null;
+  try { return String(v).slice(0, 10); } catch { return null; }
+}
+
+function safeNumber(v, fallback = null) {
+  if (v === null || v === undefined || v === '') return fallback;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+async function ensurePromotionsColumns() {
+  // Idempotent column additions in case global schema migration didn't run yet
+  await query(`ALTER TABLE promotions ADD COLUMN IF NOT EXISTS store_id BIGINT`);
+  await query(`ALTER TABLE promotions ADD COLUMN IF NOT EXISTS discount_applied_on VARCHAR(60) NOT NULL DEFAULT 'ORDER'`);
+  await query(`ALTER TABLE promotions ADD COLUMN IF NOT EXISTS max_repeat_count INTEGER NOT NULL DEFAULT 0`);
+  await query(`ALTER TABLE promotions ADD COLUMN IF NOT EXISTS use_for_customer BOOLEAN NOT NULL DEFAULT false`);
+  await query(`ALTER TABLE promotions ADD COLUMN IF NOT EXISTS remove_other_discounts BOOLEAN NOT NULL DEFAULT false`);
+  await query(`ALTER TABLE promotions ADD COLUMN IF NOT EXISTS is_auto_applied BOOLEAN NOT NULL DEFAULT false`);
+  await query(`ALTER TABLE promotions ADD COLUMN IF NOT EXISTS min_cart_value NUMERIC(14,2) NOT NULL DEFAULT 0`);
+  await query(`ALTER TABLE promotions ADD COLUMN IF NOT EXISTS max_discount_value NUMERIC(14,2) NOT NULL DEFAULT 0`);
+  await query(`ALTER TABLE promotions ADD COLUMN IF NOT EXISTS apply_after_tax BOOLEAN NOT NULL DEFAULT false`);
+  await query(`ALTER TABLE promotions ADD COLUMN IF NOT EXISTS allow_merging BOOLEAN NOT NULL DEFAULT false`);
+  await query(`ALTER TABLE promotions ADD COLUMN IF NOT EXISTS apply_on_product_mrp BOOLEAN NOT NULL DEFAULT false`);
+  await query(`ALTER TABLE promotions ADD COLUMN IF NOT EXISTS description TEXT`);
+  await query(`ALTER TABLE promotions ADD COLUMN IF NOT EXISTS products JSONB`);
+  await query(`ALTER TABLE promotions ADD COLUMN IF NOT EXISTS coupon_enabled BOOLEAN NOT NULL DEFAULT false`);
+  await query(`ALTER TABLE promotions ADD COLUMN IF NOT EXISTS promotion_slots_enabled BOOLEAN NOT NULL DEFAULT false`);
+}
+
 export async function GET(request) {
   try {
     await ensureCatalogExtrasSchema();
+    await ensurePromotionsColumns();
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search') || '';
-    const page = parseInt(searchParams.get('page') || '1');
-    const pageSize = parseInt(searchParams.get('pageSize') || '10');
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
+    const pageSize = Math.min(100, Math.max(1, parseInt(searchParams.get('pageSize') || '10', 10)));
     const offset = (page - 1) * pageSize;
 
     const params = [];
-    const where = search ? `WHERE name ILIKE $1 OR promotion_type ILIKE $1 OR status ILIKE $1` : '';
-    if (search) params.push(`%${search}%`);
+    const conditions = [];
 
-    const count = await query(`SELECT COUNT(*) FROM promotions ${where}`, params);
-    params.push(pageSize, offset);
+    if (search.trim()) {
+      params.push(`%${search.trim()}%`);
+      conditions.push(`(name ILIKE $${params.length} OR promotion_type ILIKE $${params.length} OR status ILIKE $${params.length})`);
+    }
+
+    const statusFilter = searchParams.get('status');
+    if (statusFilter) {
+      params.push(String(statusFilter));
+      conditions.push(`status = $${params.length}`);
+    }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const countRes = await query(`SELECT COUNT(*)::int AS n FROM promotions ${where}`, params);
+    const total = countRes.rows[0].n || 0;
+
+    const limIdx = params.length + 1;
+    const offIdx = params.length + 2;
+
     const result = await query(
       `SELECT id, name, promotion_type, discount_value, start_date, end_date, status, created_at
        FROM promotions
        ${where}
        ORDER BY id DESC
-       LIMIT $${params.length - 1} OFFSET $${params.length}`,
-      params
+       LIMIT $${limIdx} OFFSET $${offIdx}`,
+      [...params, pageSize, offset]
     );
 
     return successResponse({
       records: result.rows,
-      total: parseInt(count.rows[0].count),
+      total,
       page,
       pageSize,
-      totalPages: Math.ceil(parseInt(count.rows[0].count) / pageSize),
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
     });
   } catch (err) {
     return errorResponse(err.message);
@@ -41,13 +88,74 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     await ensureCatalogExtrasSchema();
+    await ensurePromotionsColumns();
     const body = await request.json();
-    if (!body.name?.trim()) return validationError({ name: 'Name is required' });
+    const name = String(body.name || '').trim();
+    if (!name) return validationError({ name: 'Name is required' });
+
+    const promotionType = String(body.promotion_type || body.type || 'Discount');
+    const discountValue = String(body.discount_value ?? body.discount ?? '0');
+    const startDate = toDateString(body.start_date || body.startDate);
+    const endDate = toDateString(body.end_date || body.endDate);
+
+    // extra fields
+    const storeId = safeNumber(body.store_id, null);
+    const discountAppliedOn = String(body.discount_applied_on || body.discountAppliedOn || 'ORDER');
+    const maxRepeatCount = safeNumber(body.max_repeat_count ?? body.maxRepeatCount, 0) || 0;
+    const useForCustomer = !!body.use_for_customer || !!body.useForCustomer;
+    const removeOtherDiscounts = !!body.remove_other_discounts || !!body.removeOtherDiscounts;
+    const isAutoApplied = !!body.is_auto_applied || !!body.isAutoApplied;
+    const minCartValue = safeNumber(body.min_cart_value ?? body.minCartValue, 0) || 0;
+    const maxDiscountValue = safeNumber(body.max_discount_value ?? body.maxDiscountValue, 0) || 0;
+    const applyAfterTax = !!body.apply_after_tax || !!body.applyAfterTax;
+    const allowMerging = !!body.allow_merging || !!body.allowMerging;
+    const applyOnProductMrp = !!body.apply_on_product_mrp || !!body.applyOnProductMrp;
+    const description = body.description ? String(body.description) : null;
+    let products = null;
+    if (body.products) {
+      if (Array.isArray(body.products)) products = body.products;
+      else if (typeof body.products === 'string') {
+        // accept comma-separated product ids/tokens
+        products = body.products.split(',').map(s => s.trim()).filter(Boolean);
+      }
+    }
+    const couponEnabled = !!body.coupon_enabled || !!body.couponEnabled;
+    const promotionSlotsEnabled = !!body.promotion_slots_enabled || !!body.promotionSlotsEnabled;
 
     const result = await query(
-      `INSERT INTO promotions (name, promotion_type, discount_value, start_date, end_date, status)
-       VALUES ($1, $2, $3, $4, $5, COALESCE($6, 'Active')) RETURNING *`,
-      [body.name.trim(), body.promotion_type || 'Discount', body.discount_value || '0', body.start_date || null, body.end_date || null, body.status || 'Active']
+      `INSERT INTO promotions (
+        name, promotion_type, discount_value, start_date, end_date, status,
+        store_id, discount_applied_on, max_repeat_count, use_for_customer, remove_other_discounts,
+        is_auto_applied, min_cart_value, max_discount_value, apply_after_tax, allow_merging,
+        apply_on_product_mrp, description, products, coupon_enabled, promotion_slots_enabled,
+        created_at, updated_at
+      ) VALUES (
+        $1,$2,$3,$4,$5,COALESCE($6, 'Active'),
+        $7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,NOW(),NOW()
+      ) RETURNING *`,
+      [
+        name,
+        promotionType,
+        discountValue,
+        startDate,
+        endDate,
+        body.status || 'Active',
+        storeId,
+        discountAppliedOn,
+        maxRepeatCount,
+        useForCustomer,
+        removeOtherDiscounts,
+        isAutoApplied,
+        minCartValue,
+        maxDiscountValue,
+        applyAfterTax,
+        allowMerging,
+        applyOnProductMrp,
+        description,
+        products ? JSON.stringify(products) : null,
+        couponEnabled,
+        promotionSlotsEnabled,
+      ]
     );
 
     return successResponse(result.rows[0], 'Promotion created successfully', 201);
