@@ -165,6 +165,177 @@ const CREATE_PRODUCT_GROUP_STORES_SQL = `
 `;
 
 const globalForCatalogExtras = globalThis;
+const globalForCombos = globalThis;
+const globalForMemberships = globalThis;
+const globalForVouchers = globalThis;
+
+/** Bump when combo DDL changes so dev hot-reload re-runs migrations. */
+const COMBOS_SCHEMA_VERSION = 1;
+/** Bump when membership DDL changes so dev hot-reload re-runs migrations. */
+const MEMBERSHIPS_SCHEMA_VERSION = 1;
+/** Bump when voucher DDL changes so dev hot-reload re-runs migrations. */
+const VOUCHERS_SCHEMA_VERSION = 1;
+
+async function migrateVouchersTable() {
+  await query(CREATE_VOUCHERS_SQL);
+  await query(`ALTER TABLE vouchers ADD COLUMN IF NOT EXISTS description TEXT`);
+  await query(`ALTER TABLE vouchers ADD COLUMN IF NOT EXISTS valid_from DATE`);
+  await query(`ALTER TABLE vouchers ADD COLUMN IF NOT EXISTS valid_to DATE`);
+  await query(`ALTER TABLE vouchers ADD COLUMN IF NOT EXISTS voucher_type VARCHAR(40) NOT NULL DEFAULT 'ABSOLUTE'`);
+  await query(`ALTER TABLE vouchers ADD COLUMN IF NOT EXISTS max_voucher_value NUMERIC(14, 2) NOT NULL DEFAULT 0`);
+  await query(`ALTER TABLE vouchers ADD COLUMN IF NOT EXISTS allocated_count INTEGER NOT NULL DEFAULT 0`);
+  await query(`ALTER TABLE vouchers ADD COLUMN IF NOT EXISTS available_count INTEGER NOT NULL DEFAULT 0`);
+  await query(`ALTER TABLE vouchers ADD COLUMN IF NOT EXISTS redeemed_count INTEGER NOT NULL DEFAULT 0`);
+  await query(`ALTER TABLE vouchers ADD COLUMN IF NOT EXISTS is_used BOOLEAN NOT NULL DEFAULT false`);
+  await query(`ALTER TABLE vouchers ADD COLUMN IF NOT EXISTS customer_id BIGINT`);
+  await query(`ALTER TABLE vouchers ADD COLUMN IF NOT EXISTS store_id BIGINT`);
+  await query(`ALTER TABLE vouchers ADD COLUMN IF NOT EXISTS device_id VARCHAR(120)`);
+  await query(`ALTER TABLE vouchers ADD COLUMN IF NOT EXISTS is_blocked BOOLEAN NOT NULL DEFAULT false`);
+}
+
+/** Ensures vouchers columns exist (independent cache). */
+export async function ensureVouchersSchema() {
+  if (globalForVouchers._vouchersSchemaVersion !== VOUCHERS_SCHEMA_VERSION) {
+    globalForVouchers._vouchersSchemaReadyPromise = null;
+    globalForVouchers._vouchersSchemaVersion = VOUCHERS_SCHEMA_VERSION;
+  }
+
+  if (!globalForVouchers._vouchersSchemaReadyPromise) {
+    globalForVouchers._vouchersSchemaReadyPromise = migrateVouchersTable().catch((err) => {
+      globalForVouchers._vouchersSchemaReadyPromise = null;
+      throw err;
+    });
+  }
+
+  await globalForVouchers._vouchersSchemaReadyPromise;
+}
+
+async function migrateMembershipsTable() {
+  await query(CREATE_MEMBERSHIPS_SQL);
+  await query(`ALTER TABLE memberships DROP CONSTRAINT IF EXISTS memberships_name_key`);
+  await query(`ALTER TABLE memberships ADD COLUMN IF NOT EXISTS appearance_type VARCHAR(20) NOT NULL DEFAULT 'image'`);
+  await query(`ALTER TABLE memberships ADD COLUMN IF NOT EXISTS image_url TEXT`);
+  await query(`ALTER TABLE memberships ADD COLUMN IF NOT EXISTS color VARCHAR(20)`);
+  await query(`ALTER TABLE memberships ADD COLUMN IF NOT EXISTS membership_code VARCHAR(120)`);
+  await query(
+    `ALTER TABLE memberships ADD COLUMN IF NOT EXISTS category_id BIGINT REFERENCES categories(id) ON DELETE SET NULL`
+  );
+  await query(
+    `ALTER TABLE memberships ADD COLUMN IF NOT EXISTS sub_category_id BIGINT REFERENCES sub_categories(id) ON DELETE SET NULL`
+  );
+  await query(`ALTER TABLE memberships ADD COLUMN IF NOT EXISTS description TEXT`);
+  await query(`ALTER TABLE memberships ADD COLUMN IF NOT EXISTS show_in_catalog BOOLEAN NOT NULL DEFAULT true`);
+  await query(`ALTER TABLE memberships ADD COLUMN IF NOT EXISTS price NUMERIC(14, 2) NOT NULL DEFAULT 0`);
+  await query(`ALTER TABLE memberships ADD COLUMN IF NOT EXISTS is_tax_inclusive BOOLEAN NOT NULL DEFAULT false`);
+  await query(
+    `ALTER TABLE memberships ADD COLUMN IF NOT EXISTS tax_id BIGINT REFERENCES taxes(id) ON DELETE SET NULL`
+  );
+  await query(`ALTER TABLE memberships ADD COLUMN IF NOT EXISTS charge_id BIGINT`);
+  await query(`ALTER TABLE memberships ADD COLUMN IF NOT EXISTS hsn_code VARCHAR(80)`);
+  await query(`ALTER TABLE memberships ADD COLUMN IF NOT EXISTS discount_type VARCHAR(60)`);
+  await query(`ALTER TABLE memberships ADD COLUMN IF NOT EXISTS discount_value NUMERIC(14, 2) NOT NULL DEFAULT 0`);
+  await query(`ALTER TABLE memberships ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1`);
+  await query(`ALTER TABLE memberships ADD COLUMN IF NOT EXISTS validity_days INTEGER NOT NULL DEFAULT 365`);
+  await query(`ALTER TABLE memberships ADD COLUMN IF NOT EXISTS auto_renew BOOLEAN NOT NULL DEFAULT false`);
+  await query(`ALTER TABLE memberships ADD COLUMN IF NOT EXISTS update_existing BOOLEAN NOT NULL DEFAULT false`);
+  await query(`ALTER TABLE memberships ADD COLUMN IF NOT EXISTS min_amount_required NUMERIC(14, 2) NOT NULL DEFAULT 0`);
+  await query(`ALTER TABLE memberships ADD COLUMN IF NOT EXISTS max_customer_type VARCHAR(120)`);
+  await query(`ALTER TABLE memberships ADD COLUMN IF NOT EXISTS customer_group_id BIGINT`);
+  await query(`ALTER TABLE memberships ADD COLUMN IF NOT EXISTS store_wise_pricing BOOLEAN NOT NULL DEFAULT false`);
+  await query(`
+    CREATE TABLE IF NOT EXISTS membership_products (
+      id BIGSERIAL PRIMARY KEY,
+      membership_id BIGINT NOT NULL REFERENCES memberships(id) ON DELETE CASCADE,
+      product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      quantity NUMERIC(14, 3) NOT NULL DEFAULT 1,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (membership_id, product_id)
+    );
+  `);
+  await query(`
+    CREATE TABLE IF NOT EXISTS membership_store_prices (
+      id BIGSERIAL PRIMARY KEY,
+      membership_id BIGINT NOT NULL REFERENCES memberships(id) ON DELETE CASCADE,
+      store_id BIGINT NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      price NUMERIC(14, 2) NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (membership_id, store_id)
+    );
+  `);
+}
+
+/** Ensures memberships + related tables/columns exist (independent cache). */
+export async function ensureMembershipsSchema() {
+  if (globalForMemberships._membershipsSchemaVersion !== MEMBERSHIPS_SCHEMA_VERSION) {
+    globalForMemberships._membershipsSchemaReadyPromise = null;
+    globalForMemberships._membershipsSchemaVersion = MEMBERSHIPS_SCHEMA_VERSION;
+  }
+
+  if (!globalForMemberships._membershipsSchemaReadyPromise) {
+    globalForMemberships._membershipsSchemaReadyPromise = migrateMembershipsTable().catch((err) => {
+      globalForMemberships._membershipsSchemaReadyPromise = null;
+      throw err;
+    });
+  }
+
+  await globalForMemberships._membershipsSchemaReadyPromise;
+}
+
+async function migrateCombosTable() {
+  await query(CREATE_COMBOS_SQL);
+  await query(`ALTER TABLE combos DROP CONSTRAINT IF EXISTS combos_name_key`);
+  await query(`ALTER TABLE combos ADD COLUMN IF NOT EXISTS combo_code VARCHAR(120)`);
+  await query(`ALTER TABLE combos ADD COLUMN IF NOT EXISTS description TEXT`);
+  await query(`ALTER TABLE combos ADD COLUMN IF NOT EXISTS combo_type VARCHAR(80)`);
+  await query(
+    `ALTER TABLE combos ADD COLUMN IF NOT EXISTS category_id BIGINT REFERENCES categories(id) ON DELETE SET NULL`
+  );
+  await query(
+    `ALTER TABLE combos ADD COLUMN IF NOT EXISTS sub_category_id BIGINT REFERENCES sub_categories(id) ON DELETE SET NULL`
+  );
+  await query(`ALTER TABLE combos ADD COLUMN IF NOT EXISTS food_type VARCHAR(60)`);
+  await query(`ALTER TABLE combos ADD COLUMN IF NOT EXISTS image_url TEXT`);
+  await query(`ALTER TABLE combos ADD COLUMN IF NOT EXISTS tax_inclusive BOOLEAN NOT NULL DEFAULT false`);
+  await query(`ALTER TABLE combos ADD COLUMN IF NOT EXISTS discount NUMERIC(14, 2) NOT NULL DEFAULT 0`);
+  await query(
+    `ALTER TABLE combos ADD COLUMN IF NOT EXISTS tax_id BIGINT REFERENCES taxes(id) ON DELETE SET NULL`
+  );
+  await query(`ALTER TABLE combos ADD COLUMN IF NOT EXISTS hsn VARCHAR(80)`);
+  await query(`ALTER TABLE combos ADD COLUMN IF NOT EXISTS effective_date DATE`);
+  await query(`ALTER TABLE combos ADD COLUMN IF NOT EXISTS store_wise_pricing BOOLEAN NOT NULL DEFAULT false`);
+  await query(`ALTER TABLE combos ADD COLUMN IF NOT EXISTS sku VARCHAR(160)`);
+  await query(`ALTER TABLE combos ADD COLUMN IF NOT EXISTS barcode VARCHAR(160)`);
+  await query(`ALTER TABLE combos ADD COLUMN IF NOT EXISTS sort_sequence INTEGER NOT NULL DEFAULT 0`);
+  await query(`ALTER TABLE combos ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true`);
+  await query(`
+    CREATE TABLE IF NOT EXISTS combo_products (
+      id BIGSERIAL PRIMARY KEY,
+      combo_id BIGINT NOT NULL REFERENCES combos(id) ON DELETE CASCADE,
+      product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      quantity NUMERIC(14, 3) NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (combo_id, product_id)
+    );
+  `);
+}
+
+/** Ensures combos + combo_products columns exist (runs independently of catalog extras cache). */
+export async function ensureCombosSchema() {
+  if (globalForCombos._combosSchemaVersion !== COMBOS_SCHEMA_VERSION) {
+    globalForCombos._combosSchemaReadyPromise = null;
+    globalForCombos._combosSchemaVersion = COMBOS_SCHEMA_VERSION;
+  }
+
+  if (!globalForCombos._combosSchemaReadyPromise) {
+    globalForCombos._combosSchemaReadyPromise = migrateCombosTable().catch((err) => {
+      globalForCombos._combosSchemaReadyPromise = null;
+      throw err;
+    });
+  }
+
+  await globalForCombos._combosSchemaReadyPromise;
+}
 
 export async function ensureCatalogExtrasSchema() {
   if (!globalForCatalogExtras._catalogExtrasSchemaReadyPromise) {
@@ -212,9 +383,27 @@ export async function ensureCatalogExtrasSchema() {
           ADD COLUMN IF NOT EXISTS low_stock_value NUMERIC(14, 2) NOT NULL DEFAULT 0;
       `);
       await query(CREATE_PROMOTIONS_SQL);
+      // Add additional promotion columns used by the UI
+      await query(`ALTER TABLE promotions ADD COLUMN IF NOT EXISTS store_id BIGINT`);
+      await query(`ALTER TABLE promotions ADD COLUMN IF NOT EXISTS discount_applied_on VARCHAR(60) NOT NULL DEFAULT 'ORDER'`);
+      await query(`ALTER TABLE promotions ADD COLUMN IF NOT EXISTS max_repeat_count INTEGER NOT NULL DEFAULT 0`);
+      await query(`ALTER TABLE promotions ADD COLUMN IF NOT EXISTS use_for_customer BOOLEAN NOT NULL DEFAULT false`);
+      await query(`ALTER TABLE promotions ADD COLUMN IF NOT EXISTS remove_other_discounts BOOLEAN NOT NULL DEFAULT false`);
+      await query(`ALTER TABLE promotions ADD COLUMN IF NOT EXISTS is_auto_applied BOOLEAN NOT NULL DEFAULT false`);
+      await query(`ALTER TABLE promotions ADD COLUMN IF NOT EXISTS min_cart_value NUMERIC(14,2) NOT NULL DEFAULT 0`);
+      await query(`ALTER TABLE promotions ADD COLUMN IF NOT EXISTS max_discount_value NUMERIC(14,2) NOT NULL DEFAULT 0`);
+      await query(`ALTER TABLE promotions ADD COLUMN IF NOT EXISTS apply_after_tax BOOLEAN NOT NULL DEFAULT false`);
+      await query(`ALTER TABLE promotions ADD COLUMN IF NOT EXISTS allow_merging BOOLEAN NOT NULL DEFAULT false`);
+      await query(`ALTER TABLE promotions ADD COLUMN IF NOT EXISTS apply_on_product_mrp BOOLEAN NOT NULL DEFAULT false`);
+      await query(`ALTER TABLE promotions ADD COLUMN IF NOT EXISTS description TEXT`);
+      await query(`ALTER TABLE promotions ADD COLUMN IF NOT EXISTS products JSONB`);
+      await query(`ALTER TABLE promotions ADD COLUMN IF NOT EXISTS coupon_enabled BOOLEAN NOT NULL DEFAULT false`);
+      await query(`ALTER TABLE promotions ADD COLUMN IF NOT EXISTS promotion_slots_enabled BOOLEAN NOT NULL DEFAULT false`);
       await query(CREATE_VOUCHERS_SQL);
+      await migrateVouchersTable();
       await query(CREATE_MEMBERSHIPS_SQL);
-      await query(CREATE_COMBOS_SQL);
+      await migrateMembershipsTable();
+      await migrateCombosTable();
       await query(CREATE_PROMOTION_APPROVALS_SQL);
       await query(CREATE_CHARGES_SQL);
       await query(CREATE_PRODUCT_GROUP_PRODUCTS_SQL);

@@ -1,5 +1,7 @@
 'use client';
 import CatalogDataPage from '@/components/CatalogDataPage';
+import { useState } from 'react';
+import PromotionForm from '@/components/PromotionForm';
 const columns = [
   { key: 'sno',      label: 'S. No.',         sortable: true },
   { key: 'name',     label: 'Promotion Name', sortable: true },
@@ -13,9 +15,18 @@ const columns = [
 ];
 
 export default function PromotionsPage() {
+  const [showCreate, setShowCreate] = useState(false);
+  const [editing, setEditing] = useState(null);
   return (
+    <>
     <CatalogDataPage
       endpoint="/api/catalog/promotions"
+      createLabel="Create Promotion"
+      onCreateClick={() => { setEditing(null); setShowCreate(true); }}
+      onEdit={(row) => { setEditing(row); setShowCreate(true); }}
+      extraQueryParams={{ status: 'Active' }}
+      onDelete={(row) => { /* CatalogDataPage handles delete confirm and call */ }}
+      showRowActions={true}
       breadcrumbs={[{ label:'Catalog',href:'/catalog'},{ label:'Promotional Products'},{ label:'Promotions'}]}
       title="Promotions" description="Create promotional campaigns to drive more sales."
       columns={columns}
@@ -32,5 +43,22 @@ export default function PromotionsPage() {
         status: record.status,
       })}
     />
+    {showCreate && (
+      <PromotionForm
+        initial={editing}
+        onClose={() => setShowCreate(false)}
+        onSaved={(data, isEdit) => {
+          setShowCreate(false);
+          if (!isEdit) {
+            // new promotion -> sent for approval
+            alert('Your promotion has been sent for approval');
+          } else {
+            // edit -> reload to reflect changes
+            window.location.reload();
+          }
+        }}
+      />
+    )}
+    </>
   );
 }
