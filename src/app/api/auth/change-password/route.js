@@ -1,7 +1,7 @@
 ﻿import bcrypt from 'bcryptjs';
 import { cookies } from 'next/headers';
 import { errorResponse, successResponse, validationError } from '@/lib/api-response';
-import { verifyAuthToken } from '@/lib/auth';
+import { verifyToken } from '@/lib/auth-enhanced';
 import { ensureUsersTable } from '@/lib/userAuth';
 import { query } from '@/lib/db';
 
@@ -10,7 +10,7 @@ export async function POST(request) {
     await ensureUsersTable();
 
     const cookieStore = await cookies();
-    const token = cookieStore.get('auth_token')?.value;
+    const token = cookieStore.get('access_token')?.value || cookieStore.get('auth_token')?.value;
 
     if (!token) {
       return errorResponse('Unauthorized', 401);
@@ -18,8 +18,12 @@ export async function POST(request) {
 
     let payload;
     try {
-      payload = verifyAuthToken(token);
+      payload = verifyToken(token);
     } catch {
+      return errorResponse('Unauthorized', 401);
+    }
+
+    if (!payload?.sub) {
       return errorResponse('Unauthorized', 401);
     }
 

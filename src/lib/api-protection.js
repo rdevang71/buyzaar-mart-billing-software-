@@ -7,6 +7,7 @@ import { NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth-enhanced';
 import { query } from '@/lib/db';
 import { unauthorizedError, forbiddenError } from '@/lib/api-response';
+import { ensureUsersTable } from '@/lib/userAuth';
 
 /**
  * Extract and verify JWT token from request
@@ -14,6 +15,8 @@ import { unauthorizedError, forbiddenError } from '@/lib/api-response';
  */
 export async function extractAuthUser(request) {
   try {
+    await ensureUsersTable();
+
     // Get token from cookies or Authorization header
     const cookieToken = request.cookies.get('access_token')?.value || 
                        request.cookies.get('auth_token')?.value;
@@ -37,12 +40,15 @@ export async function extractAuthUser(request) {
       return { user: null, token: null, error: 'Invalid or expired token' };
     }
 
+    if (!payload?.sub) {
+      return { user: null, token: null, error: 'Invalid or expired token' };
+    }
+
     // Fetch full user from database
     const userResult = await query(
-      `SELECT u.id, u.email, u.first_name, u.last_name, u.is_active, u.role_id, r.name as role_name
-       FROM users_v2 u
-       LEFT JOIN roles r ON u.role_id = r.id
-       WHERE u.id = $1 AND u.is_active = TRUE`,
+      `SELECT id, name, email, phone, role, is_active
+       FROM users
+       WHERE id = $1 AND is_active = TRUE`,
       [payload.sub]
     );
 
@@ -54,9 +60,8 @@ export async function extractAuthUser(request) {
     const user = {
       id: dbUser.id,
       email: dbUser.email,
-      name: `${dbUser.first_name || ''} ${dbUser.last_name || ''}`.trim(),
-      role: dbUser.role_name,
-      role_id: dbUser.role_id,
+      name: dbUser.name || dbUser.email,
+      role: dbUser.role || 'user',
       permissions: payload.permissions || [],
       assigned_stores: payload.assigned_stores || [],
     };

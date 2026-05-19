@@ -10,7 +10,6 @@ function BusinessInfoPage() {
     </MainLayout>
   );
 }
-'use client';
 
 import CatalogListPage from '@/components/CatalogListPage';
 

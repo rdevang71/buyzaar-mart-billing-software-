@@ -7,6 +7,23 @@ import { useEffect, useState, useCallback, createContext, useContext } from 'rea
  */
 const UserContext = createContext(null);
 
+async function parseJsonResponse(response, contextMessage) {
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    const text = await response.text();
+    const preview = text.replace(/\s+/g, ' ').slice(0, 120);
+    throw new Error(
+      `${contextMessage}: expected JSON response, received ${contentType || 'unknown content type'}${preview ? ` (${preview})` : ''}`
+    );
+  }
+
+  try {
+    return await response.json();
+  } catch {
+    throw new Error(`${contextMessage}: invalid JSON response`);
+  }
+}
+
 export function UserProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -20,7 +37,7 @@ export function UserProvider({ children }) {
         credentials: 'include',
       });
 
-      const json = await res.json();
+      const json = await parseJsonResponse(res, 'Failed to fetch user');
 
       if (!res.ok || !json.success) {
         setUser(null);

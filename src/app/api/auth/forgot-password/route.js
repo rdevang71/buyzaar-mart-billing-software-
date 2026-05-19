@@ -4,6 +4,7 @@ import { successResponse, validationError, errorResponse } from '@/lib/api-respo
 import { query } from '@/lib/db';
 import { rateLimiters } from '@/lib/rate-limiter';
 import { getUserIP } from '@/lib/api-protection';
+import { ensureUsersTable } from '@/lib/userAuth';
 
 /**
  * POST /api/auth/forgot-password
@@ -14,6 +15,8 @@ import { getUserIP } from '@/lib/api-protection';
  */
 export async function POST(request) {
   try {
+    await ensureUsersTable();
+
     const body = await request.json();
     const { email } = body;
 
@@ -43,7 +46,7 @@ export async function POST(request) {
 
     // Find user by email
     const userResult = await query(
-      `SELECT id, email, first_name FROM users_v2 
+      `SELECT id, email, name FROM users 
        WHERE LOWER(email) = LOWER($1) AND is_active = TRUE`,
       [email]
     );
@@ -74,7 +77,7 @@ export async function POST(request) {
 
     // TODO: Send email with reset link
     // resetLink = `${process.env.NEXT_PUBLIC_APP_URL}/reset-password?token=${resetToken}`
-    // await sendEmail(user.email, 'Password Reset Request', { name: user.first_name, resetLink })
+    // await sendEmail(user.email, 'Password Reset Request', { name: user.name, resetLink })
 
     console.log('[FORGOT_PASSWORD] Reset token created for:', user.email);
     console.log('[FORGOT_PASSWORD] Reset token (dev only):', resetToken); // Only for development

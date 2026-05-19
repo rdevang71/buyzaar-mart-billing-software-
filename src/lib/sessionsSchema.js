@@ -13,7 +13,7 @@ export async function ensureSessionsSchema() {
     await query(`
       CREATE TABLE IF NOT EXISTS sessions (
         id BIGSERIAL PRIMARY KEY,
-        user_id BIGINT NOT NULL REFERENCES users_v2(id) ON DELETE CASCADE,
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         access_token_hash VARCHAR(64) NOT NULL,
         refresh_token_hash VARCHAR(64),
         ip_address VARCHAR(45),

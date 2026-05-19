@@ -2,10 +2,11 @@ import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { successResponse, validationError, errorResponse, notFoundError } from '@/lib/api-response';
-import { query } from '@/lib/db';
+import pool, { query } from '@/lib/db';
 import { ensurePasswordResetsSchema } from '@/lib/passwordResetsSchema';
 import { rateLimiters } from '@/lib/rate-limiter';
 import { getUserIP } from '@/lib/api-protection';
+import { ensureUsersTable } from '@/lib/userAuth';
 
 /**
  * POST /api/auth/reset-password
@@ -16,6 +17,7 @@ import { getUserIP } from '@/lib/api-protection';
  */
 export async function POST(request) {
   try {
+    await ensureUsersTable();
     await ensurePasswordResetsSchema();
 
     const body = await request.json();
@@ -98,14 +100,14 @@ export async function POST(request) {
 
     const passwordHash = await bcrypt.hash(newPassword, 10);
 
-    const client = await query.pool.connect();
+    const client = await pool.connect();
     try {
       await client.query('BEGIN');
 
       // Update password
       await client.query(
-        `UPDATE users_v2 
-         SET password_hash = $1, failed_login_attempts = 0, is_locked = FALSE
+        `UPDATE users 
+         SET password_hash = $1, updated_at = NOW()
          WHERE id = $2`,
         [passwordHash, userId]
       );
