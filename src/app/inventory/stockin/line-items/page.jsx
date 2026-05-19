@@ -15,6 +15,7 @@ function LineItemsContent() {
 
   const [draft, setDraft] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadingProducts, setLoadingProducts] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [cartFilter, setCartFilter] = useState('');
   const [products, setProducts] = useState([]);
@@ -52,20 +53,32 @@ function LineItemsContent() {
   }, [id]);
 
   useEffect(() => {
-    if (!searchTerm.trim()) {
-      setProducts([]);
-      return;
-    }
-    const t = setTimeout(() => {
-      fetch(`/api/catalog/products?search=${encodeURIComponent(searchTerm)}&pageSize=20`)
-        .then((r) => r.json())
-        .then((res) => {
-          const records = res?.data?.records ?? res?.records ?? [];
-          setProducts(records);
-        })
-        .catch(() => setProducts([]));
-    }, 300);
-    return () => clearTimeout(t);
+    const controller = new AbortController();
+
+    const loadProducts = async () => {
+      setLoadingProducts(true);
+      try {
+        const params = new URLSearchParams({ pageSize: '20' });
+        if (searchTerm.trim()) params.set('search', searchTerm.trim());
+
+        const response = await fetch(`/api/catalog/products?${params.toString()}`, {
+          signal: controller.signal,
+        });
+        const res = await response.json();
+        const records = res?.data?.records ?? res?.records ?? [];
+        setProducts(Array.isArray(records) ? records : []);
+      } catch (error) {
+        if (error?.name !== 'AbortError') setProducts([]);
+      } finally {
+        if (!controller.signal.aborted) setLoadingProducts(false);
+      }
+    };
+
+    const t = setTimeout(loadProducts, searchTerm.trim() ? 250 : 0);
+    return () => {
+      controller.abort();
+      clearTimeout(t);
+    };
   }, [searchTerm]);
 
   const filteredCart = useMemo(() => {
@@ -268,7 +281,7 @@ function LineItemsContent() {
             </div>
 
             <div className="flex-1 p-4 overflow-auto">
-              {searchTerm.trim() && products.length > 0 && (
+              {products.length > 0 && (
                 <div className="mb-4 border border-gray-100 rounded-lg divide-y divide-gray-100">
                   {products.map((p) => (
                     <button
@@ -287,7 +300,7 @@ function LineItemsContent() {
                 </div>
               )}
 
-              {searchTerm.trim() && products.length === 0 && !loading && (
+              {!loadingProducts && products.length === 0 && (
                 <p className="text-[13px] text-gray-500 text-center py-8">No products found</p>
               )}
 

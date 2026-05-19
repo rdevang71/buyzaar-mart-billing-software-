@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function CatalogDashboard() {
+  const router = useRouter();
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('All');
@@ -22,9 +24,9 @@ export default function CatalogDashboard() {
   const tabs = [
     { label: 'All',             count: stats.total_products  || 0 },
     { label: 'Needs attention', count: stats.needs_attention || 0, alert: true },
-    { label: 'Missing price',   count: 0 },
-    { label: 'Duplicate SKUs',  count: 0 },
-    { label: 'Below cost',      count: 0 },
+    { label: 'Missing price',   count: stats.missing_price   || 0, alert: true },
+    { label: 'Duplicate SKUs',  count: stats.duplicate_skus  || 0, alert: true },
+    { label: 'Below cost',      count: stats.below_cost      || 0, alert: true },
     { label: 'HSN missing',     count: stats.hsn_missing    || 0, alert: true },
     { label: 'Out of stock',    count: stats.out_of_stock   || 0 },
     { label: 'No image',        count: stats.no_image       || 0, alert: true },
@@ -33,8 +35,11 @@ export default function CatalogDashboard() {
   const filteredProducts = products.filter(p => {
     if (activeTab === 'No image')        return p.no_image;
     if (activeTab === 'HSN missing')     return p.hsn_missing;
+    if (activeTab === 'Missing price')    return p.missing_price;
+    if (activeTab === 'Duplicate SKUs')   return p.duplicate_sku;
+    if (activeTab === 'Below cost')      return p.below_cost;
     if (activeTab === 'Out of stock')    return p.stock === 0;
-    if (activeTab === 'Needs attention') return p.no_image || p.hsn_missing;
+    if (activeTab === 'Needs attention') return p.no_image || p.hsn_missing || p.missing_price || p.duplicate_sku || p.below_cost;
     return true;
   }).filter(p => !search || p.name?.toLowerCase().includes(search.toLowerCase()));
 
@@ -93,7 +98,11 @@ export default function CatalogDashboard() {
               <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
             </svg>
           </button>
-          <button className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800">
+          <button
+            type="button"
+            onClick={() => router.push('/catalog/products/create')}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800"
+          >
             <span className="text-base leading-none">+</span>
             New product
           </button>
@@ -291,6 +300,15 @@ export default function CatalogDashboard() {
                       )}
                       {p.hsn_missing && (
                         <span className="text-[11px] font-medium bg-orange-50 text-orange-500 px-2 py-0.5 rounded-lg">HSN missing</span>
+                      )}
+                      {p.missing_price && (
+                        <span className="text-[11px] font-medium bg-yellow-50 text-yellow-600 px-2 py-0.5 rounded-lg">Missing price</span>
+                      )}
+                      {p.duplicate_sku && (
+                        <span className="text-[11px] font-medium bg-purple-50 text-purple-600 px-2 py-0.5 rounded-lg">Duplicate SKU</span>
+                      )}
+                      {p.below_cost && (
+                        <span className="text-[11px] font-medium bg-pink-50 text-pink-600 px-2 py-0.5 rounded-lg">Below cost</span>
                       )}
                     </div>
                   </td>
