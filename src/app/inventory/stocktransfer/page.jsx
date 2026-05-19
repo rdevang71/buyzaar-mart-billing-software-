@@ -7,7 +7,8 @@ import { getBulkField, parseBulkSheet, pickSpreadsheetFile, toBoolean } from '@/
 async function fetchStores() {
   const res = await fetch('/api/stores');
   if (!res.ok) throw new Error('Failed to fetch stores');
-  return res.json();
+  const json = await res.json();
+  return json.data?.records || json.data?.stores || json.stores || [];
 }
 
 async function fetchTransfers() {
@@ -96,7 +97,7 @@ export default function StockTransferPage() {
     if (!showModal) return;
     setLoadingStores(true);
     fetchStores()
-      .then((data) => setStores(data || []))
+      .then((data) => setStores(Array.isArray(data) ? data : []))
       .catch(() => setStores([]))
       .finally(() => setLoadingStores(false));
   }, [showModal]);

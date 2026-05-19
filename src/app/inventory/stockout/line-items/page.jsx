@@ -18,6 +18,7 @@ function LineItemsContent() {
 
   const [draft, setDraft] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadingProducts, setLoadingProducts] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [cartFilter, setCartFilter] = useState('');
   const [products, setProducts] = useState([]);
@@ -58,22 +59,32 @@ function LineItemsContent() {
   }, [id]);
 
   useEffect(() => {
-    if (!searchTerm.trim()) {
-      setProducts([]);
-      return;
-    }
+    const controller = new AbortController();
 
-    const timer = setTimeout(() => {
-      fetch(`/api/catalog/products?search=${encodeURIComponent(searchTerm)}&pageSize=20`)
-        .then((r) => r.json())
-        .then((res) => {
-          const records = res?.data?.records ?? res?.records ?? [];
-          setProducts(records);
-        })
-        .catch(() => setProducts([]));
-    }, 300);
+    const loadProducts = async () => {
+      setLoadingProducts(true);
+      try {
+        const params = new URLSearchParams({ pageSize: '20' });
+        if (searchTerm.trim()) params.set('search', searchTerm.trim());
 
-    return () => clearTimeout(timer);
+        const response = await fetch(`/api/catalog/products?${params.toString()}`, {
+          signal: controller.signal,
+        });
+        const res = await response.json();
+        const records = res?.data?.records ?? res?.records ?? [];
+        setProducts(Array.isArray(records) ? records : []);
+      } catch (error) {
+        if (error?.name !== 'AbortError') setProducts([]);
+      } finally {
+        if (!controller.signal.aborted) setLoadingProducts(false);
+      }
+    };
+
+    const timer = setTimeout(loadProducts, searchTerm.trim() ? 250 : 0);
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
   }, [searchTerm]);
 
   const filteredCart = useMemo(() => {
@@ -292,7 +303,7 @@ function LineItemsContent() {
               </div>
 
               <div className="flex-1 overflow-auto p-4">
-                {searchTerm.trim() && products.length > 0 && (
+                {products.length > 0 && (
                   <div className="mb-4 divide-y divide-[#e6e6e6] rounded-[3px] border border-[#c7c7c7]">
                     {products.map((product) => (
                       <button
@@ -311,7 +322,7 @@ function LineItemsContent() {
                   </div>
                 )}
 
-                {searchTerm.trim() && products.length === 0 && !loading && (
+                {!loadingProducts && products.length === 0 && (
                   <p className="py-8 text-center text-[14px] text-[#616871]">No products found</p>
                 )}
 
