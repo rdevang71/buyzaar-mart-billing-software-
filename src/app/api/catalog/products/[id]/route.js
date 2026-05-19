@@ -30,9 +30,15 @@ const SELECT_PRODUCT = `
 // ─── GET /api/catalog/products/[id] ──────────────────────────
 export async function GET(request, { params }) {
   try {
+    const resolvedParams = await params;
+    const productId = Number(resolvedParams?.id);
+    if (!Number.isFinite(productId)) {
+      return errorResponse('Invalid product id', 400);
+    }
+
     const result = await query(
       `${SELECT_PRODUCT} WHERE p.id = $1`,
-      [params.id]
+      [productId]
     );
     if (!result.rows.length) return notFound('Product not found');
     return successResponse(result.rows[0]);
@@ -44,6 +50,12 @@ export async function GET(request, { params }) {
 // ─── PUT /api/catalog/products/[id] ──────────────────────────
 export async function PUT(request, { params }) {
   try {
+    const resolvedParams = await params;
+    const productId = Number(resolvedParams?.id);
+    if (!Number.isFinite(productId)) {
+      return errorResponse('Invalid product id', 400);
+    }
+
     const body = await request.json();
 
     if (!body.name?.trim()) {
@@ -94,7 +106,7 @@ export async function PUT(request, { params }) {
         body.is_active     ?? true,
         body.is_service    ?? false,
         body.image_url     || null,
-        params.id,
+        productId,
       ]
     );
 
@@ -111,12 +123,18 @@ export async function PUT(request, { params }) {
 // ─── DELETE /api/catalog/products/[id] ───────────────────────
 export async function DELETE(request, { params }) {
   try {
+    const resolvedParams = await params;
+    const productId = Number(resolvedParams?.id);
+    if (!Number.isFinite(productId)) {
+      return errorResponse('Invalid product id', 400);
+    }
+
     const result = await query(
       `DELETE FROM products WHERE id = $1 RETURNING id`,
-      [params.id]
+      [productId]
     );
     if (!result.rows.length) return notFound('Product not found');
-    return successResponse({ id: params.id }, 'Product deleted successfully');
+    return successResponse({ id: productId }, 'Product deleted successfully');
   } catch (err) {
     return errorResponse(err.message);
   }

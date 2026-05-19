@@ -1,3 +1,15 @@
+"use client";
+
+import MainLayout from '@/components/MainLayout';
+
+export default function SystemAttributesPage() {
+  return (
+    <MainLayout>
+      <h1 className="text-2xl font-bold">System Attributes</h1>
+      <p className="text-sm text-gray-600 mt-2">System-wide attributes and configuration.</p>
+    </MainLayout>
+  );
+}
 'use client';
 
 import CatalogListPage from '@/components/CatalogListPage';

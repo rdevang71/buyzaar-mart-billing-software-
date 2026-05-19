@@ -1,3 +1,15 @@
+"use client";
+
+import MainLayout from '@/components/MainLayout';
+
+ function ChainPaymentSettingsPage() {
+  return (
+    <MainLayout>
+      <h1 className="text-2xl font-bold">Chain Payment Settings</h1>
+      <p className="text-sm text-gray-600 mt-2">Configure chain-level payment integrations and defaults.</p>
+    </MainLayout>
+  );
+}
 'use client';
 
 import CatalogListPage from '@/components/CatalogListPage';

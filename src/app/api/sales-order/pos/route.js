@@ -188,6 +188,7 @@ export async function POST(request) {
     await ensureSalesBillingSchema();
 
     const body = await request.json();
+    const clientBillId = String(body.clientBillId || body.client_bill_id || '').trim();
     const items = Array.isArray(body.items) ? body.items : [];
     const payments = Array.isArray(body.payments) ? body.payments : [];
     const sessionId = String(body.sessionId || body.session_id || '').trim();
@@ -200,6 +201,83 @@ export async function POST(request) {
     const orderDiscount = toNumber(body.orderDiscount ?? body.discount_total ?? 0);
     const roundOff = toNumber(body.roundOff ?? body.round_off ?? 0);
     const paymentMode = String(body.paymentMode || body.payment_mode || 'cash').trim().toLowerCase();
+
+    if (clientBillId) {
+      const existingBillResult = await query(
+        `SELECT id, bill_number, session_id, subtotal, discount_total, tax_total,
+                round_off, grand_total, paid_amount, balance_amount, payment_mode,
+                status, customer_name, customer_mobile, remarks, meta, created_at
+         FROM sales_bills
+         WHERE meta->>'clientBillId' = $1
+         LIMIT 1`,
+        [clientBillId]
+      );
+
+      const existingBill = existingBillResult.rows[0];
+      if (existingBill) {
+        const existingItemsResult = await query(
+          `SELECT product_id, product_name, barcode, sku, qty, mrp, selling_price,
+                  discount_amount, tax_rate, tax_amount, line_total
+           FROM sales_bill_items
+           WHERE sales_bill_id = $1
+           ORDER BY id ASC`,
+          [existingBill.id]
+        );
+
+        const existingPaymentsResult = await query(
+          `SELECT method, amount, reference_no, meta
+           FROM sales_bill_payments
+           WHERE sales_bill_id = $1
+           ORDER BY id ASC`,
+          [existingBill.id]
+        );
+
+        return successResponse(
+          {
+            bill: {
+              id: existingBill.id,
+              billNumber: existingBill.bill_number,
+              sessionId: existingBill.session_id,
+              subtotal: toNumber(existingBill.subtotal),
+              discountTotal: toNumber(existingBill.discount_total),
+              taxTotal: toNumber(existingBill.tax_total),
+              roundOff: toNumber(existingBill.round_off),
+              grandTotal: toNumber(existingBill.grand_total),
+              paidAmount: toNumber(existingBill.paid_amount),
+              balanceAmount: toNumber(existingBill.balance_amount),
+              status: existingBill.status,
+              paymentMode: existingBill.payment_mode,
+              customerName: existingBill.customer_name || '',
+              customerMobile: existingBill.customer_mobile || '',
+              remarks: existingBill.remarks || '',
+              items: existingItemsResult.rows.map((item) => ({
+                productId: item.product_id,
+                productName: item.product_name,
+                barcode: item.barcode || '',
+                sku: item.sku || '',
+                qty: toNumber(item.qty),
+                mrp: toNumber(item.mrp),
+                sellingPrice: toNumber(item.selling_price),
+                discountAmount: toNumber(item.discount_amount),
+                taxRate: toNumber(item.tax_rate),
+                taxAmount: toNumber(item.tax_amount),
+                lineTotal: toNumber(item.line_total),
+              })),
+              payments: existingPaymentsResult.rows.map((payment) => ({
+                method: payment.method,
+                amount: toNumber(payment.amount),
+                referenceNo: payment.reference_no || '',
+                meta: payment.meta || {},
+              })),
+              meta: existingBill.meta || {},
+              createdAt: existingBill.created_at,
+            },
+          },
+          'POS bill already synced',
+          200
+        );
+      }
+    }
 
     if (!sessionId) {
       return validationError({ sessionId: 'Active cashier session is required' });
@@ -331,7 +409,7 @@ export async function POST(request) {
           JSON.stringify(payments),
           finalStatus,
           remarks || null,
-          JSON.stringify(body),
+          JSON.stringify({ ...body, clientBillId: clientBillId || undefined }),
         ]
       );
 

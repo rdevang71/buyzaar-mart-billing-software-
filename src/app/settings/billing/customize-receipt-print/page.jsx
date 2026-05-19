@@ -1,3 +1,15 @@
+"use client";
+
+import MainLayout from '@/components/MainLayout';
+
+export default function CustomizeReceiptPrintPage() {
+  return (
+    <MainLayout>
+      <h1 className="text-2xl font-bold">Customize Receipt Print</h1>
+      <p className="text-sm text-gray-600 mt-2">Configure receipt templates and print settings.</p>
+    </MainLayout>
+  );
+}
 'use client';
 
 import CatalogListPage from '@/components/CatalogListPage';

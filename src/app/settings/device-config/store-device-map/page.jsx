@@ -1,3 +1,15 @@
+"use client";
+
+import MainLayout from '@/components/MainLayout';
+
+export default function StoreDeviceMapPage() {
+  return (
+    <MainLayout>
+      <h1 className="text-2xl font-bold">Store Device Map</h1>
+      <p className="text-sm text-gray-600 mt-2">Map devices to stores and counters.</p>
+    </MainLayout>
+  );
+}
 'use client';
 
 import CatalogListPage from '@/components/CatalogListPage';

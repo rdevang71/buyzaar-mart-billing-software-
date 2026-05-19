@@ -1,3 +1,15 @@
+"use client";
+
+import MainLayout from '@/components/MainLayout';
+
+export default function KotPrintersPage() {
+  return (
+    <MainLayout>
+      <h1 className="text-2xl font-bold">KOT Printers</h1>
+      <p className="text-sm text-gray-600 mt-2">Manage kitchen order ticket printers and mappings.</p>
+    </MainLayout>
+  );
+}
 'use client';
 
 import CatalogListPage from '@/components/CatalogListPage';

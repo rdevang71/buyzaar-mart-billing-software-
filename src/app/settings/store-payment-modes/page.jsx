@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import CatalogListPage from '@/components/CatalogListPage';
 

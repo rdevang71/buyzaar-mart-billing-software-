@@ -1,3 +1,15 @@
+"use client";
+
+import MainLayout from '@/components/MainLayout';
+
+export default function AppSettingsPage() {
+  return (
+    <MainLayout>
+      <h1 className="text-2xl font-bold">App Settings</h1>
+      <p className="text-sm text-gray-600 mt-2">Application-level settings and feature toggles.</p>
+    </MainLayout>
+  );
+}
 'use client';
 
 import CatalogListPage from '@/components/CatalogListPage';

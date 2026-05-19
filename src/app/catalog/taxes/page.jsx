@@ -24,6 +24,8 @@ export default function TaxesPage() {
       columns={columns}
       totalLabel="Tax(es)"
       emptyMessage="No taxes found"
+      createLabel="Create Tax"
+      onCreateClick={() => { window.location.href = '/catalog/taxes/create'; }}
       mapRecord={(record, index, page, pageSize) => ({
         id: record.id,
         sno: (page - 1) * pageSize + index + 1,

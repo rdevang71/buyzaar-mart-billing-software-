@@ -1,3 +1,15 @@
+"use client";
+
+import MainLayout from '@/components/MainLayout';
+
+export default function CustomAttributesPage() {
+  return (
+    <MainLayout>
+      <h1 className="text-2xl font-bold">Custom Attributes</h1>
+      <p className="text-sm text-gray-600 mt-2">Manage custom attributes for app entities.</p>
+    </MainLayout>
+  );
+}
 'use client';
 
 import CatalogListPage from '@/components/CatalogListPage';

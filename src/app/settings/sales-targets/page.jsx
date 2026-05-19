@@ -1,3 +1,15 @@
+"use client";
+
+import MainLayout from '@/components/MainLayout';
+
+export default function SalesTargetsPage() {
+  return (
+    <MainLayout>
+      <h1 className="text-2xl font-bold">Sales Targets</h1>
+      <p className="text-sm text-gray-600 mt-2">Set and monitor sales targets for users and stores.</p>
+    </MainLayout>
+  );
+}
 'use client';
 
 import CatalogListPage from '@/components/CatalogListPage';

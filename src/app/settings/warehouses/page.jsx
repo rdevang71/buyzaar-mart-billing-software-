@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import CatalogListPage from '@/components/CatalogListPage';
 
@@ -15,8 +15,8 @@ export default function Page() {
       createLabel="Create"
       bulkOperations={true}
       columns={[
-        { key: 'sno',  label: 'S. No.', sortable: true },
-        { key: 'name', label: 'Name',   sortable: true },
+        { key: 'sno', label: 'S. No.', sortable: true },
+        { key: 'name', label: 'Name', sortable: true },
       ]}
       rows={[]}
       totalLabel="Warehouses(s)"

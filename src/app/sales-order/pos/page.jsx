@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import MainLayout from '@/components/MainLayout';
 
 function toNumber(value, fallback = 0) {
@@ -20,7 +21,63 @@ function emptyPayment() {
   return { method: 'cash', amount: '', referenceNo: '' };
 }
 
+const POS_CACHE_KEY = 'billing-pro-pos-cache-v1';
+const POS_DRAFT_KEY = 'billing-pro-pos-draft-v1';
+const POS_QUEUE_KEY = 'billing-pro-pos-queue-v1';
+
+function readStorageJSON(key, fallback) {
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStorageJSON(key, value) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Ignore storage quota / privacy failures.
+  }
+}
+
+function buildBillPayload({ session, user, cart, customerName, customerMobile, orderDiscount, roundOff, paymentMode, payments, openingStoreId }) {
+  const clientBillId = `pos-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const paymentRows = paymentMode === 'split'
+    ? payments.filter((payment) => toNumber(payment.amount) > 0)
+    : [];
+
+  return {
+    clientBillId,
+    sessionId: session.sessionId,
+    userId: user?.id,
+    storeId: session.storeId || Number(openingStoreId),
+    counterId: session.counterId,
+    customerName,
+    customerMobile,
+    orderDiscount: toNumber(orderDiscount),
+    roundOff: toNumber(roundOff),
+    paymentMode,
+    payments: paymentMode === 'split'
+      ? paymentRows
+      : [{ method: paymentMode, amount: 0, referenceNo: '' }],
+    items: cart.map((item) => ({
+      id: item.id,
+      productId: item.id,
+      qty: item.qty,
+      sellingPrice: item.sellingPrice,
+      mrp: item.mrp,
+      taxRate: item.taxRate,
+      discountAmount: toNumber(item.discountAmount),
+    })),
+  };
+}
+
 export default function PosBillingPage() {
+  const router = useRouter();
   const [user, setUser] = useState(null);
   const [session, setSession] = useState(null);
   const [stores, setStores] = useState([]);
@@ -47,6 +104,7 @@ export default function PosBillingPage() {
   const [openSessionVisible, setOpenSessionVisible] = useState(false);
   const [closeSessionVisible, setCloseSessionVisible] = useState(false);
   const [closingSummary, setClosingSummary] = useState(null);
+  const [isOffline, setIsOffline] = useState(typeof navigator !== 'undefined' ? !navigator.onLine : false);
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
@@ -68,27 +126,132 @@ export default function PosBillingPage() {
         if (!openingStoreId && json.data.session?.storeId) {
           setOpeningStoreId(String(json.data.session.storeId));
         }
+        writeStorageJSON(POS_CACHE_KEY, json.data);
       } else {
         showToast(json.message || 'Failed to load POS data', 'error');
       }
     } catch {
-      showToast('Network error while loading POS data', 'error');
+      const cached = readStorageJSON(POS_CACHE_KEY, null);
+      if (cached) {
+        const filteredProducts = query
+          ? (cached.products || []).filter((product) => {
+              const needle = query.toLowerCase();
+              return [product.name, product.barcode, product.sku].some((value) => String(value || '').toLowerCase().includes(needle));
+            })
+          : (cached.products || []);
+
+        setProducts(filteredProducts);
+        setRecentBills(cached.recentBills || []);
+        setSession(cached.session || null);
+        setStores(cached.stores || []);
+        if (!openingStoreId && cached.session?.storeId) {
+          setOpeningStoreId(String(cached.session.storeId));
+        }
+        showToast('Offline mode: showing last saved POS data', 'error');
+      } else {
+        showToast('Network error while loading POS data', 'error');
+      }
     } finally {
       setLoading(false);
     }
   }, [openingStoreId]);
 
+  const syncPendingBills = useCallback(async () => {
+    const queue = readStorageJSON(POS_QUEUE_KEY, []);
+    if (!Array.isArray(queue) || queue.length === 0) return;
+
+    const remaining = [];
+    for (const entry of queue) {
+      try {
+        const res = await fetch('/api/sales-order/pos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(entry.payload),
+        });
+        const json = await res.json();
+        if (!res.ok || !json.success) {
+          remaining.push(entry);
+          continue;
+        }
+      } catch {
+        remaining.push(entry);
+        break;
+      }
+    }
+
+    writeStorageJSON(POS_QUEUE_KEY, remaining);
+    if (remaining.length !== queue.length) {
+      showToast('Pending bills synced');
+      loadData(search);
+    }
+  }, [loadData, search]);
+
   useEffect(() => {
+    // Probe current auth; if authenticated, set user. If not, allow POS to continue
+    // in guest/solo mode instead of forcing a redirect to login.
     fetch('/api/auth/me')
       .then((res) => res.json())
       .then((json) => {
-        if (json.success) {
+        if (json.success && json.data?.user) {
           setUser(json.data.user);
           if (!openingStoreId) setOpeningStoreId('1');
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        // ignore network/auth probe failures and allow offline/guest usage
+      });
+  }, [openingStoreId, router]);
+
+  useEffect(() => {
+    const draft = readStorageJSON(POS_DRAFT_KEY, null);
+    if (!draft) return;
+
+    setCart(draft.cart || []);
+    setCustomerName(draft.customerName || '');
+    setCustomerMobile(draft.customerMobile || '');
+    setOrderDiscount(String(draft.orderDiscount ?? '0'));
+    setRoundOff(String(draft.roundOff ?? '0'));
+    setPaymentMode(draft.paymentMode || 'cash');
+    setPayments(Array.isArray(draft.payments) && draft.payments.length ? draft.payments : [emptyPayment()]);
+    setOpeningStoreId(String(draft.openingStoreId || ''));
   }, []);
+
+  useEffect(() => {
+    writeStorageJSON(POS_DRAFT_KEY, {
+      cart,
+      customerName,
+      customerMobile,
+      orderDiscount,
+      roundOff,
+      paymentMode,
+      payments,
+      openingStoreId,
+    });
+  }, [cart, customerName, customerMobile, orderDiscount, roundOff, paymentMode, payments, openingStoreId]);
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOffline(false);
+      syncPendingBills();
+      loadData(search);
+    };
+
+    const handleOffline = () => setIsOffline(true);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [loadData, search, syncPendingBills]);
+
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      syncPendingBills();
+    }
+  }, [syncPendingBills]);
 
   useEffect(() => {
     loadData(search);
@@ -221,34 +384,38 @@ export default function PosBillingPage() {
 
     setCheckoutLoading(true);
     try {
-      const paymentRows = paymentMode === 'split'
-        ? payments.filter((payment) => toNumber(payment.amount) > 0)
-        : [{ method: paymentMode, amount: cartTotals.grandTotal, referenceNo: '' }];
+      const payload = buildBillPayload({
+        session,
+        user,
+        cart,
+        customerName,
+        customerMobile,
+        orderDiscount,
+        roundOff,
+        paymentMode,
+        payments,
+        openingStoreId,
+      });
+
+      if (isOffline || !navigator.onLine) {
+        const queue = readStorageJSON(POS_QUEUE_KEY, []);
+        queue.push({ payload, createdAt: new Date().toISOString() });
+        writeStorageJSON(POS_QUEUE_KEY, queue);
+        showToast('Saved offline. It will sync when internet returns.');
+        setCart([]);
+        setCustomerName('');
+        setCustomerMobile('');
+        setOrderDiscount('0');
+        setRoundOff('0');
+        setPayments([emptyPayment()]);
+        setPaymentMode('cash');
+        return;
+      }
 
       const res = await fetch('/api/sales-order/pos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId: session.sessionId,
-          userId: user?.id,
-          storeId: session.storeId || Number(openingStoreId),
-          counterId: session.counterId,
-          customerName,
-          customerMobile,
-          orderDiscount: toNumber(orderDiscount),
-          roundOff: toNumber(roundOff),
-          paymentMode,
-          payments: paymentRows,
-          items: cart.map((item) => ({
-            id: item.id,
-            productId: item.id,
-            qty: item.qty,
-            sellingPrice: item.sellingPrice,
-            mrp: item.mrp,
-            taxRate: item.taxRate,
-            discountAmount: toNumber(item.discountAmount),
-          })),
-        }),
+        body: JSON.stringify(payload),
       });
       const json = await res.json();
       if (json.success) {
@@ -265,7 +432,29 @@ export default function PosBillingPage() {
         showToast(json.message || 'Checkout failed', 'error');
       }
     } catch {
-      showToast('Checkout failed', 'error');
+      const payload = buildBillPayload({
+        session,
+        user,
+        cart,
+        customerName,
+        customerMobile,
+        orderDiscount,
+        roundOff,
+        paymentMode,
+        payments,
+        openingStoreId,
+      });
+      const queue = readStorageJSON(POS_QUEUE_KEY, []);
+      queue.push({ payload, createdAt: new Date().toISOString() });
+      writeStorageJSON(POS_QUEUE_KEY, queue);
+      showToast('Network lost. Bill saved locally and will sync later.');
+      setCart([]);
+      setCustomerName('');
+      setCustomerMobile('');
+      setOrderDiscount('0');
+      setRoundOff('0');
+      setPayments([emptyPayment()]);
+      setPaymentMode('cash');
     } finally {
       setCheckoutLoading(false);
     }
@@ -320,6 +509,9 @@ export default function PosBillingPage() {
   return (
     <MainLayout>
       <div className="min-h-screen bg-slate-100 text-slate-800">
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs font-medium text-amber-800">
+          {isOffline ? 'Offline mode active. Bills are queued locally and will sync automatically when the internet returns.' : 'Online mode active. POS is synced with live inventory.'}
+        </div>
         {toast && (
           <div className={`fixed top-4 right-4 z-[999] px-4 py-3 rounded-lg shadow-lg text-white text-sm font-medium ${
             toast.type === 'success' ? 'bg-emerald-500' : 'bg-rose-500'

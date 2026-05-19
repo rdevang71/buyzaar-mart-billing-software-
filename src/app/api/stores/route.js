@@ -1,19 +1,46 @@
-import { NextResponse } from 'next/server';
+import { successResponse, errorResponse, validationError } from '@/lib/apiResponse';
 import { query } from '@/lib/db';
-import { ensureStockInSchema } from '@/lib/stockInSchema';
+import { ensureStoresSchema } from '@/lib/storesSchema';
 
-export async function GET() {
+function buildStoreMeta(body = {}) {
+  return {
+    importAddress: body.importAddress || '',
+    locationType: body.locationType || 'Store',
+    latitude: body.latitude || '',
+    longitude: body.longitude || '',
+    panNumber: body.panNumber || '',
+    storeCapacity: body.storeCapacity || '',
+    defaultCustomerGroup: body.defaultCustomerGroup || '',
+    storeGuid: body.storeGuid || '',
+    shortCode: body.shortCode || '',
+    storeArea: body.storeArea || '',
+    enableVoucherValidation: !!body.enableVoucherValidation,
+    automaticPrint: !!body.automaticPrint,
+    enableStoreStockAlert: !!body.enableStoreStockAlert,
+    enableStoreOnlineBillingOnly: !!body.enableStoreOnlineBillingOnly,
+    cin: body.cin || '',
+    tin: body.tin || '',
+    serviceTaxNumber: body.serviceTaxNumber || '',
+    gstNumber: body.gstNumber || '',
+    customerGstOrderPrefix: body.customerGstOrderPrefix || '',
+    fssaiLicenseNumber: body.fssaiLicenseNumber || '',
+    taxInformation: body.taxInformation || '',
+    customStoreOrderPrefix: body.customStoreOrderPrefix || '',
+    refundCustomStoreOrderPrefix: body.refundCustomStoreOrderPrefix || '',
+    ncCustomStoreOrderPrefix: body.ncCustomStoreOrderPrefix || '',
+    ncRefundCustomStoreOrderPrefix: body.ncRefundCustomStoreOrderPrefix || '',
+    rwiCustomStoreOrderPrefix: body.rwiCustomStoreOrderPrefix || '',
+    users: body.users || '',
+  };
+}
+
+export async function GET(request) {
   try {
-    await ensureStockInSchema();
-    const res = await query('SELECT id, name FROM stores ORDER BY id LIMIT 100');
-    const rows = res.rows.map((r) => ({ id: r.id, name: r.name }));
-    return NextResponse.json(rows);
+    const res = await query('SELECT id, name FROM stores ORDER BY name');
+    // Return with `data.records` to match other catalog endpoints
+    return successResponse({ records: res.rows }, 'Stores fetched');
   } catch (err) {
-    console.error('[stores GET]', err.message);
-    return NextResponse.json([
-      { id: 1, name: 'Central Warehouse' },
-      { id: 2, name: 'The Buyzaar Mart' },
-      { id: 3, name: 'Outlet Store' },
-    ]);
+    console.error(err);
+    return errorResponse('Failed to fetch stores');
   }
 }

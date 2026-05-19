@@ -1,3 +1,15 @@
+"use client";
+
+import MainLayout from '@/components/MainLayout';
+
+export default function StorePaymentSettingsPage() {
+  return (
+    <MainLayout>
+      <h1 className="text-2xl font-bold">Store Payment Settings</h1>
+      <p className="text-sm text-gray-600 mt-2">Configure payment methods and settings per store.</p>
+    </MainLayout>
+  );
+}
 'use client';
 
 import CatalogListPage from '@/components/CatalogListPage';

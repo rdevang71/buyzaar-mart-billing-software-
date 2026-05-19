@@ -1,8 +1,8 @@
 "use client";
 
 import AuthScreen from '@/components/AuthScreen';
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useState, useEffect } from 'react';
 
 const highlights = [
   {
@@ -29,6 +29,9 @@ const highlights = [
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectTo = searchParams?.get('next') || '/home';
+  const [autoChecking, setAutoChecking] = useState(true);
   const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -60,7 +63,7 @@ export default function LoginPage() {
         return;
       }
 
-      router.push('/home');
+      router.push(redirectTo);
       router.refresh();
     } catch (err) {
       setError(err.message || 'Something went wrong');
@@ -68,6 +71,28 @@ export default function LoginPage() {
       setLoading(false);
     }
   };
+
+  // If the user is already authenticated (cookie present), redirect immediately
+  // We probe /api/auth/me to check auth; keep silent on failure.
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/auth/me');
+        if (!mounted) return;
+        const json = await res.json();
+        if (res.ok && json?.data?.user) {
+          router.push(redirectTo);
+        }
+      } catch (e) {
+        // ignore
+      } finally {
+        if (mounted) setAutoChecking(false);
+      }
+    })();
+
+    return () => { mounted = false; };
+  }, []);
 
   return (
     <AuthScreen
