@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from 'next/navigation';
 import CatalogListPage from "@/components/CatalogListPage";
 
 const columns = [
@@ -16,19 +17,28 @@ const columns = [
   { key: "sell_on_store",    label: "Sell on Store",   sortable: true },
 ];
 
-const stores = [
-  { id: "store_1", name: "Store A" },
-  { id: "store_2", name: "Store B" },
-  { id: "store_3", name: "Store C" },
-];
 
 export default function AssignProductsToStorePage() {
+  const router = useRouter();
   const [rows, setRows] = useState([]);
+  const [storesList, setStoresList] = useState([]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/stores');
+        const json = await res.json();
+        if (json.success) setStoresList(json.data.records || json.data.stores || []);
+      } catch (e) { /* ignore */ }
+    })();
+  }, []);
 
   const handleStoreChange = (storeId) => {
     // TODO: fetch products for selected store
     setRows([]);
   };
+
+  const handleBulkCreate = () => router.push('/catalog/pricing/assign-products-store/assignbulk');
 
   return (
     <CatalogListPage
@@ -39,12 +49,15 @@ export default function AssignProductsToStorePage() {
       ]}
       title="Assign Product To Store"
       description="Map/Unmap products to store Need Help?"
-      createLabel={null}
-      bulkOperations={true}
+        createLabel={'Bulk Create'}
+      onCreateClick={handleBulkCreate}
+      bulkImportType={'products'}
+      onImportSuccess={() => setRows([])}
+        bulkOperations={false}
       showStoreSelector={true}
       selectorLabel={null}
       selectorPlaceholder="None"
-      stores={stores}
+      stores={storesList}
       onStoreChange={handleStoreChange}
       columns={columns}
       rows={rows}

@@ -1,5 +1,6 @@
-'use client';
+ 'use client';
 
+import { useRouter } from 'next/navigation';
 import CatalogDataPage from '@/components/CatalogDataPage';
 
 const columns = [
@@ -11,6 +12,7 @@ const columns = [
 ];
 
 export default function ServicesPage() {
+  const router = useRouter();
   return (
     <CatalogDataPage
       endpoint="/api/catalog/services"
@@ -24,6 +26,8 @@ export default function ServicesPage() {
       columns={columns}
       totalLabel="Service(s)"
       emptyMessage="No services found"
+      createLabel="Create Service"
+      onCreateClick={() => router.push('/catalog/services/create')}
       mapRecord={(record, index, page, pageSize) => ({
         id: record.id,
         sno: (page - 1) * pageSize + index + 1,

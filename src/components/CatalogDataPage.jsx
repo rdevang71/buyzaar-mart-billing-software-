@@ -20,7 +20,7 @@ export default function CatalogDataPage({
   onEdit,
   onDelete,
   filters = null,
-  extraQueryParams = {},
+  extraQueryParams = null,
 }) {
   const [records, setRecords] = useState([]);
   const [total, setTotal] = useState(0);

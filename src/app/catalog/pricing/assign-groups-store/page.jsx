@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from 'next/navigation';
 import CatalogListPage from "@/components/CatalogListPage";
 
 const columns = [
@@ -13,18 +14,62 @@ const columns = [
   { key: "mrp",                label: "MRP",                sortable: true },
 ];
 
-const stores = [
-  { id: "store_1", name: "Store A" },
-  { id: "store_2", name: "Store B" },
-  { id: "store_3", name: "Store C" },
-];
-
 export default function AssignProductGroupsToStorePage() {
+  const router = useRouter();
   const [rows, setRows] = useState([]);
+  const [storesList, setStoresList] = useState([]);
 
-  const handleStoreChange = (storeId) => {
-    // TODO: fetch product groups for selected store
-    setRows([]);
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/stores');
+        const json = await res.json();
+        if (json.success) setStoresList(json.data.records || []);
+      } catch (e) { }
+    })();
+  }, []);
+
+  const [selectedStoreId, setSelectedStoreId] = useState(null);
+
+  const handleStoreChange = async (storeId) => {
+    setSelectedStoreId(storeId || null);
+    if (!storeId) { setRows([]); return; }
+    try {
+      const res = await fetch(`/api/catalog/assign-product-groups-store?storeId=${storeId}`);
+      const json = await res.json();
+      if (json.success) {
+        // map to CatalogListPage rows shape
+        const mapped = json.data.records.map(g => ({
+          id: g.id,
+          product_group_id: g.id,
+          product_group_name: g.name,
+          product_id: '—',
+          product_name: '—',
+          barcode: '—',
+          serial_number: '—',
+          mrp: '—',
+          is_assigned: g.is_assigned,
+        }));
+        setRows(mapped);
+      } else setRows([]);
+    } catch (e) { setRows([]); }
+  };
+
+  const handleBulkCreate = () => router.push('/catalog/pricing/assign-groups-store/assignbulk');
+
+  const handleToggle = async (row) => {
+    const storeId = selectedStoreId;
+    if (!storeId) return alert('Select a store first');
+    const assign = !row.is_assigned;
+    const res = await fetch('/api/catalog/assign-product-groups-store/toggle', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ groupId: row.product_group_id, storeId, assign })
+    });
+    const j = await res.json();
+    if (j.success) {
+      // refresh
+      handleStoreChange(storeId);
+    } else alert(j.message || 'Failed');
   };
 
   return (
@@ -36,17 +81,21 @@ export default function AssignProductGroupsToStorePage() {
       ]}
       title="Assign Product Group to Store"
       description="Map product groups to stores Need Help?"
-      createLabel={null}
-      bulkOperations={true}
+      createLabel={'Bulk Create'}
+      onCreateClick={handleBulkCreate}
+      bulkOperations={false}
       showStoreSelector={true}
       selectorLabel="Select Store"
       selectorPlaceholder="None"
-      stores={stores}
+      stores={storesList}
       onStoreChange={handleStoreChange}
       columns={columns}
       rows={rows}
       totalLabel="Product Group(s)"
       emptyMessage="No data found"
+      showRowActions={true}
+      onEdit={handleToggle}
+      onDelete={null}
     />
   );
 }

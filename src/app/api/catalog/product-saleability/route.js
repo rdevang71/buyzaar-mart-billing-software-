@@ -10,10 +10,14 @@ export async function GET(request) {
     const page = parseInt(searchParams.get('page') || '1');
     const pageSize = parseInt(searchParams.get('pageSize') || '10');
     const offset = (page - 1) * pageSize;
-
     const params = [];
-    const where = search ? `WHERE p.name ILIKE $1 OR COALESCE(st.name, '') ILIKE $1` : '';
-    if (search) params.push(`%${search}%`);
+    const filters = [];
+    const storeId = searchParams.get('store_id');
+    const productId = searchParams.get('product_id');
+    if (search) filters.push(`(p.name ILIKE $${params.length + 1} OR COALESCE(st.name, '') ILIKE $${params.length + 1})`) && params.push(`%${search}%`);
+    if (storeId) { params.push(storeId); filters.push(`ps.store_id = $${params.length}`); }
+    if (productId) { params.push(productId); filters.push(`ps.product_id = $${params.length}`); }
+    const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
 
     const count = await query(
       `SELECT COUNT(*) FROM product_saleability ps
