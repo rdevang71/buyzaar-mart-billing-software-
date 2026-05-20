@@ -8,19 +8,36 @@ const PAGE_SIZES = [10, 25, 50, 100];
 
 const columns = [
   { key: 'id', label: 'ID' },
-  { key: 'userId', label: 'User ID' },
-  { key: 'counterId', label: 'Counter ID' },
-  { key: 'deviceId', label: 'Device ID' },
-  { key: 'storeId', label: 'Store ID' },
-  { key: 'sessionId', label: 'Session ID' },
-  { key: 'sessionStartAt', label: 'Session Start At' },
-  { key: 'sessionEndAt', label: 'Session End At' },
-  { key: 'isActive', label: 'Is Active' },
-  { key: 'serialNumber', label: 'Serial Number' },
   { key: 'storeName', label: 'Store Name' },
-  { key: 'counterName', label: 'Counter Name' },
   { key: 'userName', label: 'User Name' },
+  { key: 'counterName', label: 'Counter Name' },
+  { key: 'sessionId', label: 'Session ID' },
+  { key: 'sessionStartAt', label: 'Opened At' },
+  { key: 'sessionEndAt', label: 'Closed At' },
+  { key: 'isActive', label: 'Active' },
+  { key: 'openingCash', label: 'Opening Cash' },
+  { key: 'grossSales', label: 'Total Sale' },
+  { key: 'cashSales', label: 'Cash Sale' },
+  { key: 'cardSales', label: 'Card Sale' },
+  { key: 'upiSales', label: 'UPI Sale' },
+  { key: 'paidTotal', label: 'Paid Total' },
+  { key: 'expectedCash', label: 'Expected Cash' },
+  { key: 'actualCash', label: 'Actual Cash' },
+  { key: 'variance', label: 'Variance' },
+  { key: 'closingRemarks', label: 'Remarks' },
 ];
+
+const moneyKeys = new Set([
+  'openingCash',
+  'grossSales',
+  'cashSales',
+  'cardSales',
+  'upiSales',
+  'paidTotal',
+  'expectedCash',
+  'actualCash',
+  'variance',
+]);
 
 function formatDisplayDate(iso) {
   if (!iso) return '';
@@ -46,6 +63,13 @@ function formatCellValue(key, value) {
     });
   }
   if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (moneyKeys.has(key)) {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 2,
+    }).format(Number(value || 0));
+  }
   return value;
 }
 

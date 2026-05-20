@@ -1,16 +1,34 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { usePathname } from 'next/navigation';
+import { useMemo, useState, useEffect } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import Topbar from './Topbar';
 import Sidebar from './Sidebar';
 import SubSidebar from './SubSidebar';
 import { menuItems } from './sidebarConfig';
+import { useUser } from '@/hooks/useUser';
+import { canAccessPath, filterMenuItemsForUser, getDefaultRouteForUser } from '@/lib/accessControl';
 
 export default function MainLayout({ children }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { user, loading } = useUser();
   const [activeMenu, setActiveMenu] = useState(null);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const accessibleMenuItems = useMemo(() => filterMenuItemsForUser(menuItems, user), [user]);
+  const accessAllowed = !loading && user && canAccessPath(user, pathname);
+
+  useEffect(() => {
+    if (loading) return;
+    if (!user) {
+      router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+      return;
+    }
+
+    if (!canAccessPath(user, pathname)) {
+      router.replace(getDefaultRouteForUser(user));
+    }
+  }, [loading, pathname, router, user]);
 
   // Auto-open subSidebar when on a matching route
   useEffect(() => {
@@ -18,7 +36,7 @@ export default function MainLayout({ children }) {
     const pathBase = pathname.split('/')[1];
     
     // Find matching menu item by comparing base paths
-    const matched = menuItems.find(
+    const matched = accessibleMenuItems.find(
       (item) =>
         item.subSidebar &&
         item.href.split('/')[1] === pathBase // Compare base paths
@@ -29,7 +47,7 @@ export default function MainLayout({ children }) {
     } else {
       setActiveMenu(null);
     }
-  }, [pathname]);
+  }, [pathname, accessibleMenuItems]);
 
   // Close mobile drawer on route change
   useEffect(() => {
@@ -37,12 +55,18 @@ export default function MainLayout({ children }) {
   }, [pathname]);
 
   const subOpen = activeMenu?.subSidebar != null;
+  const content = accessAllowed ? children : (
+    <div className="flex min-h-[50vh] items-center justify-center text-sm font-medium text-gray-500">
+      Loading your workspace...
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Topbar onMenuOpen={() => setMobileOpen(true)} />
 
       <Sidebar
+        items={accessibleMenuItems}
         activeMenu={activeMenu}
         setActiveMenu={setActiveMenu}
         mobileOpen={mobileOpen}
@@ -82,7 +106,7 @@ export default function MainLayout({ children }) {
           p-4 sm:p-5 md:p-7
         `}
       >
-        {children}
+        {content}
       </main>
     </div>
   );

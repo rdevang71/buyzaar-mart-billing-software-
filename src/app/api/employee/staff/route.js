@@ -39,6 +39,23 @@ function normalizePermissions(input) {
   return [];
 }
 
+function normalizeSystemRole(roleName, userType) {
+  const value = String(roleName || userType || '').trim().toLowerCase().replace(/\s+/g, '_');
+  if (value === 'super_admin' || value === 'superadmin') return 'super_admin';
+  if (value === 'admin' || value === 'administrator') return 'admin';
+  if (value === 'manager' || value === 'store_manager') return 'manager';
+  return 'user';
+}
+
+function normalizeStoreIds(input) {
+  if (Array.isArray(input)) return input.map(Number).filter(Number.isFinite);
+  if (typeof input === 'string') {
+    return input.split(',').map((item) => Number(item.trim())).filter(Number.isFinite);
+  }
+  const single = Number(input);
+  return Number.isFinite(single) ? [single] : [];
+}
+
 function mapEmployeeRow(row) {
   return {
     id: row.id,
@@ -131,6 +148,7 @@ export async function POST(request) {
     const emailAddress = toString(body.email_address || body.emailAddress).toLowerCase();
     const roleId = body.role_id ?? body.roleId ?? null;
     const roleName = toString(body.role_name || body.roleName);
+    const assignedStores = normalizeStoreIds(body.assigned_stores || body.assignedStores || body.store_ids || body.storeIds || body.store_id || body.storeId);
     const permissions = normalizePermissions(body.permissions);
     const regionStore = toString(body.region_store || body.regionStore);
     const warehouse = toString(body.warehouse);
@@ -138,6 +156,7 @@ export async function POST(request) {
     const departmentName = toString(body.department_name || body.departmentName);
     const customerName = toString(body.customer_name || body.customerName);
     const userType = toString(body.user_type || body.userType);
+    const systemRole = normalizeSystemRole(roleName, body.system_role || body.systemRole || body.user_role || body.userRole || userType);
     const dateOfBirth = toDate(body.date_of_birth || body.dateOfBirth);
     const dateOfJoining = toDate(body.date_of_joining || body.dateOfJoining);
     const dateOfLeaving = toDate(body.date_of_leaving || body.dateOfLeaving);
@@ -171,9 +190,19 @@ export async function POST(request) {
         emailAddress || `${username || 'employee'}-${fallbackToken}@example.com`,
         mobileNumber || `emp-${fallbackToken.slice(0, 12)}`,
         passwordHash,
-        'user',
+        systemRole,
       ]
     );
+
+    for (const storeId of assignedStores) {
+      await client.query(
+        `INSERT INTO user_stores (user_id, store_id, is_active, created_at, updated_at)
+         VALUES ($1, $2, TRUE, NOW(), NOW())
+         ON CONFLICT (user_id, store_id) DO UPDATE
+         SET is_active = TRUE, updated_at = NOW()`,
+        [userRes.rows[0].id, storeId]
+      );
+    }
 
     const employeeRes = await client.query(
       `INSERT INTO employees (

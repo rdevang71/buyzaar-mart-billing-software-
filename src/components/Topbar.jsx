@@ -3,43 +3,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { menuItems } from './sidebarConfig';
-
-function getPageTitle(pathname) {
-  for (const item of menuItems) {
-    if (pathname === item.href || pathname.startsWith(item.href + '/')) {
-      if (item.subSidebar?.groups) {
-        for (const group of item.subSidebar.groups) {
-          const match = group.items.find(
-            (subItem) => pathname === subItem.href || pathname.startsWith(subItem.href + '/')
-          );
-          if (match?.label) {
-            return match.label;
-          }
-        }
-      }
-
-      if (item.subSidebar?.simpleItems) {
-        const match = item.subSidebar.simpleItems.find(
-          (subItem) => pathname === subItem.href || pathname.startsWith(subItem.href + '/')
-        );
-        if (match?.label && match.label !== 'Inventory Dashboard') {
-          return match.label;
-        }
-      }
-
-      return item.label;
-    }
-  }
-
-  return 'Home';
-}
+import { useUser } from '@/hooks/useUser';
+import { filterMenuItemsForUser, getPageTitleForMenu } from '@/lib/accessControl';
 
 export default function Topbar({ onMenuOpen }) {
   const router = useRouter();
   const pathname = usePathname();
-  const title = getPageTitle(pathname);
-  const [user, setUser] = useState(null);
-  const [loadingUser, setLoadingUser] = useState(true);
+  const { user, loading: loadingUser, refetch } = useUser();
+  const accessibleMenuItems = useMemo(() => filterMenuItemsForUser(menuItems, user), [user]);
+  const title = getPageTitleForMenu(accessibleMenuItems, pathname);
   const [openProfile, setOpenProfile] = useState(false);
   const [openChangePassword, setOpenChangePassword] = useState(false);
   const [passwordForm, setPasswordForm] = useState({
@@ -62,28 +34,31 @@ export default function Topbar({ onMenuOpen }) {
       .join('');
   }, [user?.name]);
 
+  const roleLabel = useMemo(() => {
+    if (!user?.role) return 'Guest';
+    return user.role
+      .split('_')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+  }, [user?.role]);
+
+  const storeLabel = useMemo(() => {
+    if (!user) return '-';
+    if (user.role === 'super_admin') return 'All Stores';
+    if (Array.isArray(user.assigned_store_names) && user.assigned_store_names.length > 0) {
+      return user.assigned_store_names.length === 1
+        ? user.assigned_store_names[0]
+        : `${user.assigned_store_names.length} Stores`;
+    }
+    if (Array.isArray(user.assigned_stores) && user.assigned_stores.length > 0) {
+      return `${user.assigned_stores.length} Stores`;
+    }
+    return 'No Store Assigned';
+  }, [user]);
+
   useEffect(() => {
-    const fetchCurrentUser = async () => {
-      setLoadingUser(true);
-      try {
-        const res = await fetch('/api/auth/me', { cache: 'no-store' });
-        const json = await res.json();
-
-        if (!res.ok || !json.success) {
-          setUser(null);
-          return;
-        }
-
-        setUser(json.data.user);
-      } catch {
-        setUser(null);
-      } finally {
-        setLoadingUser(false);
-      }
-    };
-
-    fetchCurrentUser();
-  }, [pathname]);
+    refetch();
+  }, [pathname, refetch]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -199,7 +174,7 @@ export default function Topbar({ onMenuOpen }) {
                 {loadingUser ? 'Loading...' : user?.name || 'Guest User'}
               </p>
               <p className="text-[10px] text-gray-400 leading-tight">
-                {loadingUser ? '' : (user?.role || 'user').replace('_', ' ')}
+                {loadingUser ? '' : roleLabel}
               </p>
             </div>
             <i className="ti ti-chevron-down text-gray-400 text-[13px] hidden sm:block" />
@@ -221,12 +196,12 @@ export default function Topbar({ onMenuOpen }) {
 
                 <div className="mt-3 grid grid-cols-2 gap-3 border-t border-slate-300 pt-3">
                   <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">User ID</p>
-                    <p className="text-[22px] font-bold leading-tight text-slate-900">{user?.id ?? '-'}</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Role</p>
+                    <p className="text-[16px] font-bold leading-tight text-slate-900">{roleLabel}</p>
                   </div>
                   <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Chain ID</p>
-                    <p className="text-[22px] font-bold leading-tight text-slate-900">{user?.chain_id ?? '-'}</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Store Access</p>
+                    <p className="text-[16px] font-bold leading-tight text-slate-900">{storeLabel}</p>
                   </div>
                 </div>
               </div>

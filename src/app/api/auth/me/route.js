@@ -3,10 +3,12 @@ import { successResponse, errorResponse } from '@/lib/api-response';
 import { verifyToken } from '@/lib/auth-enhanced';
 import { query } from '@/lib/db';
 import { ensureUsersTable } from '@/lib/userAuth';
+import { ensureRolesSchema } from '@/lib/rolesSchema';
 
 export async function GET() {
   try {
     await ensureUsersTable();
+    await ensureRolesSchema();
 
     const cookieStore = await cookies();
     
@@ -43,14 +45,33 @@ export async function GET() {
       return successResponse({ user: null }, 'Not authenticated');
     }
 
-    // Construct user object from token + database
+    const roleResult = await query(
+      `SELECT permissions FROM roles WHERE role_name = $1 LIMIT 1`,
+      [dbUser.role || 'user']
+    );
+
+    const storesResult = await query(
+      `SELECT us.store_id, s.name AS store_name
+       FROM user_stores us
+       LEFT JOIN stores s ON s.id = us.store_id
+       WHERE us.user_id = $1 AND us.is_active = TRUE
+       ORDER BY s.name ASC, us.store_id ASC`,
+      [dbUser.id]
+    );
+
+    // Construct user object from token + latest database access rules
     const user = {
       id: dbUser.id,
       email: dbUser.email,
       name: dbUser.name || dbUser.email,
       role: dbUser.role || 'user',
-      permissions: payload.permissions || [],
-      assigned_stores: payload.assigned_stores || [],
+      permissions: Array.isArray(roleResult.rows[0]?.permissions)
+        ? roleResult.rows[0].permissions
+        : payload.permissions || [],
+      assigned_stores: storesResult.rows.map((row) => Number(row.store_id)),
+      assigned_store_names: storesResult.rows
+        .map((row) => row.store_name)
+        .filter(Boolean),
     };
 
     return successResponse({ user }, 'Authenticated');

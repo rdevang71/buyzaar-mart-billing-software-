@@ -69,6 +69,76 @@ const SETTING_CARDS = [
     desc: 'Per-store payment-mode mapping.',
     href: '/settings/store-payment-modes',
   },
+  {
+    label: 'Chain payment settings',
+    desc: 'Chain-wide payment providers and settlement defaults.',
+    href: '/settings/payment/chain-payment-settings',
+  },
+  {
+    label: 'Store payment settings',
+    desc: 'Store-specific merchant IDs, terminals, and toggles.',
+    href: '/settings/payment/store-payment-settings',
+  },
+  {
+    label: 'Refund configuration',
+    desc: 'Refund limits, modes, and approval rules.',
+    href: '/settings/credit-note/refund-configuration',
+  },
+  {
+    label: 'Redemption configuration',
+    desc: 'Credit note and voucher redemption rules.',
+    href: '/settings/credit-note/redemption-configuration',
+  },
+  {
+    label: 'Measurement units',
+    desc: 'Inventory units, symbols, and decimal precision.',
+    href: '/settings/inventory/measurement-unit',
+  },
+  {
+    label: 'Inventory system attributes',
+    desc: 'Built-in inventory tracking attributes.',
+    href: '/settings/inventory/system-attributes',
+  },
+  {
+    label: 'Inventory custom attributes',
+    desc: 'Custom stock fields and validation rules.',
+    href: '/settings/inventory/custom-attributes',
+  },
+  {
+    label: 'KOT printer config',
+    desc: 'Store-wise kitchen print routing.',
+    href: '/settings/billing/kot-printer-config',
+  },
+  {
+    label: 'Receipt customization',
+    desc: 'Receipt header, footer, copies, and sections.',
+    href: '/settings/billing/customize-receipt-print',
+  },
+  {
+    label: 'Chain attributes',
+    desc: 'Global billing and workflow attributes.',
+    href: '/settings/billing/chain-attributes',
+  },
+  {
+    label: 'Application device settings',
+    desc: 'Device behavior, sync, and offline rules.',
+    href: '/settings/device-config/application-device-settings',
+  },
+  {
+    label: 'Store device map',
+    desc: 'Map devices to stores and counters.',
+    href: '/settings/device-config/store-device-map',
+  },
+  {
+    label: 'Device data sync',
+    desc: 'Sync jobs and frequency preferences.',
+    href: '/settings/device-config/device-data-sync',
+  },
+  {
+    label: 'Device sync logs',
+    desc: 'Device sync status records and notes.',
+    href: '/settings/device-config/device-sync-logs',
+  },
 ];
 
 export default function SettingsPage() {

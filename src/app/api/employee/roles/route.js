@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { ensureRolesSchema } from '@/lib/rolesSchema';
+import { requireAuth, requirePermission } from '@/lib/api-protection';
 
 function normalizePermissions(input) {
   if (Array.isArray(input)) return input.filter(Boolean);
@@ -24,9 +25,11 @@ function mapRoleRow(row) {
   };
 }
 
-export async function GET() {
+export async function GET(request) {
   try {
     await ensureRolesSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
 
     const res = await query(
       `SELECT id, role_name, permissions, description, created_at
@@ -44,6 +47,10 @@ export async function GET() {
 export async function POST(request) {
   try {
     await ensureRolesSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_ROLES');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const body = await request.json();
     const roleName = String(body.role_name || body.roleName || '').trim();
@@ -79,6 +86,10 @@ export async function POST(request) {
 export async function PUT(request) {
   try {
     await ensureRolesSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_ROLES');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const body = await request.json();
     const id = Number(body.id);
@@ -96,6 +107,10 @@ export async function PUT(request) {
 
     if (permissions.length === 0) {
       return NextResponse.json({ error: 'Permission is required' }, { status: 400 });
+    }
+
+    if (roleName === 'super_admin' && auth.user.role !== 'super_admin') {
+      return NextResponse.json({ error: 'Only Super Admin can edit Super Admin role' }, { status: 403 });
     }
 
     const res = await query(
@@ -128,6 +143,10 @@ export async function PUT(request) {
 export async function DELETE(request) {
   try {
     await ensureRolesSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_ROLES');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const url = new URL(request.url);
     const id = Number(url.searchParams.get('id'));
@@ -136,7 +155,12 @@ export async function DELETE(request) {
       return NextResponse.json({ error: 'Role id is required' }, { status: 400 });
     }
 
-    const res = await query('DELETE FROM roles WHERE id = $1 RETURNING id', [id]);
+    const res = await query(
+      `DELETE FROM roles
+       WHERE id = $1 AND COALESCE((meta->>'system')::boolean, FALSE) = FALSE
+       RETURNING id`,
+      [id]
+    );
 
     if (res.rowCount === 0) {
       return NextResponse.json({ error: 'Role not found' }, { status: 404 });

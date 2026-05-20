@@ -2,9 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { menuItems } from './sidebarConfig';
 
-export default function Sidebar({ activeMenu, setActiveMenu, mobileOpen, onMobileClose }) {
+export default function Sidebar({ items = [], activeMenu, setActiveMenu, mobileOpen, onMobileClose }) {
   const pathname = usePathname();
 
   const handleClick = (e, item) => {
@@ -86,7 +85,7 @@ export default function Sidebar({ activeMenu, setActiveMenu, mobileOpen, onMobil
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {menuItems.map((item) => (
+          {items.map((item) => (
             <NavItem key={item.label} item={item} />
           ))}
         </div>
@@ -106,7 +105,7 @@ export default function Sidebar({ activeMenu, setActiveMenu, mobileOpen, onMobil
 
       <aside className="hidden md:block fixed left-0 top-[52px] h-[calc(100vh-52px)] w-[218px] bg-white border-r border-gray-200 z-40 overflow-y-auto">
         <div className="grid grid-cols-2">
-          {menuItems.map((item) => (
+          {items.map((item) => (
             <NavItem key={item.label} item={item} />
           ))}
         </div>

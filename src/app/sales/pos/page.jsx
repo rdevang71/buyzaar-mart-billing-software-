@@ -21,12 +21,42 @@ function formatCurrency(value) {
   }).format(toNumber(value));
 }
 
+function formatReceiptDateTime(value) {
+  const date = new Date(value || Date.now());
+  if (Number.isNaN(date.getTime())) return '';
+
+  return new Intl.DateTimeFormat('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  }).format(date);
+}
+
 function generateInvoiceNumber() {
   return `INV-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 }
 
 function emptyPayment() {
   return { method: 'cash', amount: '', referenceNo: '' };
+}
+
+const inputClassName = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500 focus:ring-2 focus:ring-blue-400 outline-none';
+
+function normalizeProduct(p) {
+  return {
+    id: p.id,
+    name: p.name,
+    sku: p.sku || '',
+    barcode: p.barcode || '',
+    mrp: toNumber(p.mrp || p.selling_price),
+    sellingPrice: toNumber(p.selling_price || p.sellingPrice || p.mrp),
+    availableStock: toNumber(p.availableStock ?? p.available_stock ?? p.stock, 0),
+    categoryName: p.categoryName || p.category_name || 'N/A',
+    taxRate: toNumber(p.taxRate ?? p.tax_rate, 0),
+  };
 }
 
 // ============================================================================
@@ -96,10 +126,14 @@ export default function POSPage() {
   const [closeSessionModal, setCloseSessionModal] = useState(false);
   const [customerHistoryModal, setCustomerHistoryModal] = useState(false);
   const [customerHistory, setCustomerHistory] = useState([]);
+  const [closingSummary, setClosingSummary] = useState(null);
+  const [closingLoading, setClosingLoading] = useState(false);
   const [actualCash, setActualCash] = useState('0');
   const [closingRemarks, setClosingRemarks] = useState('');
   const [openingCash, setOpeningCash] = useState('0');
   const [recentBills, setRecentBills] = useState([]);
+  const [receiptModal, setReceiptModal] = useState(false);
+  const [receiptData, setReceiptData] = useState(null);
 
   // ========================================================================
   // TOAST
@@ -114,39 +148,48 @@ export default function POSPage() {
   // DATA LOADING
   // ========================================================================
 
-  const loadProducts = useCallback(async () => {
+  const loadPOSData = useCallback(async (storeIdOverride = '') => {
     setLoading(true);
     try {
-      const res = await fetch(`http://localhost:5000/api/products?pageSize=100`);
+      const activeStoreId = storeIdOverride || session?.storeId || selectedStoreId;
+      const params = new URLSearchParams({ pageSize: '100' });
+      if (activeStoreId) params.set('store_id', String(activeStoreId));
+      const res = await fetch(`/api/sales-order/pos?${params}`, { cache: 'no-store' });
       const json = await res.json();
 
       if (json.success && json.data) {
-        const mappedProducts = (json.data.records || []).map(p => ({
-          id: p.id,
-          name: p.name,
-          sku: p.sku,
-          barcode: p.barcode,
-          mrp: p.mrp || p.selling_price || 0,
-          sellingPrice: p.selling_price || p.mrp || 0,
-          availableStock: p.availableStock || p.stock || 0,
-          categoryName: p.categoryName || 'N/A',
-          taxRate: p.taxRate || 0,
-        }));
-
+        const mappedProducts = (json.data.products || []).map(normalizeProduct);
         setProducts(mappedProducts);
         setFilteredProducts(mappedProducts);
-        writeStorage(STORAGE_KEYS.CACHE, { products: mappedProducts });
+        setStores(json.data.stores || []);
+        setRecentBills(json.data.recentBills || []);
+        if (json.data.session?.sessionId) {
+          setSession(json.data.session);
+          setSelectedStoreId(String(json.data.session.storeId || ''));
+          setOpeningCash(String(json.data.session.openingCash || 0));
+        } else if (json.data.selectedStoreId) {
+          setSelectedStoreId(String(json.data.selectedStoreId));
+        } else {
+          setSession(null);
+        }
+        writeStorage(STORAGE_KEYS.CACHE, {
+          products: mappedProducts,
+          stores: json.data.stores || [],
+          recentBills: json.data.recentBills || [],
+        });
       }
     } catch (err) {
       const cached = readStorage(STORAGE_KEYS.CACHE, null);
       if (cached?.products) {
         setProducts(cached.products);
         setFilteredProducts(cached.products);
+        setStores(cached.stores || []);
+        setRecentBills(cached.recentBills || []);
       }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedStoreId, session?.storeId]);
 
   const loadAuth = useCallback(async () => {
     try {
@@ -188,9 +231,9 @@ export default function POSPage() {
 
   useEffect(() => {
     loadAuth();
-    loadProducts();
+    loadPOSData();
     if (barcodeRef.current) barcodeRef.current.focus();
-  }, []);
+  }, [loadAuth, loadPOSData]);
 
   // Restore draft
   useEffect(() => {
@@ -242,20 +285,13 @@ export default function POSPage() {
     }
 
     try {
-      const res = await fetch(`http://localhost:5000/api/products?search=${encodeURIComponent(code)}&pageSize=1`);
+      const activeStoreId = session?.storeId || selectedStoreId;
+      const params = new URLSearchParams({ search: code, pageSize: '1' });
+      if (activeStoreId) params.set('store_id', String(activeStoreId));
+      const res = await fetch(`/api/sales-order/pos?${params}`);
       const json = await res.json();
-      if (json.success && json.data?.records?.[0]) {
-        const p = json.data.records[0];
-        addProduct({
-          id: p.id,
-          name: p.name,
-          sku: p.sku,
-          barcode: p.barcode,
-          mrp: p.mrp || p.selling_price || 0,
-          sellingPrice: p.selling_price || p.mrp || 0,
-          availableStock: p.availableStock || p.stock || 0,
-          taxRate: p.taxRate || 0,
-        });
+      if (json.success && json.data?.products?.[0]) {
+        addProduct(normalizeProduct(json.data.products[0]));
       } else {
         showToast('Product not found', 'error');
       }
@@ -333,6 +369,8 @@ export default function POSPage() {
     return { subtotal, lineDiscount, taxTotal, discount, roundValue, grandTotal };
   }, [cart, orderDiscount, roundOff]);
 
+  const canGenerateBill = !!session?.sessionId && cart.length > 0 && !isProcessing;
+
   // ========================================================================
   // CUSTOMER HISTORY
   // ========================================================================
@@ -344,12 +382,15 @@ export default function POSPage() {
     }
 
     try {
-      const query = customerMobile || customerName;
-      const res = await fetch(`/api/sales-order/customer-history?search=${encodeURIComponent(query)}`);
+      const historyQuery = customerMobile || customerName;
+      const activeStoreId = session?.storeId || selectedStoreId;
+      const params = new URLSearchParams({ search: historyQuery });
+      if (activeStoreId) params.set('store_id', String(activeStoreId));
+      const res = await fetch(`/api/sales-order/customer-history?${params}`);
       const json = await res.json();
 
       if (json.success && json.data) {
-        setCustomerHistory(json.data);
+        setCustomerHistory(json.data.bills || []);
         setCustomerHistoryModal(true);
       } else {
         showToast('No history found', 'info');
@@ -359,9 +400,134 @@ export default function POSPage() {
     }
   };
 
+  const selectCustomerFromHistory = (bill) => {
+    setCustomerName(bill.customerName || customerName);
+    setCustomerMobile(bill.customerMobile || customerMobile);
+    if (bill.paymentMode) setPaymentMode(bill.paymentMode);
+    setCustomerHistoryModal(false);
+    showToast('Customer details filled from history');
+  };
+
+  const printReceipt = (receipt = receiptData) => {
+    if (!receipt || typeof window === 'undefined') return;
+
+    const bill = receipt.bill || {};
+    const items = receipt.items || [];
+    const printWindow = window.open('', '_blank', 'width=380,height=720');
+    if (!printWindow) {
+      showToast('Popup blocked. Please allow popups to print receipt.', 'error');
+      return;
+    }
+
+    const rows = items.map((item) => `
+      <tr>
+        <td>${item.name || item.product_name || 'Product'}<br><small>${item.sku || ''}</small></td>
+        <td style="text-align:center">${toNumber(item.qty, 1)}</td>
+        <td style="text-align:right">${formatCurrency(item.selling_price || item.sellingPrice || 0)}</td>
+        <td style="text-align:right">${formatCurrency(item.line_total || (toNumber(item.qty, 1) * toNumber(item.selling_price || item.sellingPrice)))}</td>
+      </tr>
+    `).join('');
+
+    printWindow.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <title>Receipt ${bill.billNumber || bill.bill_number || ''}</title>
+          <style>
+            body { font-family: Arial, sans-serif; color: #111827; margin: 0; padding: 16px; font-size: 12px; }
+            h1 { font-size: 18px; margin: 0 0 4px; text-align: center; }
+            .muted { color: #475569; }
+            .center { text-align: center; }
+            .line { border-top: 1px dashed #94a3b8; margin: 10px 0; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { padding: 5px 0; vertical-align: top; }
+            th { border-bottom: 1px solid #cbd5e1; font-size: 11px; }
+            .totals div { display: flex; justify-content: space-between; margin: 3px 0; }
+            .grand { font-size: 16px; font-weight: 800; }
+            @media print { body { padding: 0; } }
+          </style>
+        </head>
+        <body>
+          <h1>BillingPro</h1>
+          <div class="center muted">GST Invoice / POS Receipt</div>
+          <div class="line"></div>
+          <div><strong>Bill:</strong> ${bill.billNumber || bill.bill_number || bill.invoiceNumber || '-'}</div>
+          <div><strong>Date & Time:</strong> ${formatReceiptDateTime(bill.createdAt || bill.created_at)}</div>
+          <div><strong>Customer:</strong> ${bill.customerName || bill.customer_name || 'Walk-in Customer'}</div>
+          ${(bill.customerMobile || bill.customer_mobile) ? `<div><strong>Mobile:</strong> ${bill.customerMobile || bill.customer_mobile}</div>` : ''}
+          <div class="line"></div>
+          <table>
+            <thead>
+              <tr><th style="text-align:left">Item</th><th>Qty</th><th style="text-align:right">Rate</th><th style="text-align:right">Amt</th></tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+          <div class="line"></div>
+          <div class="totals">
+            <div><span>Subtotal</span><strong>${formatCurrency(bill.subtotal || receipt.subtotal || 0)}</strong></div>
+            <div><span>Discount</span><strong>${formatCurrency(bill.discount_total || bill.discountTotal || receipt.discount || 0)}</strong></div>
+            <div><span>Tax</span><strong>${formatCurrency(bill.tax_total || bill.totalTax || receipt.taxTotal || 0)}</strong></div>
+            <div class="grand"><span>Total</span><span>${formatCurrency(bill.grand_total || bill.grandTotal || receipt.grandTotal || 0)}</span></div>
+            <div><span>Paid By</span><strong>${bill.payment_mode || bill.paymentMode || 'cash'}</strong></div>
+          </div>
+          <div class="line"></div>
+          <div class="center muted">Thank you. Visit again.</div>
+          <script>window.onload = () => { window.print(); window.close(); };</script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  const openReceiptFromBill = async (bill) => {
+    const billId = bill.billNumber || bill.invoiceNumber || bill.bill_number || bill.id;
+    if (!billId) return;
+
+    try {
+      const res = await fetch(`/api/pos/billing?bill_id=${encodeURIComponent(billId)}`);
+      const json = await res.json();
+      if (!json.success) {
+        showToast(json.message || 'Failed to load receipt', 'error');
+        return;
+      }
+      setReceiptData(json.data);
+      setReceiptModal(true);
+    } catch {
+      showToast('Failed to load receipt', 'error');
+    }
+  };
+
   // ========================================================================
   // SESSION MANAGEMENT
   // ========================================================================
+
+  const openCloseSessionModal = async () => {
+    if (!session?.sessionId) {
+      showToast('No active session', 'error');
+      return;
+    }
+
+    setCloseSessionModal(true);
+    setClosingLoading(true);
+    try {
+      const params = new URLSearchParams({ sessionId: session.sessionId });
+      const res = await fetch(`/api/sales-order/closing?${params}`, { cache: 'no-store' });
+      const json = await res.json();
+      if (json.success && json.data) {
+        setClosingSummary(json.data);
+        const expectedCash = json.data.totals?.expectedCash;
+        if (expectedCash !== undefined && expectedCash !== null) {
+          setActualCash(String(expectedCash));
+        }
+      } else {
+        showToast(json.message || 'Failed to load closing summary', 'error');
+      }
+    } catch {
+      showToast('Failed to load closing summary', 'error');
+    } finally {
+      setClosingLoading(false);
+    }
+  };
 
   const openSession = async () => {
     if (!user) {
@@ -388,9 +554,12 @@ export default function POSPage() {
       });
 
       const json = await res.json();
-      if (json.success || json.id) {
-        setSession(json);
+      if (res.ok && (json.success || json.id)) {
+        const openedSession = json.data?.session || json;
+        setSession(openedSession);
+        setSelectedStoreId(String(openedSession.storeId || selectedStoreId));
         setOpenSessionModal(false);
+        loadPOSData(openedSession.storeId || selectedStoreId);
         showToast('Session opened successfully');
       } else {
         showToast(json.error || 'Failed to open session', 'error');
@@ -425,6 +594,7 @@ export default function POSPage() {
       if (json.success) {
         setSession(null);
         setCloseSessionModal(false);
+        setClosingSummary(null);
         setClosingRemarks('');
         setActualCash('0');
         clearCart();
@@ -485,17 +655,57 @@ export default function POSPage() {
         return;
       }
 
-      const res = await fetch('http://localhost:5000/api/sales-order/bills', {
+      const res = await fetch('/api/sales-order/pos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          ...payload,
+          payments: payments.map((p) => ({
+            ...p,
+            amount: toNumber(p.amount || cartTotals.grandTotal),
+          })),
+        }),
       });
 
       const json = await res.json();
       if (json.success) {
-        showToast(`Bill ${payload.invoiceNumber} created!`);
+        const savedBill = json.data?.bill;
+        const receiptItems = cart.map((item) => ({
+          ...item,
+          name: item.name,
+          selling_price: item.sellingPrice,
+          line_total: (item.qty * item.sellingPrice) - toNumber(item.discountAmount) + ((Math.max(0, item.qty * item.sellingPrice - toNumber(item.discountAmount)) * toNumber(item.taxRate)) / 100),
+        }));
+        showToast(json.data?.message || `Bill ${payload.invoiceNumber} created!`);
+        setRecentBills((current) => [savedBill, ...current].filter(Boolean).slice(0, 10));
+        setReceiptData({
+          bill: {
+            ...savedBill,
+            customerName: payload.customerName,
+            customerMobile,
+            subtotal: cartTotals.subtotal,
+            discountTotal: cartTotals.discount,
+            taxTotal: cartTotals.taxTotal,
+            grandTotal: cartTotals.grandTotal,
+            paymentMode,
+            createdAt: savedBill?.createdAt || new Date().toISOString(),
+          },
+          items: receiptItems,
+          subtotal: cartTotals.subtotal,
+          discount: cartTotals.discount,
+          taxTotal: cartTotals.taxTotal,
+          grandTotal: cartTotals.grandTotal,
+        });
+        setReceiptModal(true);
+        if (
+          savedBill &&
+          (savedBill.customerMobile === customerMobile ||
+            savedBill.customerName?.toLowerCase() === customerName.toLowerCase())
+        ) {
+          setCustomerHistory((current) => [savedBill, ...current].slice(0, 50));
+        }
         clearCart();
-        loadProducts();
+        loadPOSData();
       } else {
         showToast(json.message || 'Failed to create bill', 'error');
       }
@@ -536,7 +746,7 @@ export default function POSPage() {
               <p className="text-xs font-semibold text-blue-600 tracking-wide">POINT OF SALE</p>
               <h1 className="text-3xl font-black text-slate-900 mt-1">POS Billing</h1>
               <p className="text-sm text-slate-600 mt-2">
-                {session?.sessionId ? `Session: ${session.userName}` : 'No active session'}
+                {session?.sessionId ? `Session: ${session.userName || 'POS User'}${session.storeName ? ` at ${session.storeName}` : ''}` : 'No active session'}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -550,17 +760,27 @@ export default function POSPage() {
               ) : (
                 <>
                   <button
-                    onClick={() => setCloseSessionModal(true)}
+                    onClick={openCloseSessionModal}
                     className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 font-semibold hover:bg-slate-50"
                   >
                     Close Session
                   </button>
                   <button
                     onClick={createBill}
-                    disabled={isProcessing || cart.length === 0}
-                    className="px-4 py-2 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700 disabled:opacity-50"
+                    disabled={!canGenerateBill}
+                    style={{
+                      minWidth: '150px',
+                      padding: '0.75rem 1.25rem',
+                      borderRadius: '0.625rem',
+                      border: '1px solid transparent',
+                      background: canGenerateBill ? '#16a34a' : '#94a3b8',
+                      color: '#ffffff',
+                      fontWeight: 800,
+                      cursor: canGenerateBill ? 'pointer' : 'not-allowed',
+                      boxShadow: canGenerateBill ? '0 8px 18px rgba(22, 163, 74, 0.22)' : 'none',
+                    }}
                   >
-                    {isProcessing ? 'Processing...' : 'Save Bill'}
+                    {isProcessing ? 'Processing...' : `Generate Bill (${formatCurrency(cartTotals.grandTotal)})`}
                   </button>
                 </>
               )}
@@ -578,7 +798,7 @@ export default function POSPage() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search by name, SKU, or barcode..."
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 outline-none"
+                  className={inputClassName}
                 />
                 <input
                   ref={barcodeRef}
@@ -587,7 +807,7 @@ export default function POSPage() {
                   onChange={(e) => setBarcode(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleBarcode(barcode)}
                   placeholder="Scan barcode (Enter to submit)"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 outline-none"
+                  className={inputClassName}
                 />
               </div>
 
@@ -625,9 +845,28 @@ export default function POSPage() {
             <aside className="space-y-4 flex flex-col">
               {/* Cart */}
               <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 flex-1 flex flex-col">
-                <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-100">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-3 pb-3 border-b border-slate-100">
                   <h2 className="font-bold text-slate-900">Cart</h2>
-                  <span className="text-xs bg-slate-100 text-slate-700 px-2 py-1 rounded-full">{cart.length}</span>
+                  <div className="flex items-center gap-2">
+                    {cart.length > 0 && (
+                      <button
+                        onClick={createBill}
+                        disabled={!canGenerateBill}
+                        style={{
+                          padding: '0.625rem 1rem',
+                          borderRadius: '0.5rem',
+                          border: '1px solid transparent',
+                          background: canGenerateBill ? '#16a34a' : '#94a3b8',
+                          color: '#ffffff',
+                          fontWeight: 800,
+                          cursor: canGenerateBill ? 'pointer' : 'not-allowed',
+                        }}
+                      >
+                        Generate Bill
+                      </button>
+                    )}
+                    <span className="text-xs bg-slate-100 text-slate-700 px-2 py-1 rounded-full">{cart.length}</span>
+                  </div>
                 </div>
 
                 {cart.length === 0 ? (
@@ -654,16 +893,16 @@ export default function POSPage() {
                               min="1"
                               value={item.qty}
                               onChange={(e) => updateCartItem(item.id, 'qty', toNumber(e.target.value, 1))}
-                              className="rounded border border-slate-200 px-1 py-0.5"
+                              className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-900"
                             />
                             <input
                               type="number"
                               min="0"
                               value={item.discountAmount}
                               onChange={(e) => updateCartItem(item.id, 'discountAmount', toNumber(e.target.value, 0))}
-                              className="rounded border border-slate-200 px-1 py-0.5"
+                              className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-900"
                             />
-                            <div className="rounded border border-slate-200 bg-white px-1 py-0.5 text-center">
+                            <div className="rounded border border-slate-300 bg-white px-2 py-1 text-center text-slate-900 font-semibold">
                               {formatCurrency((item.qty * item.sellingPrice) - toNumber(item.discountAmount))}
                             </div>
                           </div>
@@ -672,24 +911,24 @@ export default function POSPage() {
                     </div>
 
                     {/* Totals */}
-                    <div className="space-y-1 border-t border-slate-100 pt-3 text-sm">
-                      <div className="flex justify-between">
+                    <div className="space-y-1 border-t border-slate-200 pt-3 text-sm text-slate-800">
+                      <div className="flex justify-between text-slate-800">
                         <span>Subtotal</span>
-                        <span>{formatCurrency(cartTotals.subtotal)}</span>
+                        <span className="font-semibold">{formatCurrency(cartTotals.subtotal)}</span>
                       </div>
                       {cartTotals.discount > 0 && (
-                        <div className="flex justify-between text-slate-600">
+                        <div className="flex justify-between text-slate-800">
                           <span>Discount</span>
-                          <span>-{formatCurrency(cartTotals.discount)}</span>
+                          <span className="font-semibold">-{formatCurrency(cartTotals.discount)}</span>
                         </div>
                       )}
                       {cartTotals.taxTotal > 0 && (
-                        <div className="flex justify-between text-slate-600">
+                        <div className="flex justify-between text-slate-800">
                           <span>Tax</span>
-                          <span>+{formatCurrency(cartTotals.taxTotal)}</span>
+                          <span className="font-semibold">+{formatCurrency(cartTotals.taxTotal)}</span>
                         </div>
                       )}
-                      <div className="flex justify-between pt-2 border-t border-slate-100 font-bold">
+                      <div className="flex justify-between pt-2 border-t border-slate-200 font-bold text-slate-900">
                         <span>Total</span>
                         <span className="text-blue-600">{formatCurrency(cartTotals.grandTotal)}</span>
                       </div>
@@ -706,14 +945,14 @@ export default function POSPage() {
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
                   placeholder="Customer name"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 outline-none"
+                  className={inputClassName}
                 />
                 <input
                   type="tel"
                   value={customerMobile}
                   onChange={(e) => setCustomerMobile(e.target.value)}
                   placeholder="Mobile number"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 outline-none"
+                  className={inputClassName}
                 />
                 <button
                   onClick={loadCustomerHistory}
@@ -725,7 +964,7 @@ export default function POSPage() {
                 <select
                   value={paymentMode}
                   onChange={(e) => setPaymentMode(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-blue-400 outline-none"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white text-slate-900 focus:ring-2 focus:ring-blue-400 outline-none"
                 >
                   <option value="cash">💵 Cash</option>
                   <option value="card">💳 Card</option>
@@ -738,15 +977,37 @@ export default function POSPage() {
                   value={orderDiscount}
                   onChange={(e) => setOrderDiscount(e.target.value)}
                   placeholder="Order discount"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 outline-none"
+                  className={inputClassName}
                 />
                 <input
                   type="number"
                   value={roundOff}
                   onChange={(e) => setRoundOff(e.target.value)}
                   placeholder="Round off"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 outline-none"
+                  className={inputClassName}
                 />
+
+                <button
+                  onClick={createBill}
+                  disabled={!canGenerateBill}
+                  style={{
+                    width: '100%',
+                    padding: '0.875rem 1rem',
+                    borderRadius: '0.625rem',
+                    border: '1px solid transparent',
+                    background: canGenerateBill ? '#16a34a' : '#94a3b8',
+                    color: '#ffffff',
+                    fontWeight: 900,
+                    cursor: canGenerateBill ? 'pointer' : 'not-allowed',
+                    boxShadow: canGenerateBill ? '0 8px 18px rgba(22, 163, 74, 0.22)' : 'none',
+                  }}
+                >
+                  {!session?.sessionId
+                    ? 'Open Session to Generate Bill'
+                    : isProcessing
+                    ? 'Generating...'
+                    : `Generate Bill - ${formatCurrency(cartTotals.grandTotal)}`}
+                </button>
 
                 <button
                   onClick={clearCart}
@@ -755,11 +1016,183 @@ export default function POSPage() {
                   Clear Cart
                 </button>
               </section>
+
+              {/* Recent Bills */}
+              <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-bold text-slate-900">Recent Bills</h3>
+                  <span className="text-xs bg-slate-100 text-slate-700 px-2 py-1 rounded-full">
+                    {recentBills.length}
+                  </span>
+                </div>
+
+                {recentBills.length === 0 ? (
+                  <p className="text-sm text-slate-500">No recent bills yet</p>
+                ) : (
+                  <div className="space-y-2 max-h-64 overflow-auto">
+                    {recentBills.map((bill, idx) => (
+                      <div
+                        key={bill.id || bill.billNumber || idx}
+                        className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="font-semibold text-slate-900 truncate">
+                              {bill.billNumber || bill.invoiceNumber || `Bill ${idx + 1}`}
+                            </p>
+                            <p className="text-xs text-slate-600 truncate">
+                              {bill.customerName || 'Walk-in Customer'}
+                              {bill.customerMobile ? ` - ${bill.customerMobile}` : ''}
+                            </p>
+                            <p className="text-xs text-slate-500 mt-1">
+                              {bill.createdAt ? new Date(bill.createdAt).toLocaleString('en-IN') : ''}
+                              {bill.paymentMode ? ` - ${bill.paymentMode}` : ''}
+                            </p>
+                          </div>
+                          <span className="shrink-0 font-bold text-blue-600">
+                            {formatCurrency(bill.grandTotal)}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => openReceiptFromBill(bill)}
+                          className="mt-2 rounded-md border border-blue-200 bg-white px-3 py-1 text-xs font-bold text-blue-700 hover:bg-blue-50"
+                        >
+                          Receipt
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
             </aside>
           </div>
         </div>
 
+        {cart.length > 0 && (
+          <div
+            style={{
+              position: 'sticky',
+              bottom: 0,
+              zIndex: 50,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '1rem',
+              padding: '0.875rem 1.25rem',
+              margin: '0 1rem',
+              border: '1px solid #cbd5e1',
+              borderRadius: '0.75rem 0.75rem 0 0',
+              background: '#ffffff',
+              boxShadow: '0 -10px 24px rgba(15, 23, 42, 0.12)',
+            }}
+          >
+            <div>
+              <p style={{ margin: 0, color: '#475569', fontSize: '0.75rem', fontWeight: 700 }}>Bill Total</p>
+              <p style={{ margin: 0, color: '#0f172a', fontSize: '1.125rem', fontWeight: 900 }}>
+                {formatCurrency(cartTotals.grandTotal)}
+              </p>
+            </div>
+            <button
+              onClick={createBill}
+              disabled={!canGenerateBill}
+              style={{
+                minWidth: '180px',
+                padding: '0.875rem 1.25rem',
+                borderRadius: '0.625rem',
+                border: '1px solid transparent',
+                background: canGenerateBill ? '#16a34a' : '#94a3b8',
+                color: '#ffffff',
+                fontWeight: 900,
+                cursor: canGenerateBill ? 'pointer' : 'not-allowed',
+              }}
+            >
+              {isProcessing ? 'Generating...' : 'Generate Bill'}
+            </button>
+          </div>
+        )}
+
         {/* MODALS */}
+
+        {/* Receipt Modal */}
+        {receiptModal && receiptData && (
+          <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/50 p-4">
+            <div className="w-full max-w-md rounded-2xl bg-white p-5 max-h-[90vh] overflow-auto">
+              <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Bill Receipt</h3>
+                  <p className="text-sm text-slate-600">
+                    {receiptData.bill?.billNumber || receiptData.bill?.bill_number || receiptData.bill?.invoiceNumber}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setReceiptModal(false)}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-sm font-bold text-slate-800"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="py-4 text-sm text-slate-800">
+                <div className="text-center">
+                  <p className="text-xl font-black text-slate-950">BillingPro</p>
+                  <p className="text-xs text-slate-500">GST Invoice / POS Receipt</p>
+                </div>
+                <div className="my-3 border-t border-dashed border-slate-300" />
+                <div className="space-y-1">
+                  <div className="flex justify-between gap-3">
+                    <span className="font-semibold text-slate-600">Bill No.</span>
+                    <span className="text-right font-bold text-slate-950">
+                      {receiptData.bill?.billNumber || receiptData.bill?.bill_number || receiptData.bill?.invoiceNumber || '-'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="font-semibold text-slate-600">Date & Time</span>
+                    <span className="text-right font-bold text-slate-950">
+                      {formatReceiptDateTime(receiptData.bill?.createdAt || receiptData.bill?.created_at)}
+                    </span>
+                  </div>
+                  <p><strong>Customer:</strong> {receiptData.bill?.customerName || receiptData.bill?.customer_name || 'Walk-in Customer'}</p>
+                  {(receiptData.bill?.customerMobile || receiptData.bill?.customer_mobile) && (
+                    <p><strong>Mobile:</strong> {receiptData.bill?.customerMobile || receiptData.bill?.customer_mobile}</p>
+                  )}
+                  <p><strong>Payment:</strong> {receiptData.bill?.paymentMode || receiptData.bill?.payment_mode || 'cash'}</p>
+                </div>
+                <div className="my-3 border-t border-dashed border-slate-300" />
+                <div className="space-y-2">
+                  {(receiptData.items || []).map((item, idx) => (
+                    <div key={item.id || idx} className="flex justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-slate-950">{item.name || item.product_name || 'Product'}</p>
+                        <p className="text-xs text-slate-500">Qty {toNumber(item.qty, 1)} x {formatCurrency(item.selling_price || item.sellingPrice)}</p>
+                      </div>
+                      <p className="font-bold text-slate-950">
+                        {formatCurrency(item.line_total || (toNumber(item.qty, 1) * toNumber(item.selling_price || item.sellingPrice)))}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+                <div className="my-3 border-t border-dashed border-slate-300" />
+                <div className="space-y-1">
+                  <div className="flex justify-between"><span>Subtotal</span><strong>{formatCurrency(receiptData.bill?.subtotal || receiptData.subtotal || 0)}</strong></div>
+                  <div className="flex justify-between"><span>Discount</span><strong>{formatCurrency(receiptData.bill?.discount_total || receiptData.bill?.discountTotal || receiptData.discount || 0)}</strong></div>
+                  <div className="flex justify-between"><span>Tax</span><strong>{formatCurrency(receiptData.bill?.tax_total || receiptData.bill?.totalTax || receiptData.taxTotal || 0)}</strong></div>
+                  <div className="flex justify-between border-t border-slate-200 pt-2 text-lg font-black text-blue-700">
+                    <span>Total</span>
+                    <span>{formatCurrency(receiptData.bill?.grand_total || receiptData.bill?.grandTotal || receiptData.grandTotal || 0)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={() => printReceipt()}
+                className="w-full rounded-lg bg-slate-900 px-4 py-3 font-bold text-white hover:bg-slate-800"
+              >
+                Print Receipt
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Open Session Modal */}
         {openSessionModal && (
@@ -772,12 +1205,22 @@ export default function POSPage() {
                   value={openingCash}
                   onChange={(e) => setOpeningCash(e.target.value)}
                   placeholder="Opening cash"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className={inputClassName}
                 />
+                <select
+                  value={selectedStoreId}
+                  onChange={(e) => setSelectedStoreId(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white text-slate-900"
+                >
+                  <option value="">Select store</option>
+                  {stores.map((store) => (
+                    <option key={store.id} value={store.id}>{store.name}</option>
+                  ))}
+                </select>
                 <div className="flex gap-2">
                   <button
                     onClick={() => setOpenSessionModal(false)}
-                    className="flex-1 px-4 py-2 rounded-lg border border-slate-300 bg-white"
+                    className="flex-1 px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 font-semibold"
                   >
                     Cancel
                   </button>
@@ -797,33 +1240,54 @@ export default function POSPage() {
         {/* Close Session Modal */}
         {closeSessionModal && (
           <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/50 p-4">
-            <div className="w-full max-w-md rounded-2xl bg-white p-6">
+            <div className="w-full max-w-2xl rounded-2xl bg-white p-6 max-h-[90vh] overflow-auto">
               <h3 className="text-lg font-bold text-slate-900 mb-4">Close Session</h3>
               <div className="space-y-3">
+                {closingLoading ? (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-600">
+                    Loading closing summary...
+                  </div>
+                ) : closingSummary?.totals ? (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <ClosingStat label="Opening Cash" value={formatCurrency(closingSummary.totals.openingCash)} />
+                      <ClosingStat label="Total Sale" value={formatCurrency(closingSummary.totals.grossSales)} />
+                      <ClosingStat label="Cash Sale" value={formatCurrency(closingSummary.totals.cashSales)} />
+                      <ClosingStat label="Card Sale" value={formatCurrency(closingSummary.totals.cardSales)} />
+                      <ClosingStat label="UPI Sale" value={formatCurrency(closingSummary.totals.upiSales)} />
+                      <ClosingStat label="Paid Total" value={formatCurrency(closingSummary.totals.paidTotal)} />
+                      <ClosingStat label="Bills" value={closingSummary.totals.billCount || 0} />
+                      <ClosingStat label="Expected Cash" value={formatCurrency(closingSummary.totals.expectedCash)} strong />
+                    </div>
+                  </div>
+                ) : null}
                 <input
                   type="number"
                   value={actualCash}
                   onChange={(e) => setActualCash(e.target.value)}
                   placeholder="Actual cash counted"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className={inputClassName}
                 />
                 <textarea
                   value={closingRemarks}
                   onChange={(e) => setClosingRemarks(e.target.value)}
                   placeholder="Remarks (optional)"
                   rows="3"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500"
                 />
                 <div className="flex gap-2">
                   <button
-                    onClick={() => setCloseSessionModal(false)}
-                    className="flex-1 px-4 py-2 rounded-lg border border-slate-300 bg-white"
+                    onClick={() => {
+                      setCloseSessionModal(false);
+                      setClosingSummary(null);
+                    }}
+                    className="flex-1 px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 font-semibold"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={closeSession}
-                    disabled={isProcessing}
+                    disabled={isProcessing || closingLoading}
                     className="flex-1 px-4 py-2 rounded-lg bg-slate-900 text-white font-semibold disabled:opacity-50"
                   >
                     {isProcessing ? 'Closing...' : 'Close'}
@@ -847,16 +1311,27 @@ export default function POSPage() {
               ) : (
                 <div className="space-y-3">
                   {customerHistory.map((bill, idx) => (
-                    <div key={idx} className="rounded-lg border border-slate-200 p-3 bg-slate-50">
+                    <button
+                      key={bill.id || idx}
+                      type="button"
+                      onClick={() => selectCustomerFromHistory(bill)}
+                      className="w-full text-left rounded-lg border border-slate-200 p-3 bg-slate-50 hover:border-blue-400 hover:bg-blue-50 transition"
+                    >
                       <div className="flex items-start justify-between">
                         <div>
                           <p className="font-semibold text-slate-900">{bill.billNumber || 'Bill #'}</p>
                           <p className="text-xs text-slate-500">{new Date(bill.createdAt).toLocaleDateString()}</p>
+                          <p className="text-xs text-slate-600 mt-1">
+                            {bill.customerName || 'Walk-in Customer'} {bill.customerMobile ? `- ${bill.customerMobile}` : ''}
+                          </p>
                         </div>
                         <span className="font-bold text-blue-600">{formatCurrency(bill.grandTotal)}</span>
                       </div>
-                      <p className="text-xs text-slate-600 mt-1">{bill.paymentMode}</p>
-                    </div>
+                      <p className="text-xs text-slate-600 mt-1">
+                        {bill.paymentMode} {bill.itemCount ? `- ${bill.itemCount} items` : ''}
+                      </p>
+                      <p className="text-xs font-semibold text-blue-600 mt-2">Select this customer</p>
+                    </button>
                   ))}
                 </div>
               )}
@@ -872,5 +1347,16 @@ export default function POSPage() {
         )}
       </div>
     </MainLayout>
+  );
+}
+
+function ClosingStat({ label, value, strong = false }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+      <p className="text-xs font-semibold text-slate-500">{label}</p>
+      <p className={`mt-1 text-sm ${strong ? 'font-black text-slate-950' : 'font-bold text-slate-800'}`}>
+        {value}
+      </p>
+    </div>
   );
 }

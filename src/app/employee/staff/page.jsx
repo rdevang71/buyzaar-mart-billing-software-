@@ -95,13 +95,22 @@ async function fetchDepartments() {
   }
 }
 
-// FIXED: Better error handling for warehouses API
+function extractRecords(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.data?.stores)) return data.data.stores;
+  if (Array.isArray(data?.data?.records)) return data.data.records;
+  if (Array.isArray(data?.stores)) return data.stores;
+  if (Array.isArray(data?.records)) return data.records;
+  if (data?.success && Array.isArray(data.data)) return data.data;
+  return [];
+}
+
 async function fetchStores() {
   try {
-    const res = await fetch('/api/warehouses');
+    const res = await fetch('/api/stores');
     
     if (!res.ok) {
-      console.warn('Warehouses API returned status:', res.status);
+      console.warn('Stores API returned status:', res.status);
       return [];
     }
     
@@ -111,16 +120,28 @@ async function fetchStores() {
       return [];
     }
     
-    const data = await res.json();
-    
-    // Handle different response structures
-    if (Array.isArray(data)) return data;
-    if (data.data?.records && Array.isArray(data.data.records)) return data.data.records;
-    if (data.records && Array.isArray(data.records)) return data.records;
-    if (data.success && Array.isArray(data.data)) return data.data;
-    
-    console.warn('Unexpected warehouses response structure:', data);
+    return extractRecords(await res.json());
+  } catch (err) {
+    console.error('Failed to fetch stores:', err.message);
     return [];
+  }
+}
+
+async function fetchWarehouses() {
+  try {
+    const res = await fetch('/api/warehouses');
+    if (!res.ok) {
+      console.warn('Warehouses API returned status:', res.status);
+      return [];
+    }
+
+    const contentType = res.headers.get('content-type');
+    if (!contentType?.includes('application/json')) {
+      console.warn('Invalid content type:', contentType);
+      return [];
+    }
+
+    return extractRecords(await res.json());
   } catch (err) {
     console.error('Failed to fetch warehouses:', err.message);
     return [];
@@ -256,6 +277,7 @@ export default function EmployeeStaffPage() {
   const [permissions, setPermissions] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [stores, setStores] = useState([]);
+  const [warehouses, setWarehouses] = useState([]);
   const [editingId, setEditingId] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [form, setForm] = useState({
@@ -319,13 +341,14 @@ export default function EmployeeStaffPage() {
   useEffect(() => {
     let cancelled = false;
 
-    Promise.all([fetchRoles(), fetchPermissions(), fetchDepartments(), fetchStores()])
-      .then(([roleData, permissionData, departmentData, storeData]) => {
+    Promise.all([fetchRoles(), fetchPermissions(), fetchDepartments(), fetchStores(), fetchWarehouses()])
+      .then(([roleData, permissionData, departmentData, storeData, warehouseData]) => {
         if (cancelled) return;
         setRoles(Array.isArray(roleData) ? roleData : []);
         setPermissions(Array.isArray(permissionData) ? permissionData : []);
         setDepartments(Array.isArray(departmentData) ? departmentData : []);
         setStores(Array.isArray(storeData) ? storeData : []);
+        setWarehouses(Array.isArray(warehouseData) ? warehouseData : []);
       })
       .catch((err) => {
         if (!cancelled) console.error('Failed to load employee lookups', err);
@@ -382,7 +405,7 @@ export default function EmployeeStaffPage() {
       return [
         { value: '', label: 'Select Store/Region' },
         ...stores.map((store) => ({
-          value: store.name || String(store.id),
+          value: String(store.id),
           label: `${store.name}${store.city ? ` (${store.city}, ${store.state || ''})` : ''}`.trim(),
         })),
       ];
@@ -392,18 +415,18 @@ export default function EmployeeStaffPage() {
 
   const warehouseOptions = useMemo(
     () => {
-      if (stores.length === 0) {
+      if (warehouses.length === 0) {
         return [{ value: '', label: 'Select Warehouse' }];
       }
       return [
         { value: '', label: 'Select Warehouse' },
-        ...stores.map((store) => ({
-          value: store.name || String(store.id),
-          label: `${store.name}${store.manager_name ? ` - Mgr: ${store.manager_name}` : ''}`,
+        ...warehouses.map((warehouse) => ({
+          value: String(warehouse.id),
+          label: `${warehouse.name}${warehouse.manager_name ? ` - Mgr: ${warehouse.manager_name}` : ''}`,
         })),
       ];
     },
-    [stores]
+    [warehouses]
   );
 
   const filtered = useMemo(() => {
@@ -528,6 +551,12 @@ export default function EmployeeStaffPage() {
     if (form.password && form.password !== form.confirmPassword) return alert('Passwords do not match');
     if (form.permissions.length === 0) return alert('Select at least one permission');
 
+    const selectedRoleName = roles.find((role) => String(role.id) === String(form.roleId))?.roleName || '';
+    const systemRole = selectedRoleName.trim().toLowerCase().replace(/\s+/g, '_');
+    if ((systemRole === 'admin' || systemRole === 'manager') && !form.regionStore) {
+      return alert('Select a store for Admin/Manager access');
+    }
+
     setSaving(true);
     try {
       const payload = {
@@ -538,7 +567,8 @@ export default function EmployeeStaffPage() {
         mobile_number: form.mobileNumber,
         email_address: form.emailAddress,
         role_id: form.roleId ? Number(form.roleId) : null,
-        role_name: roles.find((role) => String(role.id) === String(form.roleId))?.roleName || '',
+        role_name: selectedRoleName,
+        assigned_stores: form.regionStore ? [Number(form.regionStore)].filter(Number.isFinite) : [],
         permissions: form.permissions,
         region_store: form.regionStore,
         warehouse: form.warehouse,

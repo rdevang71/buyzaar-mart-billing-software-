@@ -174,17 +174,26 @@ export function getUserFromToken(token) {
 
 export function hasPermission(token, requiredPermission) {
   const permissions = getPermissionsFromToken(token);
-  return permissions.includes(requiredPermission);
+  const role = getRoleFromToken(token);
+  return role === ROLES.SUPER_ADMIN ||
+    permissions.includes('*') ||
+    permissions.includes(requiredPermission);
 }
 
 export function hasAnyPermission(token, requiredPermissions) {
   const permissions = getPermissionsFromToken(token);
-  return requiredPermissions.some((perm) => permissions.includes(perm));
+  const role = getRoleFromToken(token);
+  return role === ROLES.SUPER_ADMIN ||
+    permissions.includes('*') ||
+    requiredPermissions.some((perm) => permissions.includes(perm));
 }
 
 export function hasAllPermissions(token, requiredPermissions) {
   const permissions = getPermissionsFromToken(token);
-  return requiredPermissions.every((perm) => permissions.includes(perm));
+  const role = getRoleFromToken(token);
+  return role === ROLES.SUPER_ADMIN ||
+    permissions.includes('*') ||
+    requiredPermissions.every((perm) => permissions.includes(perm));
 }
 
 export function hasRole(token, requiredRole) {
@@ -201,7 +210,7 @@ export function canAccessStore(token, storeId) {
   const stores = getAssignedStoresFromToken(token);
   const role = getRoleFromToken(token);
 
-  // Super admin can access all stores
+  // Only super admin can access all stores. Admin/manager must be assigned.
   if (role === 'super_admin') return true;
 
   // Check if store is assigned
@@ -239,6 +248,7 @@ export function createTokenPayload(user) {
 export const ROLES = {
   SUPER_ADMIN: 'super_admin',
   ADMIN: 'admin',
+  MANAGER: 'manager',
   USER: 'user',
 };
 

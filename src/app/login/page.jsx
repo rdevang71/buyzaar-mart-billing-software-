@@ -2,7 +2,8 @@
 
 import AuthScreen from '@/components/AuthScreen';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useState, useEffect } from 'react';
+import { Suspense, useState, useEffect } from 'react';
+import { getDefaultRouteForUser } from '@/lib/accessControl';
 
 const highlights = [
   {
@@ -27,13 +28,26 @@ const highlights = [
   },
 ];
 
-export default function LoginPage() {
+function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [autoChecking, setAutoChecking] = useState(true);
   const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const resolveRedirect = async (fallback = '/home') => {
+    const explicitNext = searchParams?.get('next');
+    if (explicitNext) return explicitNext;
+
+    try {
+      const res = await fetch('/api/auth/me', { cache: 'no-store', credentials: 'include' });
+      const json = await res.json();
+      return json?.data?.user ? getDefaultRouteForUser(json.data.user) : fallback;
+    } catch {
+      return fallback;
+    }
+  };
 
   // ============================================
   // Handle Form Input Changes
@@ -58,8 +72,6 @@ export default function LoginPage() {
     setLoading(true);
 
     console.log('[LOGIN PAGE] Submitting login form');
-
-    const redirectTo = searchParams?.get('next') || '/home';
 
     try {
       // Validate form fields
@@ -90,8 +102,7 @@ export default function LoginPage() {
       // Handle redirect response (302)
       if (res.status === 302 || res.type === 'opaqueredirect') {
         console.log('[LOGIN PAGE] Redirect response received');
-        // API redirected to /home, follow it
-        window.location.href = '/home';
+        window.location.href = await resolveRedirect('/home');
         return;
       }
 
@@ -106,8 +117,7 @@ export default function LoginPage() {
 
         if (json.success) {
           console.log('[LOGIN PAGE] Login successful');
-          // Redirect to home
-          window.location.href = '/home';
+          window.location.href = await resolveRedirect('/home');
           return;
         }
 
@@ -136,8 +146,6 @@ export default function LoginPage() {
 
   useEffect(() => {
     let mounted = true;
-    const redirectTo = searchParams?.get('next') || '/home';
-
     (async () => {
       try {
         console.log('[LOGIN PAGE] Checking if user is already authenticated');
@@ -152,6 +160,7 @@ export default function LoginPage() {
         const json = await res.json();
 
         if (res.ok && json?.data?.user) {
+          const redirectTo = searchParams?.get('next') || getDefaultRouteForUser(json.data.user);
           console.log('[LOGIN PAGE] User already authenticated, redirecting to:', redirectTo);
           // User is already logged in, redirect to home/dashboard
           window.location.href = redirectTo;
@@ -279,5 +288,17 @@ export default function LoginPage() {
 
       </form>
     </AuthScreen>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-screen items-center justify-center bg-gray-50">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-200 border-t-blue-600" />
+      </div>
+    }>
+      <LoginPageContent />
+    </Suspense>
   );
 }

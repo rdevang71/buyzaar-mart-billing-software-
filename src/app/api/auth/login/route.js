@@ -7,10 +7,18 @@ import { query } from '@/lib/db';
 import { rateLimiters, rateLimitHeaders } from '@/lib/rate-limiter';
 import { getUserIP } from '@/lib/api-protection';
 import { ensureUsersTable } from '@/lib/userAuth';
+import { ensureRolesSchema } from '@/lib/rolesSchema';
+
+function getDefaultRouteForRole(role) {
+  if (role === 'super_admin') return '/home/master-dashboard';
+  if (role === 'user') return '/sales/pos';
+  return '/home';
+}
 
 export async function POST(request) {
   try {
     await ensureUsersTable();
+    await ensureRolesSchema();
 
     console.log('[LOGIN] Request received');
     
@@ -316,10 +324,11 @@ export async function POST(request) {
     // ============================================
 
     console.log('[LOGIN] Login successful for:', email);
-    console.log('[LOGIN] Redirecting to /home');
+    const defaultRoute = getDefaultRouteForRole(user.role);
+    console.log('[LOGIN] Redirecting to', defaultRoute);
 
     // Create redirect response
-    const redirectUrl = new URL('/home', request.url);
+    const redirectUrl = new URL(defaultRoute, request.url);
     const response = NextResponse.redirect(redirectUrl, { status: 302 });
 
     // ============================================

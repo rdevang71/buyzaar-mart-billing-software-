@@ -8,6 +8,7 @@ import { verifyToken } from '@/lib/auth-enhanced';
 import { query } from '@/lib/db';
 import { unauthorizedError, forbiddenError } from '@/lib/api-response';
 import { ensureUsersTable } from '@/lib/userAuth';
+import { ensureRolesSchema } from '@/lib/rolesSchema';
 
 /**
  * Extract and verify JWT token from request
@@ -16,6 +17,7 @@ import { ensureUsersTable } from '@/lib/userAuth';
 export async function extractAuthUser(request) {
   try {
     await ensureUsersTable();
+    await ensureRolesSchema();
 
     // Get token from cookies or Authorization header
     const cookieToken = request.cookies.get('access_token')?.value || 
@@ -57,13 +59,30 @@ export async function extractAuthUser(request) {
     }
 
     const dbUser = userResult.rows[0];
+    let permissions = payload.permissions || [];
+    try {
+      const roleResult = await query('SELECT permissions FROM roles WHERE role_name = $1 LIMIT 1', [dbUser.role || 'user']);
+      if (Array.isArray(roleResult.rows[0]?.permissions)) {
+        permissions = roleResult.rows[0].permissions;
+      }
+    } catch {}
+
+    let assignedStores = payload.assigned_stores || [];
+    try {
+      const storeResult = await query(
+        `SELECT store_id FROM user_stores WHERE user_id = $1 AND is_active = TRUE ORDER BY store_id`,
+        [dbUser.id]
+      );
+      assignedStores = storeResult.rows.map((row) => Number(row.store_id));
+    } catch {}
+
     const user = {
       id: dbUser.id,
       email: dbUser.email,
       name: dbUser.name || dbUser.email,
       role: dbUser.role || 'user',
-      permissions: payload.permissions || [],
-      assigned_stores: payload.assigned_stores || [],
+      permissions,
+      assigned_stores: assignedStores,
     };
 
     return { user, token, error: null };
@@ -137,7 +156,9 @@ export function requirePermission(user, ...permissions) {
     return { error: unauthorizedError('Not authenticated') };
   }
 
-  const hasPermission = permissions.some(p => user.permissions.includes(p));
+  const hasPermission = user.role === 'super_admin' ||
+    user.permissions.includes('*') ||
+    permissions.some(p => user.permissions.includes(p));
 
   if (!hasPermission) {
     return {
@@ -162,7 +183,7 @@ export function requireStore(user, storeId) {
     return { error: unauthorizedError('Not authenticated') };
   }
 
-  // Super admin can access all stores
+  // Only super admin can access all stores. Admin/manager must be assigned.
   if (user.role === 'super_admin') {
     return { error: null };
   }

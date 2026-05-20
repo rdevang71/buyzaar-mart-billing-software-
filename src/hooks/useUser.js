@@ -116,7 +116,7 @@ export function useCanAccess(permission) {
   if (!user) return false;
   
   // Super admin has all permissions
-  if (user.role === 'super_admin') return true;
+  if (user.role === 'super_admin' || user.permissions?.includes('*')) return true;
   
   // Check if user has the permission
   return user.permissions?.includes(permission) || false;
@@ -147,7 +147,7 @@ export function useCanAccessStore(storeId) {
   
   if (!user) return false;
   
-  // Super admin can access all stores
+  // Only super admin can access all stores. Admin/manager must be assigned.
   if (user.role === 'super_admin') return true;
   
   // Check if store is in assigned stores

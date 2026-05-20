@@ -63,7 +63,7 @@ export function hasPermission(user, permission) {
   if (!user) return false;
 
   // Super admin has all permissions
-  if (user.role === 'super_admin') {
+  if (user.role === 'super_admin' || user.permissions.includes('*')) {
     return true;
   }
 
@@ -77,7 +77,7 @@ export function hasPermission(user, permission) {
 
 export function hasAnyPermission(user, permissions) {
   if (!user) return false;
-  if (user.role === 'super_admin') return true;
+  if (user.role === 'super_admin' || user.permissions.includes('*')) return true;
 
   return permissions.some((perm) => user.permissions.includes(perm));
 }
@@ -88,7 +88,7 @@ export function hasAnyPermission(user, permissions) {
 
 export function hasAllPermissions(user, permissions) {
   if (!user) return false;
-  if (user.role === 'super_admin') return true;
+  if (user.role === 'super_admin' || user.permissions.includes('*')) return true;
 
   return permissions.every((perm) => user.permissions.includes(perm));
 }
@@ -118,7 +118,7 @@ export function hasAnyRole(user, roles) {
 export function canAccessStore(user, storeId) {
   if (!user) return false;
 
-  // Super admin can access all stores
+  // Only super admin can access all stores. Admin/manager must be assigned.
   if (user.role === 'super_admin') {
     return true;
   }

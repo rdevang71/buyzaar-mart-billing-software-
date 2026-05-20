@@ -1,6 +1,7 @@
 import { query } from '@/lib/db';
-import { successResponse, errorResponse } from '@/lib/api-response';
+import { successResponse, errorResponse, notFoundError } from '@/lib/api-response';
 import { verifyToken } from '@/lib/auth-enhanced';
+import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
 
 export async function POST(req) {
   try {
@@ -116,23 +117,38 @@ export async function POST(req) {
 // Get bill details
 export async function GET(req) {
   try {
+    await ensureSalesBillingSchema();
+
     const { searchParams } = new URL(req.url);
     const bill_id = searchParams.get('bill_id');
 
     if (!bill_id) return errorResponse('bill_id required', 400);
 
-    const billRes = await query(`
-      SELECT * FROM sales_bills WHERE id = $1
-    `, [bill_id]);
+    const isNumericId = /^\d+$/.test(bill_id);
+    const billRes = await query(
+      isNumericId
+        ? `SELECT * FROM sales_bills WHERE id = $1`
+        : `SELECT * FROM sales_bills WHERE bill_number = $1`,
+      [bill_id]
+    );
+
+    const bill = billRes.rows[0];
+    if (!bill) {
+      return notFoundError('Bill not found');
+    }
 
     const itemsRes = await query(`
-      SELECT sbi.*, p.name, p.sku FROM sales_bill_items sbi
+      SELECT
+        sbi.*,
+        COALESCE(sbi.product_name, p.name) AS name,
+        COALESCE(sbi.sku, p.sku) AS sku
+      FROM sales_bill_items sbi
       JOIN products p ON sbi.product_id = p.id
       WHERE sbi.sales_bill_id = $1
-    `, [bill_id]);
+    `, [bill.id]);
 
     return successResponse({
-      bill: billRes.rows[0],
+      bill,
       items: itemsRes.rows || []
     });
   } catch (err) {

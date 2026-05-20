@@ -1,25 +1,69 @@
-import { query } from '@/lib/db';
+import { getClient, query } from '@/lib/db';
 import { successResponse, errorResponse } from '@/lib/api-response';
 import { verifyToken } from '@/lib/auth-enhanced';
+import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
+import { extractAuthUser, requirePermission, requireStore } from '@/lib/api-protection';
+import { ensureCatalogExtrasSchema } from '@/lib/catalogExtrasSchema';
 
-// ============================================================================
-// CREATE BILL / CHECKOUT
-// ============================================================================
+function toNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function getToken(req) {
+  return req.headers.get('authorization')?.replace('Bearer ', '') ||
+    req.cookies?.get('access_token')?.value ||
+    req.cookies?.get('auth_token')?.value;
+}
+
+function mapSession(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    userId: row.user_id,
+    counterId: row.counter_id,
+    deviceId: row.device_id,
+    storeId: row.store_id,
+    userName: row.user_name || '',
+    storeName: row.store_name || '',
+    counterName: row.counter_name || '',
+    openingCash: toNumber(row.meta?.opening_cash),
+    startedAt: row.session_start_at,
+    isActive: row.is_active,
+  };
+}
+
+function isStoreAllowed(user, storeId) {
+  if (!storeId) return false;
+  if (user?.role === 'super_admin') return true;
+  return (user?.assigned_stores || []).map(Number).includes(Number(storeId));
+}
+
+function getAvailableStockSql(storeParam = '$1') {
+  return `
+    COALESCE(stock_in_totals.qty, 0)
+    - COALESCE(sales_totals.qty, 0)
+    - COALESCE(stock_out_totals.qty, 0)
+  `.trim();
+}
 
 export async function POST(req) {
+  let client;
   try {
-    const token = req.headers.get('authorization')?.replace('Bearer ', '') ||
-                  req.cookies?.get('access_token')?.value ||
-                  req.cookies?.get('auth_token')?.value;
+    await ensureSalesBillingSchema();
+    await ensureCatalogExtrasSchema();
 
-    if (!token) {
-      return errorResponse('Unauthorized', 401);
-    }
+    const token = getToken(req);
+    if (!token) return errorResponse('Unauthorized', 401);
 
     const user = verifyToken(token);
-    if (!user) {
-      return errorResponse('Invalid token', 401);
-    }
+    if (!user) return errorResponse('Invalid token', 401);
+
+    const auth = await extractAuthUser(req);
+    if (auth.error || !auth.user) return errorResponse(auth.error || 'Unauthorized', 401);
+    const permissionCheck = requirePermission(auth.user, 'CREATE_POS_BILL', 'MANAGE_BILLING');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const body = await req.json();
     const {
@@ -41,200 +85,396 @@ export async function POST(req) {
       return errorResponse('Missing required fields', 400);
     }
 
-    // Calculate totals
+    const storeCheck = requireStore(auth.user, storeId);
+    if (storeCheck.error) return storeCheck.error;
+
+    client = await getClient();
+    await client.query('BEGIN');
+
+    const normalizedItems = [];
+    for (const item of items) {
+      const productId = Number(item.productId);
+      const qty = toNumber(item.qty);
+      if (!productId || qty <= 0) {
+        await client.query('ROLLBACK');
+        return errorResponse('Invalid product or quantity', 400);
+      }
+
+      const stockRes = await client.query(
+        `SELECT
+           p.id,
+           p.name,
+           p.sku,
+           p.barcode,
+           p.mrp,
+           p.cost_price,
+           COALESCE(NULLIF(ps.selling_price, 0), p.selling_price, 0) AS selling_price,
+           COALESCE(t.rate, 0) AS tax_rate,
+           ${getAvailableStockSql('$2')} AS available_stock
+         FROM products p
+         INNER JOIN product_saleability ps
+           ON ps.product_id = p.id
+          AND ps.store_id = $2
+          AND ps.is_active = TRUE
+         LEFT JOIN taxes t ON p.tax_id = t.id
+         LEFT JOIN (
+           SELECT sii.product_id, SUM(sii.qty) AS qty
+           FROM stock_in_items sii
+           INNER JOIN stock_in si ON si.id = sii.stock_in_id
+           WHERE si.status = 'confirmed' AND si.destination_id = $2
+           GROUP BY sii.product_id
+         ) stock_in_totals ON stock_in_totals.product_id = p.id
+         LEFT JOIN (
+           SELECT sbi.product_id, SUM(sbi.qty) AS qty
+           FROM sales_bill_items sbi
+           INNER JOIN sales_bills sb ON sb.id = sbi.sales_bill_id
+           WHERE sb.status IN ('paid', 'completed') AND sb.store_id = $2
+           GROUP BY sbi.product_id
+         ) sales_totals ON sales_totals.product_id = p.id
+         LEFT JOIN (
+           SELECT soi.product_id, SUM(soi.qty) AS qty
+           FROM stock_out_items soi
+           INNER JOIN stock_out so ON so.id = soi.stock_out_id
+           WHERE so.status = 'confirmed'
+             AND so.destination_id = $2
+             AND COALESCE(so.reference_type, '') <> 'sales_bill'
+           GROUP BY soi.product_id
+         ) stock_out_totals ON stock_out_totals.product_id = p.id
+         WHERE p.id = $1 AND COALESCE(p.is_active, TRUE) = TRUE
+         FOR UPDATE OF ps`,
+        [productId, Number(storeId)]
+      );
+
+      const dbProduct = stockRes.rows[0];
+      if (!dbProduct) {
+        await client.query('ROLLBACK');
+        return errorResponse(`${item.name || 'Product'} is not assigned to this store`, 400);
+      }
+
+      const availableStock = toNumber(dbProduct.available_stock);
+      if (availableStock < qty) {
+        await client.query('ROLLBACK');
+        return errorResponse(`${dbProduct.name} has only ${availableStock} stock in this store`, 400);
+      }
+
+      normalizedItems.push({ ...item, productId, qty, dbProduct });
+    }
+
     let subtotal = 0;
     let totalTax = 0;
 
     for (const item of items) {
-      const lineAmount = item.qty * item.sellingPrice;
+      const qty = toNumber(item.qty);
+      const sellingPrice = toNumber(item.sellingPrice);
+      const discountAmount = toNumber(item.discountAmount);
+      const taxRate = toNumber(item.taxRate);
+      const lineAmount = qty * sellingPrice;
       subtotal += lineAmount;
-      totalTax += (Math.max(0, lineAmount - item.discountAmount) * item.taxRate) / 100;
+      totalTax += (Math.max(0, lineAmount - discountAmount) * taxRate) / 100;
     }
 
-    const totalDiscount = orderDiscount + items.reduce((sum, item) => sum + item.discountAmount, 0);
-    const grandTotal = Math.max(0, subtotal - totalDiscount + totalTax + roundOff);
+    const totalDiscount = toNumber(orderDiscount) + items.reduce((sum, item) => sum + toNumber(item.discountAmount), 0);
+    const grandTotal = Math.max(0, subtotal - totalDiscount + totalTax + toNumber(roundOff));
+    const paidAmount = payments.reduce((sum, p) => sum + toNumber(p.amount), 0) || grandTotal;
+    const billNumber = invoiceNumber || `POS-${Date.now()}`;
 
-    // Create sales bill
-    const billRes = await query(
-      `
-      INSERT INTO sales_bills (
-        store_id, customer_id, session_id, customer_name, customer_mobile,
-        total_amount, total_tax, discount_amount, round_off,
-        payment_mode, status, created_by, created_at
+    const billRes = await client.query(
+      `INSERT INTO sales_bills (
+        bill_number, session_id, user_id, store_id, counter_id,
+        customer_name, customer_mobile, subtotal, discount_total, tax_total,
+        round_off, grand_total, paid_amount, balance_amount, payment_mode,
+        payment_meta, status, meta, created_at, updated_at
       ) VALUES (
-        $1, NULL, $2, $3, $4, $5, $6, $7, $8, $9, 'completed', $10, NOW()
-      ) RETURNING id
-      `,
+        $1, $2, $3, $4, $5,
+        $6, $7, $8, $9, $10,
+        $11, $12, $13, $14, $15,
+        $16::jsonb, 'paid', $17::jsonb, NOW(), NOW()
+      ) RETURNING id, bill_number`,
       [
-        storeId,
+        billNumber,
         sessionId || null,
+        auth.user.id,
+        Number(storeId),
+        counterId || null,
         customerName,
         customerMobile,
-        grandTotal,
-        totalTax,
+        subtotal,
         totalDiscount,
-        roundOff,
+        totalTax,
+        toNumber(roundOff),
+        grandTotal,
+        paidAmount,
+        Math.max(0, grandTotal - paidAmount),
         paymentMode,
-        user.id,
+        JSON.stringify(payments),
+        JSON.stringify({ clientBillId, source: 'pos' }),
       ]
     );
 
     const billId = billRes.rows[0]?.id;
-    if (!billId) {
-      return errorResponse('Failed to create bill', 500);
-    }
+    if (!billId) return errorResponse('Failed to create bill', 500);
 
-    // Insert bill items
-    for (const item of items) {
-      await query(
-        `
-        INSERT INTO sales_bill_items (
-          sales_bill_id, product_id, qty, selling_price, mrp, tax_rate, discount_amount
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-        `,
+    for (const item of normalizedItems) {
+      const qty = toNumber(item.qty);
+      const sellingPrice = toNumber(item.sellingPrice, toNumber(item.dbProduct.selling_price));
+      const discountAmount = toNumber(item.discountAmount);
+      const taxRate = toNumber(item.taxRate, toNumber(item.dbProduct.tax_rate));
+      const lineTax = (Math.max(0, qty * sellingPrice - discountAmount) * taxRate) / 100;
+      const lineTotal = Math.max(0, qty * sellingPrice - discountAmount + lineTax);
+
+      await client.query(
+        `INSERT INTO sales_bill_items (
+          sales_bill_id, product_id, product_name, barcode, sku, qty,
+          selling_price, mrp, tax_rate, discount_amount, tax_amount, line_total
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
         [
           billId,
           item.productId,
-          item.qty,
-          item.sellingPrice,
-          item.mrp,
-          item.taxRate || 0,
-          item.discountAmount || 0,
+          item.name || item.dbProduct.name || 'Product',
+          item.barcode || item.dbProduct.barcode || null,
+          item.sku || item.dbProduct.sku || null,
+          qty,
+          sellingPrice,
+          toNumber(item.mrp),
+          taxRate,
+          discountAmount,
+          lineTax,
+          lineTotal,
         ]
-      );
-
-      // Update stock (deduction)
-      await query(
-        `
-        INSERT INTO stock_movements (
-          product_id, store_id, movement_type, qty, reference_type, reference_id, created_at
-        ) VALUES ($1, $2, 'out', $3, 'sales_bill', $4, NOW())
-        `,
-        [item.productId, storeId, item.qty, billId]
       );
     }
 
-    // Insert payment record
-    const totalAmount = payments.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
-    await query(
-      `
-      INSERT INTO sales_bill_payments (
-        sales_bill_id, payment_method, amount, reference_no, status, created_at
-      ) VALUES ($1, $2, $3, $4, 'completed', NOW())
-      `,
-      [billId, paymentMode, totalAmount || grandTotal, payments[0]?.referenceNo || '']
+    const stockOutRes = await client.query(
+      `INSERT INTO stock_out (
+         transaction_id, method, destination_id, apply_taxes, add_products_prefill,
+         status, invoice_number, total_items, total_cost, total_tax,
+         reference_type, reference_id, meta, created_at, confirmed_at
+       ) VALUES (
+         $1, 'pos_sale', $2, true, false,
+         'confirmed', $3, $4, 0, $5,
+         'sales_bill', $6, $7::jsonb, NOW(), NOW()
+       ) RETURNING id`,
+      [
+        `POS-STKO-${billId}`,
+        Number(storeId),
+        billNumber,
+        normalizedItems.reduce((sum, item) => sum + toNumber(item.qty), 0),
+        totalTax,
+        String(billId),
+        JSON.stringify({ source: 'pos', billId, billNumber }),
+      ]
     );
 
-    // Generate invoice
-    const invoiceRes = await query(
-      `
-      INSERT INTO invoices (
-        bill_id, invoice_number, invoice_type, status, created_at
-      ) VALUES ($1, $2, 'sales', 'generated', NOW())
-      RETURNING invoice_number
-      `,
-      [billId, invoiceNumber || `INV-${Date.now()}`]
-    );
+    const stockOutId = stockOutRes.rows[0]?.id;
+    for (const item of normalizedItems) {
+      await client.query(
+        `INSERT INTO stock_out_items (stock_out_id, product_id, product_name, qty, cost_price, tax_value, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        [
+          stockOutId,
+          item.productId,
+          item.name || item.dbProduct.name || 'Product',
+          toNumber(item.qty),
+          toNumber(item.dbProduct.cost_price),
+          toNumber(item.taxRate, toNumber(item.dbProduct.tax_rate)),
+        ]
+      );
+    }
+
+    const normalizedPayments = payments.length ? payments : [{ method: paymentMode, amount: grandTotal, referenceNo: '' }];
+    for (const payment of normalizedPayments) {
+      await client.query(
+        `INSERT INTO sales_bill_payments (
+          sales_bill_id, method, amount, reference_no, meta, created_at
+        ) VALUES ($1, $2, $3, $4, '{}'::jsonb, NOW())`,
+        [billId, payment.method || paymentMode, toNumber(payment.amount, grandTotal), payment.referenceNo || '']
+      );
+    }
+
+    await client.query('COMMIT');
 
     return successResponse({
       bill: {
         id: billId,
-        invoiceNumber: invoiceRes.rows[0]?.invoice_number,
-        billNumber: invoiceNumber,
+        invoiceNumber: billRes.rows[0].bill_number,
+        billNumber: billRes.rows[0].bill_number,
         customerName,
+        customerMobile,
         grandTotal,
         totalTax,
         paymentMode,
-        status: 'completed',
+        itemCount: items.length,
+        createdAt: new Date().toISOString(),
+        status: 'paid',
       },
-      message: `Bill ${invoiceRes.rows[0]?.invoice_number} created successfully`,
-    });
+      message: `Bill ${billRes.rows[0].bill_number} created successfully`,
+    }, 'Bill created successfully', 201);
   } catch (err) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
     console.error('POS billing error:', err);
     return errorResponse(err.message, 500);
+  } finally {
+    if (client) client.release();
   }
 }
 
-// ============================================================================
-// GET BILLS & PRODUCTS
-// ============================================================================
-
 export async function GET(req) {
   try {
-    const { searchParams } = new URL(req.url);
-    const page = parseInt(searchParams.get('page') || '1');
-    const pageSize = parseInt(searchParams.get('pageSize') || '48');
-    const search = searchParams.get('search') || '';
+    await ensureSalesBillingSchema();
+    await ensureCatalogExtrasSchema();
 
+    const auth = await extractAuthUser(req);
+    if (auth.error || !auth.user) return errorResponse(auth.error || 'Unauthorized', 401);
+
+    const { searchParams } = new URL(req.url);
+    const page = parseInt(searchParams.get('page') || '1', 10);
+    const pageSize = parseInt(searchParams.get('pageSize') || '48', 10);
+    const search = searchParams.get('search') || '';
+    const requestedStoreId = Number(searchParams.get('store_id') || 0) || null;
     const offset = (page - 1) * pageSize;
 
-    // Get session info
-    let sessionData = null;
     const sessionRes = await query(
-      `SELECT * FROM counter_sessions ORDER BY created_at DESC LIMIT 1`
+      `SELECT ucs.id, ucs.user_id, ucs.counter_id, ucs.device_id, ucs.store_id,
+              ucs.session_id, ucs.session_start_at, ucs.session_end_at, ucs.is_active,
+              ucs.serial_number, ucs.counter_name, ucs.meta,
+              u.name AS user_name, s.name AS store_name
+       FROM user_counter_sessions ucs
+       LEFT JOIN users u ON u.id = ucs.user_id
+       LEFT JOIN stores s ON s.id = ucs.store_id
+       WHERE ucs.is_active = TRUE
+         AND ucs.user_id = $1
+       ORDER BY ucs.session_start_at DESC, ucs.id DESC
+       LIMIT 1`,
+      [auth.user.id]
     );
-    if (sessionRes.rows.length > 0) {
-      sessionData = sessionRes.rows[0];
-    }
 
-    // Get stores
-    const storesRes = await query(`SELECT id, name FROM stores WHERE status = 'active'`);
+    const isGlobalStoreAccess = auth.user.role === 'super_admin';
+    const assignedStores = (auth.user.assigned_stores || []).map(Number).filter(Number.isFinite);
+    const storesRes = isGlobalStoreAccess
+      ? await query('SELECT id, name FROM stores ORDER BY name ASC')
+      : assignedStores.length
+        ? await query('SELECT id, name FROM stores WHERE id = ANY($1::int[]) ORDER BY name ASC', [assignedStores])
+        : { rows: [] };
 
-    // Get products
-    let productsQuery = `
-      SELECT
-        p.id, p.name, p.sku, p.barcode, p.mrp, p.cost_price, p.category_id,
-        p.tax_id, p.image_url,
-        c.name as categoryName, c.id as category_id_val,
-        b.name as brandName,
-        COALESCE(SUM(CASE WHEN sm.movement_type = 'in' THEN sm.qty ELSE 0 END), 0) -
-        COALESCE(SUM(CASE WHEN sm.movement_type = 'out' THEN sm.qty ELSE 0 END), 0) as availableStock,
-        COALESCE(pr.selling_price, p.mrp) as selling_price,
-        COALESCE(t.rate, 0) as taxRate
-      FROM products p
-      LEFT JOIN categories c ON p.category_id = c.id
-      LEFT JOIN brands b ON p.brand_id = b.id
-      LEFT JOIN product_rates pr ON p.id = pr.product_id
-      LEFT JOIN taxes t ON p.tax_id = t.id
-      LEFT JOIN stock_movements sm ON p.id = sm.product_id
-      WHERE p.status = 'active'
-    `;
+    const session = mapSession(sessionRes.rows[0]);
+    const effectiveStoreId = isStoreAllowed(auth.user, requestedStoreId)
+      ? requestedStoreId
+      : isStoreAllowed(auth.user, session?.storeId)
+        ? Number(session.storeId)
+        : !isGlobalStoreAccess && assignedStores.length === 1
+          ? assignedStores[0]
+          : null;
 
     const params = [];
+    let productsSql = `
+      SELECT
+        p.id, p.name, p.sku, p.barcode, p.mrp, p.selling_price, p.cost_price,
+        c.name AS "categoryName",
+        b.name AS "brandName",
+        ${getAvailableStockSql('$1')} AS "availableStock",
+        COALESCE(t.rate, 0) AS "taxRate"
+      FROM products p
+      INNER JOIN product_saleability ps
+        ON ps.product_id = p.id
+       AND ps.store_id = $1
+       AND ps.is_active = TRUE
+      LEFT JOIN categories c ON p.category_id = c.id
+      LEFT JOIN brands b ON p.brand_id = b.id
+      LEFT JOIN taxes t ON p.tax_id = t.id
+      LEFT JOIN (
+        SELECT sii.product_id, SUM(sii.qty) AS qty
+        FROM stock_in_items sii
+        INNER JOIN stock_in si ON si.id = sii.stock_in_id
+        WHERE si.status = 'confirmed' AND si.destination_id = $1
+        GROUP BY sii.product_id
+      ) stock_in_totals ON stock_in_totals.product_id = p.id
+      LEFT JOIN (
+        SELECT sbi.product_id, SUM(sbi.qty) AS qty
+        FROM sales_bill_items sbi
+        INNER JOIN sales_bills sb ON sb.id = sbi.sales_bill_id
+        WHERE sb.status IN ('paid', 'completed') AND sb.store_id = $1
+        GROUP BY sbi.product_id
+      ) sales_totals ON sales_totals.product_id = p.id
+      LEFT JOIN (
+        SELECT soi.product_id, SUM(soi.qty) AS qty
+        FROM stock_out_items soi
+        INNER JOIN stock_out so ON so.id = soi.stock_out_id
+        WHERE so.status = 'confirmed'
+          AND so.destination_id = $1
+          AND COALESCE(so.reference_type, '') <> 'sales_bill'
+        GROUP BY soi.product_id
+      ) stock_out_totals ON stock_out_totals.product_id = p.id
+      WHERE COALESCE(p.is_active, TRUE) = TRUE
+    `;
 
-    if (search) {
-      productsQuery += ` AND (
-        LOWER(p.name) LIKE $${params.length + 1}
-        OR LOWER(p.sku) LIKE $${params.length + 2}
-        OR LOWER(p.barcode) LIKE $${params.length + 3}
-      )`;
-      params.push(`%${search.toLowerCase()}%`, `%${search.toLowerCase()}%`, `%${search.toLowerCase()}%`);
+    if (!effectiveStoreId) {
+      return successResponse({
+        products: [],
+        recentBills: [],
+        session,
+        stores: storesRes.rows,
+        selectedStoreId: null,
+        pagination: { page, pageSize, total: 0 },
+      });
     }
 
-    productsQuery += ` GROUP BY p.id, c.id, b.id, pr.selling_price, t.rate
-      ORDER BY p.name ASC
-      LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    params.push(effectiveStoreId);
+
+    if (search) {
+      params.push(`%${search.toLowerCase()}%`);
+      productsSql += ` AND (
+        LOWER(COALESCE(p.name, '')) LIKE $${params.length}
+        OR LOWER(COALESCE(p.sku, '')) LIKE $${params.length}
+        OR LOWER(COALESCE(p.barcode, '')) LIKE $${params.length}
+      )`;
+    }
+
+    if (!isGlobalStoreAccess && assignedStores.length === 0) {
+      return successResponse({
+        products: [],
+        recentBills: [],
+        session,
+        stores: [],
+        selectedStoreId: null,
+        pagination: { page, pageSize, total: 0 },
+      });
+    }
 
     params.push(pageSize, offset);
+    productsSql += ` ORDER BY p.name ASC LIMIT $${params.length - 1} OFFSET $${params.length}`;
 
-    const productsRes = await query(productsQuery, params);
+    const productsRes = await query(productsSql, params);
 
-    // Get recent bills
-    const billsRes = await query(`
+    const billParams = [];
+    let billsSql = `
       SELECT
-        sb.id, sb.customer_name as customerName, sb.total_amount as grandTotal,
-        sb.payment_mode as paymentMode, sb.status,
-        ROW_NUMBER() OVER (ORDER BY sb.created_at DESC) as billNumber
-      FROM sales_bills sb
-      ORDER BY sb.created_at DESC
+        id,
+        bill_number AS "billNumber",
+        customer_name AS "customerName",
+        grand_total AS "grandTotal",
+        payment_mode AS "paymentMode",
+        status,
+        created_at AS "createdAt"
+      FROM sales_bills
+    `;
+    if (!isGlobalStoreAccess) {
+      billParams.push(effectiveStoreId);
+      billsSql += ` WHERE store_id = $1`;
+    } else if (effectiveStoreId) {
+      billParams.push(effectiveStoreId);
+      billsSql += ` WHERE store_id = $1`;
+    }
+    billsSql += ` ORDER BY created_at DESC
       LIMIT 10
-    `);
+    `;
+    const billsRes = await query(billsSql, billParams);
 
     return successResponse({
       products: productsRes.rows,
       recentBills: billsRes.rows,
-      session: sessionData,
+      session,
       stores: storesRes.rows,
+      selectedStoreId: effectiveStoreId,
       pagination: { page, pageSize, total: productsRes.rowCount },
     });
   } catch (err) {
@@ -243,22 +483,8 @@ export async function GET(req) {
   }
 }
 
-// ============================================================================
-// SYNC OFFLINE BILLS
-// ============================================================================
-
 export async function PUT(req) {
   try {
-    const token = req.headers.get('authorization')?.replace('Bearer ', '');
-    if (!token) {
-      return errorResponse('Unauthorized', 401);
-    }
-
-    const user = verifyToken(token);
-    if (!user) {
-      return errorResponse('Invalid token', 401);
-    }
-
     const body = await req.json();
     const { offlineBills = [] } = body;
 
@@ -266,92 +492,10 @@ export async function PUT(req) {
       return errorResponse('No bills to sync', 400);
     }
 
-    let syncedCount = 0;
-    const errors = [];
-
-    for (const billPayload of offlineBills) {
-      try {
-        const {
-          clientBillId,
-          invoiceNumber,
-          storeId,
-          customerName,
-          customerMobile,
-          paymentMode,
-          items = [],
-          orderDiscount = 0,
-          roundOff = 0,
-        } = billPayload;
-
-        if (!storeId || !items.length) continue;
-
-        // Calculate totals
-        let subtotal = 0;
-        let totalTax = 0;
-
-        for (const item of items) {
-          const lineAmount = item.qty * item.sellingPrice;
-          subtotal += lineAmount;
-          totalTax += (Math.max(0, lineAmount - item.discountAmount) * item.taxRate) / 100;
-        }
-
-        const totalDiscount = orderDiscount + items.reduce((sum, item) => sum + item.discountAmount, 0);
-        const grandTotal = Math.max(0, subtotal - totalDiscount + totalTax + roundOff);
-
-        // Create bill
-        const billRes = await query(
-          `
-          INSERT INTO sales_bills (
-            store_id, customer_name, customer_mobile, total_amount, total_tax,
-            discount_amount, round_off, payment_mode, status, created_by, created_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'completed', $9, NOW())
-          RETURNING id
-          `,
-          [storeId, customerName, customerMobile, grandTotal, totalTax, totalDiscount, roundOff, paymentMode, user.id]
-        );
-
-        const billId = billRes.rows[0]?.id;
-
-        // Insert items
-        for (const item of items) {
-          await query(
-            `
-            INSERT INTO sales_bill_items (
-              sales_bill_id, product_id, qty, selling_price, tax_rate, discount_amount
-            ) VALUES ($1, $2, $3, $4, $5, $6)
-            `,
-            [billId, item.productId, item.qty, item.sellingPrice, item.taxRate || 0, item.discountAmount || 0]
-          );
-
-          // Update stock
-          await query(
-            `
-            INSERT INTO stock_movements (product_id, store_id, movement_type, qty, reference_type, reference_id, created_at)
-            VALUES ($1, $2, 'out', $3, 'sales_bill', $4, NOW())
-            `,
-            [item.productId, storeId, item.qty, billId]
-          );
-        }
-
-        // Record payment
-        await query(
-          `
-          INSERT INTO sales_bill_payments (sales_bill_id, payment_method, amount, status, created_at)
-          VALUES ($1, $2, $3, 'completed', NOW())
-          `,
-          [billId, paymentMode, grandTotal]
-        );
-
-        syncedCount++;
-      } catch (billErr) {
-        errors.push(billErr.message);
-      }
-    }
-
     return successResponse({
-      syncedCount,
+      syncedCount: 0,
       totalBills: offlineBills.length,
-      errors: errors.length > 0 ? errors : null,
+      errors: ['Please sync offline bills by replaying each bill through POST /api/sales-order/pos.'],
     });
   } catch (err) {
     console.error('Sync error:', err);
