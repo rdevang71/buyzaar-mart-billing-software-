@@ -1,5 +1,31 @@
 export const menuItems = [
-  { label: 'Home',         icon: 'ti-home',           href: '/',         subSidebar: null },
+  { label: 'Home',         icon: 'ti-home',           href: '/',         subSidebar: {
+    title: 'Home',
+    titleIcon: 'ti-home',
+    groups: [
+      {
+        label: 'Dashboards', icon: 'ti-layout-dashboard',
+        items: [
+          { label: 'Master Dashboard',     href: '/home/master-dashboard' },
+          { label: 'Home Dashboard',       href: '/' },
+        ],
+      },
+    ],
+  }},
+
+  { label: 'Sales',        icon: 'ti-shopping-bag',   href: '/sales/pos', subSidebar: {
+    title: 'Sales & Point of Sale',
+    titleIcon: 'ti-shopping-bag',
+    groups: [
+      {
+        label: 'Point of Sale', icon: 'ti-credit-card',
+        items: [
+          { label: 'POS Interface',    href: '/sales/pos' },
+          { label: 'Returns & Exchange', href: '/sales/returns' },
+        ],
+      },
+    ],
+  }},
 
   { label: 'Catalog',      icon: 'ti-layout-grid',    href: '/catalog', subSidebar: {
     title: 'Catalog Dashboard',
