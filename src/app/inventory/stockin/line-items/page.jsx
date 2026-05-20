@@ -169,7 +169,7 @@ function LineItemsContent() {
     );
   }
 
-  const destinationLabel = draft?.destinationName || 'Central Warehouse';
+  const destinationLabel = draft?.destinationName || '—';
 
   return (
     <MainLayout>

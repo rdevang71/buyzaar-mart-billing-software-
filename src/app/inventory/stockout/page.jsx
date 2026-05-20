@@ -449,7 +449,7 @@ function StockOutLineItemsWindow({ id, onClose, onConfirmed }) {
     { totalItems: 0, totalCost: Number(form.other_charges || 0), totalTax: 0 }
   );
 
-  const destinationLabel = draft?.destinationName || 'The Buyzaar Mart';
+  const destinationLabel = draft?.destinationName || '—';
 
   const addToCart = (product) => {
     const productId = product.id ?? product.product_id;

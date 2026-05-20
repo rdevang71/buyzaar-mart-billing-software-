@@ -187,7 +187,7 @@ function LineItemsContent() {
     );
   }
 
-  const destinationLabel = draft?.destinationName || 'The Buyzaar Mart';
+  const destinationLabel = draft?.destinationName || '—';
 
   return (
     <StockOutFrame>

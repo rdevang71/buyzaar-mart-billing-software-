@@ -95,13 +95,13 @@ async function fetchDepartments() {
   }
 }
 
-// FIXED: Better error handling for stores API
+// FIXED: Better error handling for warehouses API
 async function fetchStores() {
   try {
-    const res = await fetch('/api/stores?page=1&pageSize=1000');
+    const res = await fetch('/api/warehouses');
     
     if (!res.ok) {
-      console.warn('Stores API returned status:', res.status);
+      console.warn('Warehouses API returned status:', res.status);
       return [];
     }
     
@@ -115,14 +115,14 @@ async function fetchStores() {
     
     // Handle different response structures
     if (Array.isArray(data)) return data;
-    if (data.data?.stores && Array.isArray(data.data.stores)) return data.data.stores;
-    if (data.stores && Array.isArray(data.stores)) return data.stores;
+    if (data.data?.records && Array.isArray(data.data.records)) return data.data.records;
+    if (data.records && Array.isArray(data.records)) return data.records;
     if (data.success && Array.isArray(data.data)) return data.data;
     
-    console.warn('Unexpected stores response structure:', data);
+    console.warn('Unexpected warehouses response structure:', data);
     return [];
   } catch (err) {
-    console.error('Failed to fetch stores:', err.message);
+    console.error('Failed to fetch warehouses:', err.message);
     return [];
   }
 }

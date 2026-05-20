@@ -49,7 +49,29 @@ export default function CustomerLedgerPage() {
   const [customerId, setCustomerId] = useState(null);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [rows, setRows] = useState([]);
+  const [regionOptions, setRegionOptions] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadRegions() {
+      try {
+        const res = await fetch('/api/regions', { cache: 'no-store', credentials: 'include' });
+        const json = await res.json().catch(() => ({}));
+        const records = Array.isArray(json?.data?.records) ? json.data.records : [];
+        if (!cancelled) setRegionOptions(records);
+      } catch (err) {
+        console.error(err);
+        if (!cancelled) setRegionOptions([]);
+      }
+    }
+
+    loadRegions();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!showDatePicker) return;
@@ -178,6 +200,11 @@ export default function CustomerLedgerPage() {
                   <label className="text-[12px] text-gray-700 mb-1 block">Regions & Stores</label>
                   <select value={regions} onChange={(e) => setRegions(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-gray-700 bg-white">
                     <option>0 Regions & 0 Stores</option>
+                    {regionOptions.map((regionOption) => (
+                      <option key={regionOption.id} value={regionOption.name}>
+                        {regionOption.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
 

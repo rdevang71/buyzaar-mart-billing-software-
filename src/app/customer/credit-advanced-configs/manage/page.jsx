@@ -37,9 +37,10 @@ export default function ManageCreditAdvancedConfigsPage() {
 
   const fetchRegions = useCallback(async () => {
     try {
-      const res = await fetch('/api/stores');
+      const res = await fetch('/api/regions', { cache: 'no-store', credentials: 'include' });
       const data = await res.json();
-      setRegions(Array.isArray(data) ? data : []);
+      const records = Array.isArray(data?.data?.records) ? data.data.records : [];
+      setRegions(records);
     } catch (err) {
       console.error(err);
       setRegions([]);

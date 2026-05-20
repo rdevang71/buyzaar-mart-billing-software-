@@ -13,7 +13,7 @@ export async function ensurePasswordResetsSchema() {
     await query(`
       CREATE TABLE IF NOT EXISTS password_resets (
         id BIGSERIAL PRIMARY KEY,
-        user_id BIGINT NOT NULL UNIQUE REFERENCES users_v2(id) ON DELETE CASCADE,
+        user_id BIGINT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
         token_hash VARCHAR(64) NOT NULL,
         expires_at TIMESTAMP NOT NULL,
         used_at TIMESTAMP,

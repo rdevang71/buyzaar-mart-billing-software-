@@ -10,14 +10,6 @@ export async function ensureStockTransferSchema() {
       name VARCHAR(255) NOT NULL,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
-    INSERT INTO stores (name)
-    SELECT seed.name
-    FROM (VALUES
-      ('Central Warehouse'),
-      ('The Buyzaar Mart'),
-      ('Outlet Store')
-    ) AS seed(name)
-    WHERE NOT EXISTS (SELECT 1 FROM stores WHERE stores.name = seed.name);
 
     CREATE TABLE IF NOT EXISTS stock_transfer (
       id SERIAL PRIMARY KEY,

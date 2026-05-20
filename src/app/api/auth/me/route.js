@@ -2,9 +2,12 @@
 import { successResponse, errorResponse } from '@/lib/api-response';
 import { verifyToken } from '@/lib/auth-enhanced';
 import { query } from '@/lib/db';
+import { ensureUsersTable } from '@/lib/userAuth';
 
 export async function GET() {
   try {
+    await ensureUsersTable();
+
     const cookieStore = await cookies();
     
     // Check for access_token (new system) or auth_token (legacy)
@@ -22,13 +25,14 @@ export async function GET() {
       return successResponse({ user: null }, 'Not authenticated');
     }
 
-    // Query from users_v2 table (new system)
+    if (!payload?.sub) {
+      return successResponse({ user: null }, 'Not authenticated');
+    }
+
     const result = await query(
-      `SELECT u.id, u.email, u.first_name, u.last_name, u.is_active, 
-              u.role_id, r.name as role_name
-       FROM users_v2 u
-       LEFT JOIN roles r ON u.role_id = r.id
-       WHERE u.id = $1 AND u.is_active = TRUE
+      `SELECT id, name, email, phone, role, is_active
+       FROM users
+       WHERE id = $1 AND is_active = TRUE
        LIMIT 1`,
       [payload.sub]
     );
@@ -43,9 +47,8 @@ export async function GET() {
     const user = {
       id: dbUser.id,
       email: dbUser.email,
-      name: `${dbUser.first_name || ''} ${dbUser.last_name || ''}`.trim() || dbUser.email,
-      role: dbUser.role_name || 'user',
-      role_id: dbUser.role_id,
+      name: dbUser.name || dbUser.email,
+      role: dbUser.role || 'user',
       permissions: payload.permissions || [],
       assigned_stores: payload.assigned_stores || [],
     };

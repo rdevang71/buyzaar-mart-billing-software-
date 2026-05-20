@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import MainLayout from '@/components/MainLayout';
 
@@ -38,9 +38,54 @@ export default function ReportsListPage({
   });
   const todayStr = `${today} - ${today}`;
 
+  const [regionOptions, setRegionOptions] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadRegions() {
+      const hasRegionFilter = filters.some((filter) => filter.key === 'region' || /region/i.test(filter.label || ''));
+      if (!hasRegionFilter) return;
+
+      try {
+        const res = await fetch('/api/regions', { cache: 'no-store', credentials: 'include' });
+        const json = await res.json().catch(() => ({}));
+
+        if (!res.ok || !json?.success || cancelled) return;
+
+        const records = Array.isArray(json?.data?.records) ? json.data.records : [];
+        setRegionOptions(records.map((region) => ({ value: String(region.id), label: region.name })));
+      } catch (err) {
+        console.error('[ReportListPage] Failed to fetch regions', err);
+        if (!cancelled) setRegionOptions([]);
+      }
+    }
+
+    loadRegions();
+    return () => {
+      cancelled = true;
+    };
+  }, [filters]);
+
+  const resolvedFilters = useMemo(
+    () => filters.map((filter) => {
+      const isRegionFilter = filter.key === 'region' || /region/i.test(filter.label || '');
+      if (!isRegionFilter) return filter;
+
+      return {
+        ...filter,
+        type: 'select',
+        options: regionOptions.length > 0
+          ? [{ value: 'all', label: 'All Regions' }, ...regionOptions]
+          : (Array.isArray(filter.options) ? filter.options : []),
+      };
+    }),
+    [filters, regionOptions]
+  );
+
   const initValues = () => {
     const v = {};
-    filters.forEach((f) => {
+    resolvedFilters.forEach((f) => {
       if (f.type === 'date-range') v[f.key] = todayStr;
       else v[f.key] = '';
     });
@@ -98,10 +143,10 @@ export default function ReportsListPage({
         )}
 
         {/* Filter Card */}
-        {filters.length > 0 && (
+        {resolvedFilters.length > 0 && (
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5 mb-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-              {filters.map((f) => (
+              {resolvedFilters.map((f) => (
                 <div key={f.key}>
                   <label className="block text-xs font-medium text-gray-600 mb-1">{f.label}</label>
 

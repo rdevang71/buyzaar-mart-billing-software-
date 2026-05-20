@@ -2,13 +2,16 @@
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { signAccessToken, signRefreshToken, createTokenPayload } from '@/lib/auth-enhanced';
-import { successResponse, unauthorizedError, validationError } from '@/lib/api-response';
+import { unauthorizedError, validationError } from '@/lib/api-response';
 import { query } from '@/lib/db';
 import { rateLimiters, rateLimitHeaders } from '@/lib/rate-limiter';
 import { getUserIP } from '@/lib/api-protection';
+import { ensureUsersTable } from '@/lib/userAuth';
 
 export async function POST(request) {
   try {
+    await ensureUsersTable();
+
     console.log('[LOGIN] Request received');
     
     // ============================================
@@ -86,7 +89,7 @@ export async function POST(request) {
     }
 
     // ============================================
-    // STEP 2: FIND USER IN users_v2 TABLE
+    // STEP 2: FIND USER IN users TABLE
     // ============================================
 
     console.log('[LOGIN] Searching for user:', { email: email.toLowerCase() });
@@ -94,10 +97,9 @@ export async function POST(request) {
     let userResult;
     try {
       userResult = await query(
-        `SELECT u.*, r.name as role_name 
-         FROM users_v2 u
-         LEFT JOIN roles r ON u.role_id = r.id
-         WHERE LOWER(u.email) = LOWER($1) AND u.is_active = TRUE`,
+        `SELECT id, name, email, phone, password_hash, role, is_active, created_at, updated_at
+         FROM users
+         WHERE LOWER(email) = LOWER($1) AND is_active = TRUE`,
         [email]
       );
       console.log('[LOGIN] User query result:', { 
@@ -121,23 +123,9 @@ export async function POST(request) {
     console.log('[LOGIN] User found:', { 
       id: user.id, 
       email: user.email,
-      role_id: user.role_id,
-      role_name: user.role_name,
+      role: user.role,
       is_active: user.is_active,
-      is_locked: user.is_locked
     });
-
-    // ============================================
-    // STEP 3: CHECK IF ACCOUNT IS LOCKED
-    // ============================================
-
-    if (user.is_locked && user.locked_until && user.locked_until > new Date()) {
-      console.warn('[LOGIN] Account is locked:', { 
-        email, 
-        lockedUntil: user.locked_until 
-      });
-      return unauthorizedError('Account is locked. Try again later.');
-    }
 
     // ============================================
     // STEP 4: VERIFY PASSWORD
@@ -162,34 +150,6 @@ export async function POST(request) {
 
     if (!isPasswordValid) {
       console.warn('[LOGIN] Invalid password for:', email);
-      
-      // Increment failed login attempts
-      const newFailedAttempts = (user.failed_login_attempts || 0) + 1;
-      const isLocked = newFailedAttempts >= 5;
-
-      console.log('[LOGIN] Failed attempt logged:', { 
-        newFailedAttempts,
-        isLocked,
-        email
-      });
-
-      try {
-        await query(
-          `UPDATE users_v2 
-           SET failed_login_attempts = $1,
-               is_locked = $2,
-               locked_until = $3
-           WHERE id = $4`,
-          [
-            newFailedAttempts,
-            isLocked,
-            isLocked ? new Date(Date.now() + 30 * 60 * 1000) : null,
-            user.id,
-          ]
-        );
-      } catch (err) {
-        console.error('[LOGIN] Failed to update login attempts:', err.message);
-      }
 
       return unauthorizedError('Invalid email or password');
     }
@@ -198,49 +158,49 @@ export async function POST(request) {
     // STEP 5: RESET FAILED ATTEMPTS & UPDATE LOGIN TIME
     // ============================================
 
-    console.log('[LOGIN] Resetting failed attempts');
+    console.log('[LOGIN] Updating last login timestamp');
 
     try {
       await query(
-        `UPDATE users_v2 
-         SET failed_login_attempts = 0, 
-             is_locked = FALSE,
-             last_login = NOW()
+        `UPDATE users 
+         SET updated_at = NOW()
          WHERE id = $1`,
         [user.id]
       );
     } catch (err) {
-      console.error('[LOGIN] Failed to reset login attempts:', err.message);
+      console.error('[LOGIN] Failed to update login timestamp:', err.message);
     }
 
     // ============================================
     // STEP 6: GET USER'S PERMISSIONS
     // ============================================
 
-    console.log('[LOGIN] Fetching permissions for role_id:', user.role_id);
+    console.log('[LOGIN] Fetching permissions for role:', user.role);
 
     let permResult = { rows: [] };
-    if (user.role_id) {
+    if (user.role) {
       try {
         permResult = await query(
-          `SELECT p.name FROM role_permissions rp
-           JOIN permissions p ON rp.permission_id = p.id
-           WHERE rp.role_id = $1
-           ORDER BY p.name`,
-          [user.role_id]
+          `SELECT permissions
+           FROM roles
+           WHERE role_name = $1
+           LIMIT 1`,
+          [user.role]
         );
         console.log('[LOGIN] Permissions found:', { 
           count: permResult.rows.length,
-          permissions: permResult.rows.slice(0, 3).map(p => p.name)
+          roleFound: permResult.rows.length > 0
         });
       } catch (err) {
         console.error('[LOGIN] Failed to fetch permissions:', err.message);
       }
     } else {
-      console.warn('[LOGIN] User has no role_id assigned');
+      console.warn('[LOGIN] User has no role assigned');
     }
 
-    const permissions = permResult.rows.map((p) => p.name);
+    const permissions = Array.isArray(permResult.rows[0]?.permissions)
+      ? permResult.rows[0].permissions
+      : [];
 
     // ============================================
     // STEP 7: GET USER'S ASSIGNED STORES
@@ -276,8 +236,8 @@ export async function POST(request) {
     const tokenPayload = createTokenPayload({
       id: user.id,
       email: user.email,
-      name: `${user.first_name || ''} ${user.last_name || ''}`.trim(),
-      role: user.role_name || 'user',
+      name: user.name || user.email,
+      role: user.role || 'user',
       permissions,
       assigned_stores: assignedStores,
     });
