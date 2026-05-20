@@ -1,28 +1,106 @@
+'use client';
+
+import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import MainLayout from '@/components/MainLayout';
 
+const Icons = {
+  rupee: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 3h12M6 8h12M6 13l6 8M6 8a4 4 0 0 0 0 8h2l6 5" /></svg>,
+  receipt: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2" /></svg>,
+  users: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><circle cx="9" cy="7" r="4"/><path strokeLinecap="round" strokeLinejoin="round" d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path strokeLinecap="round" strokeLinejoin="round" d="M16 3.13a4 4 0 0 1 0 7.75M21 21v-2a4 4 0 0 0-3-3.87"/></svg>,
+  chartPie: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 3.055A9.001 9.001 0 1 0 20.945 13H11V3.055z"/><path strokeLinecap="round" strokeLinejoin="round" d="M20.488 9H15V3.512A9.025 9.025 0 0 1 20.488 9z"/></svg>,
+  pos: <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="white" strokeWidth={2}><rect x="2" y="5" width="20" height="14" rx="2"/><path strokeLinecap="round" strokeLinejoin="round" d="M2 10h20"/></svg>,
+  dashboard: <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="white" strokeWidth={2}><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>,
+  returns: <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="white" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a4 4 0 0 1 4 4v1M3 10l4-4M3 10l4 4"/></svg>,
+  cart: <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="white" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13l-1.4 7h12.8M10 21a1 1 0 1 0 2 0 1 1 0 0 0-2 0zm7 0a1 1 0 1 0 2 0 1 1 0 0 0-2 0z"/></svg>,
+};
+
+const quickActions = [
+  { label: 'Open POS',         desc: 'Fast checkout',    icon: Icons.pos,       path: '/sales/pos',              bg: 'linear-gradient(135deg, #3b82f6, #1d4ed8)' },
+  { label: 'Master Dashboard', desc: 'View analytics',   icon: Icons.dashboard, path: '/home/master-dashboard',  bg: 'linear-gradient(135deg, #22c55e, #15803d)' },
+  { label: 'Returns',          desc: 'Manage returns',   icon: Icons.returns,   path: '/sales/returns',          bg: 'linear-gradient(135deg, #f59e0b, #b45309)' },
+  { label: 'Full POS',         desc: 'Advanced billing', icon: Icons.cart,      path: '/sales/pos',              bg: 'linear-gradient(135deg, #a855f7, #7e22ce)' },
+];
+
 export default function HomePage() {
+  const router = useRouter();
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => { fetchHomeStats(); }, []);
+
+  async function fetchHomeStats() {
+    try {
+      const today = new Date();
+      const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+      const lastDay = today.toISOString().split('T')[0];
+      const params = new URLSearchParams();
+      params.set('date_from', firstDay);
+      params.set('date_to', lastDay);
+      const res = await fetch(`/api/dashboard/analytics?${params}`);
+      if (!res.ok) { setLoading(false); return; }
+      const json = await res.json();
+      if (json.success && json.data) setStats(json.data);
+    } catch (err) {
+      console.error('Error fetching home stats:', err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const kpiData = [
+    { label: 'Total Revenue',  value: stats ? `₹${parseFloat(stats.summary?.total_sales || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '₹0', icon: Icons.rupee,    iconBg: '#fff7ed', iconColor: '#ea580c' },
+    { label: 'Transactions',   value: stats ? String(stats.summary?.total_transactions || '0') : '0',                                                          icon: Icons.receipt,  iconBg: '#eff6ff', iconColor: '#2563eb' },
+    { label: 'Customers',      value: stats ? String(stats.summary?.unique_customers || '0') : '0',                                                            icon: Icons.users,    iconBg: '#f0fdf4', iconColor: '#16a34a' },
+    { label: 'Tax Collected',  value: stats ? `₹${parseFloat(stats.summary?.total_tax || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '₹0',   icon: Icons.chartPie, iconBg: '#faf5ff', iconColor: '#9333ea' },
+  ];
+
   return (
     <MainLayout>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Home</h1>
-        <p className="text-gray-500 text-sm mt-1">Welcome to BillingPro</p>
+      <div style={{ marginBottom: '2rem' }}>
+        <h1 style={{ fontSize: '2rem', fontWeight: 900, color: '#111827', letterSpacing: '-0.02em', margin: 0 }}>Welcome to BillingPro</h1>
+        <p style={{ color: '#4b5563', fontSize: '0.95rem', fontWeight: 500, marginTop: '0.5rem' }}>Dashboard Summary for Current Month</p>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
-        {[
-          { label: 'Total Revenue',   value: '₹45,230', icon: 'ti-currency-rupee', bg: 'bg-orange-50',  text: 'text-orange-500' },
-          { label: 'Pending Orders',  value: '8',        icon: 'ti-receipt',        bg: 'bg-blue-50',    text: 'text-blue-600' },
-          { label: 'Customers',       value: '124',      icon: 'ti-users',          bg: 'bg-green-50',   text: 'text-green-600' },
-          { label: 'This Month',      value: '₹12,450',  icon: 'ti-chart-pie',      bg: 'bg-purple-50',  text: 'text-purple-600' },
-        ].map((s) => (
-          <div key={s.label} className="bg-white rounded-2xl border border-gray-100 p-5 flex items-center gap-4 shadow-sm">
-            <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${s.bg} ${s.text}`}>
-              <i className={`ti ${s.icon} text-[20px]`} />
+
+      {/* KPI Cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.5rem', marginBottom: '2.5rem' }}>
+        {kpiData.map((s) => (
+          <div key={s.label} style={{ background: '#fff', borderRadius: '0.75rem', border: '1px solid #e5e7eb', padding: '1.5rem', boxShadow: '0 1px 4px rgba(0,0,0,0.08)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+              <p style={{ fontSize: '0.75rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', margin: 0 }}>{s.label}</p>
+              <div style={{ width: '3rem', height: '3rem', borderRadius: '0.5rem', background: s.iconBg, color: s.iconColor, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {s.icon}
+              </div>
             </div>
-            <div>
-              <p className="text-xs text-gray-500 font-medium">{s.label}</p>
-              <p className="text-xl font-bold text-gray-900">{s.value}</p>
-            </div>
+            <p style={{ fontSize: '1.75rem', fontWeight: 900, color: '#111827', margin: 0 }}>{s.value}</p>
           </div>
+        ))}
+      </div>
+
+      {/* Quick Actions */}
+      <h2 style={{ fontSize: '1.5rem', fontWeight: 900, color: '#111827', marginBottom: '1.25rem' }}>Quick Actions</h2>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.25rem' }}>
+        {quickActions.map((action) => (
+          <button
+            key={action.label}
+            onClick={() => router.push(action.path)}
+            style={{
+              background: action.bg,
+              border: 'none',
+              borderRadius: '0.75rem',
+              padding: '1.5rem',
+              cursor: 'pointer',
+              textAlign: 'left',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+              transition: 'transform 0.15s, box-shadow 0.15s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.04)'; e.currentTarget.style.boxShadow = '0 8px 20px rgba(0,0,0,0.2)'; }}
+            onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)'; }}
+          >
+            <div style={{ marginBottom: '0.75rem' }}>{action.icon}</div>
+            <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: '#ffffff', margin: '0 0 0.25rem 0' }}>{action.label}</h3>
+            <p style={{ fontSize: '0.85rem', fontWeight: 500, color: 'rgba(255,255,255,0.88)', margin: 0 }}>{action.desc}</p>
+          </button>
         ))}
       </div>
     </MainLayout>

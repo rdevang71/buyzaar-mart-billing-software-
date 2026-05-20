@@ -1,31 +1,6 @@
 import { query } from '@/lib/db';
 import { successResponse, errorResponse } from '@/lib/api-response';
 
-export async function GET() {
-  try {
-    // Basic aggregated stats for catalog dashboard
-    const statsRes = await query(`SELECT
-      (SELECT COUNT(*)::int FROM products) AS total_products,
-      (SELECT COUNT(*)::int FROM categories) AS total_categories,
-      (SELECT COUNT(*)::int FROM brands) AS total_brands
-    `).catch(() => ({ rows: [{ total_products: 0, total_categories: 0, total_brands: 0 }] }));
-
-    const stats = statsRes.rows[0] || { total_products: 0, total_categories: 0, total_brands: 0 };
-
-    // Sample small product list for dashboard (limit 10)
-    const prodRes = await query(
-      `SELECT id, name, sku, COALESCE(is_active, true) AS is_active, stock
-       FROM products ORDER BY id DESC LIMIT 10`
-    ).catch(() => ({ rows: [] }));
-
-    return successResponse({ stats, products: prodRes.rows || [] });
-  } catch (err) {
-    return errorResponse(err.message);
-  }
-}
-import { query } from '@/lib/db';
-import { successResponse, errorResponse } from '@/lib/apiResponse';
-
 async function safeQuery(sql) {
   try {
     return await query(sql);
