@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import MainLayout from '@/components/MainLayout';
+import { validatePhoneNumber } from '@/lib/phoneValidator';
 
 const tableHeaders = ['S. No.', 'Vendor Name', 'Mobile Number', 'Email Address', 'Address', 'Actions'];
 

@@ -1,8 +1,6 @@
-'use client';
-
-import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import MainLayout from '@/components/MainLayout';
+import { query } from '@/lib/db';
 
 const Icons = {
   rupee: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 3h12M6 8h12M6 13l6 8M6 8a4 4 0 0 0 0 8h2l6 5" /></svg>,
@@ -22,37 +20,94 @@ const quickActions = [
   { label: 'Full POS',         desc: 'Advanced billing', icon: Icons.cart,      path: '/sales/pos',              bg: 'linear-gradient(135deg, #a855f7, #7e22ce)' },
 ];
 
-export default function HomePage() {
-  const router = useRouter();
-  const [stats, setStats] = useState(null);
-  const [loading, setLoading] = useState(true);
+function formatCurrency(value) {
+  return `₹${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+}
 
-  useEffect(() => { fetchHomeStats(); }, []);
+async function fetchHomeStats() {
+  const today = new Date();
+  const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+  const lastDay = today.toISOString().split('T')[0];
 
-  async function fetchHomeStats() {
-    try {
-      const today = new Date();
-      const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
-      const lastDay = today.toISOString().split('T')[0];
-      const params = new URLSearchParams();
-      params.set('date_from', firstDay);
-      params.set('date_to', lastDay);
-      const res = await fetch(`/api/dashboard/analytics?${params}`);
-      if (!res.ok) { setLoading(false); return; }
-      const json = await res.json();
-      if (json.success && json.data) setStats(json.data);
-    } catch (err) {
-      console.error('Error fetching home stats:', err);
-    } finally {
-      setLoading(false);
-    }
+  const [salesResult, productsResult, customersResult] = await Promise.all([
+    query(
+      `SELECT
+         COALESCE(SUM(grand_total), 0)::numeric AS total_sales,
+         COALESCE(SUM(tax_total), 0)::numeric AS total_tax,
+         COUNT(DISTINCT id)::int AS total_transactions,
+         COUNT(DISTINCT NULLIF(customer_mobile, ''))::int AS unique_customers
+       FROM sales_bills
+       WHERE DATE(created_at) >= $1
+         AND DATE(created_at) <= $2
+         AND status != 'cancelled'`,
+      [firstDay, lastDay]
+    ),
+    query(`SELECT COUNT(*)::int AS count FROM products WHERE is_active = TRUE`),
+    query(`WITH registered_customers AS (
+         SELECT
+           CASE
+             WHEN NULLIF(TRIM(mobile_number), '') IS NOT NULL THEN 'm:' || LOWER(TRIM(mobile_number))
+             WHEN NULLIF(TRIM(customer_code), '') IS NOT NULL THEN 'c:' || LOWER(TRIM(customer_code))
+             ELSE 'id:' || id::text
+           END AS customer_key
+         FROM customers
+       ),
+       billed_customers AS (
+         SELECT DISTINCT
+           CASE
+             WHEN NULLIF(TRIM(customer_mobile), '') IS NOT NULL THEN 'm:' || LOWER(TRIM(customer_mobile))
+             WHEN NULLIF(TRIM(customer_name), '') IS NOT NULL THEN 'n:' || LOWER(TRIM(customer_name))
+             ELSE 'bill:' || id::text
+           END AS customer_key
+         FROM sales_bills
+         WHERE status IN ('paid', 'completed')
+           AND (
+             NULLIF(TRIM(customer_mobile), '') IS NOT NULL
+             OR NULLIF(TRIM(customer_name), '') IS NOT NULL
+           )
+       )
+       SELECT COUNT(*)::int AS count
+       FROM (
+         SELECT customer_key FROM registered_customers
+         UNION
+         SELECT customer_key FROM billed_customers
+       ) all_customers`),
+  ]);
+
+  const summary = salesResult.rows[0] || {};
+
+  return {
+    summary: {
+      total_sales: summary.total_sales || 0,
+      total_tax: summary.total_tax || 0,
+      total_transactions: summary.total_transactions || 0,
+      total_customers: customersResult.rows[0]?.count || 0,
+    },
+    catalog: productsResult.rows[0]?.count || 0,
+  };
+}
+
+export default async function HomePage() {
+  let stats = {
+    summary: {
+      total_sales: 0,
+      total_tax: 0,
+      total_transactions: 0,
+      total_customers: 0,
+    },
+  };
+
+  try {
+    stats = await fetchHomeStats();
+  } catch (err) {
+    console.error('Error fetching home stats:', err);
   }
 
   const kpiData = [
-    { label: 'Total Revenue',  value: stats ? `₹${parseFloat(stats.summary?.total_sales || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '₹0', icon: Icons.rupee,    iconBg: '#fff7ed', iconColor: '#ea580c' },
-    { label: 'Transactions',   value: stats ? String(stats.summary?.total_transactions || '0') : '0',                                                          icon: Icons.receipt,  iconBg: '#eff6ff', iconColor: '#2563eb' },
-    { label: 'Customers',      value: stats ? String(stats.summary?.unique_customers || '0') : '0',                                                            icon: Icons.users,    iconBg: '#f0fdf4', iconColor: '#16a34a' },
-    { label: 'Tax Collected',  value: stats ? `₹${parseFloat(stats.summary?.total_tax || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '₹0',   icon: Icons.chartPie, iconBg: '#faf5ff', iconColor: '#9333ea' },
+    { label: 'Total Revenue',  value: formatCurrency(stats.summary.total_sales),        icon: Icons.rupee,    iconBg: '#fff7ed', iconColor: '#ea580c' },
+    { label: 'Transactions',   value: String(stats.summary.total_transactions),         icon: Icons.receipt,  iconBg: '#eff6ff', iconColor: '#2563eb' },
+    { label: 'Customers',      value: String(stats.summary.total_customers),            icon: Icons.users,    iconBg: '#f0fdf4', iconColor: '#16a34a' },
+    { label: 'Tax Collected',  value: formatCurrency(stats.summary.total_tax),          icon: Icons.chartPie, iconBg: '#faf5ff', iconColor: '#9333ea' },
   ];
 
   return (
@@ -81,10 +136,12 @@ export default function HomePage() {
       <h2 style={{ fontSize: '1.5rem', fontWeight: 900, color: '#111827', marginBottom: '1.25rem' }}>Quick Actions</h2>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.25rem' }}>
         {quickActions.map((action) => (
-          <button
+          <Link
             key={action.label}
-            onClick={() => router.push(action.path)}
+            href={action.path}
             style={{
+              display: 'block',
+              textDecoration: 'none',
               background: action.bg,
               border: 'none',
               borderRadius: '0.75rem',
@@ -94,13 +151,11 @@ export default function HomePage() {
               boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
               transition: 'transform 0.15s, box-shadow 0.15s',
             }}
-            onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.04)'; e.currentTarget.style.boxShadow = '0 8px 20px rgba(0,0,0,0.2)'; }}
-            onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)'; }}
           >
             <div style={{ marginBottom: '0.75rem' }}>{action.icon}</div>
             <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: '#ffffff', margin: '0 0 0.25rem 0' }}>{action.label}</h3>
             <p style={{ fontSize: '0.85rem', fontWeight: 500, color: 'rgba(255,255,255,0.88)', margin: 0 }}>{action.desc}</p>
-          </button>
+          </Link>
         ))}
       </div>
     </MainLayout>

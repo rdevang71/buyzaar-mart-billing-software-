@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import MainLayout from '@/components/MainLayout';
+import { validatePhoneNumber } from '@/lib/phoneValidator';
 
 const initialForm = {
   name: '',

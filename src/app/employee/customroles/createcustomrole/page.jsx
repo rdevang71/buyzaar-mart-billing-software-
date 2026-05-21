@@ -77,7 +77,7 @@ export default function CreateCustomRolePage() {
         permissions: form.permissions,
         description: form.description,
       });
-      router.push('/employee/roles');
+      router.push('/employee');
     } catch (err) {
       console.error(err);
       alert(err.message || 'Failed to save role');
