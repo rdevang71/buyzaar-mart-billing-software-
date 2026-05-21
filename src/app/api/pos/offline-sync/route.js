@@ -23,7 +23,7 @@ export async function POST(req) {
         const billRes = await query(`
           INSERT INTO sales_bills (
             store_id, customer_id, total_amount, total_tax, discount_amount, round_off,
-            payment_mode, notes, created_by, status
+            payment_mode, notes, user_id, status
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'completed')
           RETURNING id, created_at
         `, [
@@ -35,7 +35,7 @@ export async function POST(req) {
           bill.round_off || 0,
           bill.payment_mode,
           bill.notes || '',
-          bill.created_by
+          bill.user_id || bill.created_by || null
         ]);
 
         const bill_id = billRes.rows[0]?.id;

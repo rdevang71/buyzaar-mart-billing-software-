@@ -335,7 +335,11 @@ export async function GET(req) {
         COUNT(DISTINCT sb.id) as bills_created,
         COALESCE(SUM(sb.grand_total), 0) as sales_value,
         COALESCE(AVG(sb.grand_total), 0) as avg_bill_value,
-        COALESCE(SUM(sb.tax_total), 0) as tax_collected
+        COALESCE(SUM(sb.tax_total), 0) as tax_collected,
+        COUNT(DISTINCT CASE WHEN sb.created_at >= NOW() - INTERVAL '1 hour' THEN sb.id END) as bills_last_hour,
+        COALESCE(SUM(CASE WHEN sb.created_at >= NOW() - INTERVAL '1 hour' THEN sb.grand_total ELSE 0 END), 0) as sales_last_hour,
+        MAX(sb.created_at) as last_bill_at,
+        CASE WHEN MAX(sb.created_at) >= NOW() - INTERVAL '15 minutes' THEN TRUE ELSE FALSE END as is_active_now
       FROM employees e
       LEFT JOIN sales_bills sb ON e.user_id = sb.user_id
         AND DATE(sb.created_at) >= '${date_from}'
@@ -343,8 +347,8 @@ export async function GET(req) {
         AND sb.status != 'cancelled'
       ${hasStoreFilter ? `WHERE sb.store_id = ${selectedStoreId}` : ''}
       GROUP BY e.id, e.first_name, e.last_name
-      ORDER BY sales_value DESC
-      LIMIT 20
+      ORDER BY sales_value DESC, last_bill_at DESC NULLS LAST
+      LIMIT 1000
     `).catch(() => ({ rows: [] }));
 
     // 10. Payment Mode Analysis
