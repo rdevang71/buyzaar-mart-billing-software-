@@ -7,7 +7,7 @@ const ROLE_HOME_PATHS = {
 
 const MENU_ROLES = {
   Home: ['super_admin', 'admin', 'manager'],
-  Sales: ['admin', 'manager', 'user'],
+  Sales: ['super_admin', 'admin', 'manager', 'user'],
   Catalog: ['super_admin', 'admin'],
   Inventory: ['super_admin', 'admin', 'manager'],
   Purchase: ['super_admin', 'admin', 'manager'],
@@ -21,8 +21,8 @@ const MENU_ROLES = {
 const SUB_ITEM_ROLES = {
   '/home/master-dashboard': ['super_admin'],
   '/': ['admin', 'manager'],
-  '/sales/pos': ['admin', 'manager', 'user'],
-  '/sales/returns': ['admin', 'manager'],
+  '/sales/pos': ['super_admin', 'admin', 'manager', 'user'],
+  '/sales/returns': ['super_admin', 'admin', 'manager'],
   '/employee/roles': ['super_admin'],
   '/employee/permissions': ['super_admin'],
   '/employee/staffdepartments': ['super_admin', 'admin'],
@@ -41,9 +41,9 @@ const SUB_ITEM_ROLES = {
 const ROUTE_RULES = [
   { prefix: '/login', roles: ['guest', 'super_admin', 'admin', 'manager', 'user'] },
   { prefix: '/home/master-dashboard', roles: ['super_admin'] },
-  { prefix: '/sales/pos', roles: ['admin', 'manager', 'user'] },
-  { prefix: '/sales/returns', roles: ['admin', 'manager'] },
-  { prefix: '/sales', roles: ['admin', 'manager', 'user'] },
+  { prefix: '/sales/pos', roles: ['super_admin', 'admin', 'manager', 'user'] },
+  { prefix: '/sales/returns', roles: ['super_admin', 'admin', 'manager'] },
+  { prefix: '/sales', roles: ['super_admin', 'admin', 'manager', 'user'] },
   { prefix: '/employee/roles', roles: ['super_admin'] },
   { prefix: '/employee/permissions', roles: ['super_admin'] },
   { prefix: '/employee/staffdepartments', roles: ['super_admin', 'admin'] },
