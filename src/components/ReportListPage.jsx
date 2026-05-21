@@ -5,6 +5,12 @@ import Link from 'next/link';
 import MainLayout from '@/components/MainLayout';
 
 const PAGE_SIZES = [10, 25, 50, 100];
+const EMPTY_ARRAY = [];
+
+function optionListsEqual(a = [], b = []) {
+  if (a.length !== b.length) return false;
+  return a.every((item, index) => item.value === b[index]?.value && item.label === b[index]?.label);
+}
 
 /**
  * ReportsListPage — shared layout for all individual report pages.
@@ -22,12 +28,14 @@ const PAGE_SIZES = [10, 25, 50, 100];
  *  extraActions  ReactNode   — e.g. "Convert B2B to B2C" button
  */
 export default function ReportsListPage({
-  breadcrumbs  = [],
+  breadcrumbs  = EMPTY_ARRAY,
   title        = '',
   description  = '',
-  filters      = [],
-  columns      = [],
-  rows         = [],
+  filters      = EMPTY_ARRAY,
+  columns      = EMPTY_ARRAY,
+  rows         = EMPTY_ARRAY,
+  reportKey    = '',
+  apiPath      = '',
   onApply,
   totalLabel   = 'Results',
   emptyMessage = 'No Rows To Show',
@@ -39,33 +47,58 @@ export default function ReportsListPage({
   const todayStr = `${today} - ${today}`;
 
   const [regionOptions, setRegionOptions] = useState([]);
+  const [storeOptions, setStoreOptions] = useState([]);
+  const [remoteRows, setRemoteRows] = useState(EMPTY_ARRAY);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const filterSignature = useMemo(
+    () => filters.map((filter) => `${filter.key}:${filter.label}:${filter.type}`).join('|'),
+    [filters]
+  );
 
   useEffect(() => {
     let cancelled = false;
 
-    async function loadRegions() {
+    async function loadFilterOptions() {
       const hasRegionFilter = filters.some((filter) => filter.key === 'region' || /region/i.test(filter.label || ''));
-      if (!hasRegionFilter) return;
+      const hasStoreFilter = filters.some((filter) => filter.key === 'store' || /store/i.test(filter.label || ''));
 
       try {
-        const res = await fetch('/api/regions', { cache: 'no-store', credentials: 'include' });
-        const json = await res.json().catch(() => ({}));
+        if (hasRegionFilter) {
+          const res = await fetch('/api/regions', { cache: 'no-store', credentials: 'include' });
+          const json = await res.json().catch(() => ({}));
 
-        if (!res.ok || !json?.success || cancelled) return;
+          if (res.ok && json?.success && !cancelled) {
+            const records = Array.isArray(json?.data?.records) ? json.data.records : [];
+            const nextOptions = records.map((region) => ({ value: String(region.id), label: region.name }));
+            setRegionOptions((prev) => optionListsEqual(prev, nextOptions) ? prev : nextOptions);
+          }
+        }
 
-        const records = Array.isArray(json?.data?.records) ? json.data.records : [];
-        setRegionOptions(records.map((region) => ({ value: String(region.id), label: region.name })));
+        if (hasStoreFilter) {
+          const res = await fetch('/api/reports/dashboard', { cache: 'no-store', credentials: 'include' });
+          const json = await res.json().catch(() => ({}));
+
+          if (res.ok && json?.success && !cancelled) {
+            const stores = Array.isArray(json?.data?.stores) ? json.data.stores : [];
+            const nextOptions = stores.map((store) => ({ value: String(store.id), label: store.name }));
+            setStoreOptions((prev) => optionListsEqual(prev, nextOptions) ? prev : nextOptions);
+          }
+        }
       } catch (err) {
-        console.error('[ReportListPage] Failed to fetch regions', err);
-        if (!cancelled) setRegionOptions([]);
+        console.error('[ReportListPage] Failed to fetch filter options', err);
+        if (!cancelled) {
+          setRegionOptions([]);
+          setStoreOptions([]);
+        }
       }
     }
 
-    loadRegions();
+    loadFilterOptions();
     return () => {
       cancelled = true;
     };
-  }, [filters]);
+  }, [filterSignature]);
 
   const resolvedFilters = useMemo(
     () => filters.map((filter) => {
@@ -83,16 +116,32 @@ export default function ReportsListPage({
     [filters, regionOptions]
   );
 
-  const initValues = () => {
+  const resolvedFiltersWithStores = useMemo(
+    () => resolvedFilters.map((filter) => {
+      const isStoreFilter = filter.key === 'store' || /store/i.test(filter.label || '');
+      if (!isStoreFilter) return filter;
+
+      return {
+        ...filter,
+        type: 'select',
+        options: storeOptions.length > 0
+          ? [{ value: 'all', label: 'All Stores' }, ...storeOptions]
+          : (Array.isArray(filter.options) ? filter.options : []),
+      };
+    }),
+    [resolvedFilters, storeOptions]
+  );
+
+  const defaultFilterValues = useMemo(() => {
     const v = {};
-    resolvedFilters.forEach((f) => {
-      if (f.type === 'date-range') v[f.key] = todayStr;
+    resolvedFiltersWithStores.forEach((f) => {
+      if (f.type === 'date-range' || f.type === 'daterange') v[f.key] = todayStr;
       else v[f.key] = '';
     });
     return v;
-  };
+  }, [resolvedFiltersWithStores, todayStr]);
 
-  const [filterValues, setFilterValues] = useState(initValues);
+  const [filterValues, setFilterValues] = useState(defaultFilterValues);
   const [search,       setSearch]       = useState('');
   const [pageSize,     setPageSize]     = useState(10);
   const [checkedRows,  setCheckedRows]  = useState([]);
@@ -100,18 +149,73 @@ export default function ReportsListPage({
 
   const set = (key, val) => setFilterValues((prev) => ({ ...prev, [key]: val }));
 
-  const handleApply = () => onApply?.(filterValues);
+  const effectiveApiPath = apiPath || (reportKey ? `/api/reports/${reportKey}` : '');
+
+  const buildQuery = (values, extra = {}) => {
+    const params = new URLSearchParams();
+    Object.entries(values || {}).forEach(([key, value]) => {
+      if (!value || value === 'all' || value === 'All' || value === 'Select' || value === 'Select...') return;
+      params.set(key, value);
+    });
+    Object.entries(extra).forEach(([key, value]) => params.set(key, value));
+    return params.toString();
+  };
+
+  const fetchReportRows = async (values = filterValues) => {
+    if (!effectiveApiPath) return;
+    setLoading(true);
+    setError('');
+
+    try {
+      const queryString = buildQuery(values);
+      const res = await fetch(`${effectiveApiPath}${queryString ? `?${queryString}` : ''}`, {
+        cache: 'no-store',
+        credentials: 'include',
+      });
+      const json = await res.json().catch(() => ({}));
+
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.message || 'Unable to load report');
+      }
+
+      setRemoteRows(Array.isArray(json?.data?.rows) ? json.data.rows : []);
+    } catch (err) {
+      console.error('[ReportListPage] report fetch failed', err);
+      setError(err.message || 'Unable to load report');
+      setRemoteRows([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchReportRows(defaultFilterValues);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveApiPath]);
+
+  const handleApply = () => {
+    onApply?.(filterValues);
+    fetchReportRows(filterValues);
+  };
+
+  const handleDownload = () => {
+    if (!effectiveApiPath) return;
+    const queryString = buildQuery(filterValues, { export: 'xlsx' });
+    window.location.href = `${effectiveApiPath}?${queryString}`;
+  };
 
   const handleAllCheck = () => {
     if (allChecked) { setCheckedRows([]); setAllChecked(false); }
-    else { setCheckedRows(rows.map((r) => r.id)); setAllChecked(true); }
+    else { setCheckedRows(effectiveRows.map((r) => r.id)); setAllChecked(true); }
   };
 
-  const filtered = rows.filter((row) =>
+  const effectiveRows = remoteRows.length || effectiveApiPath ? remoteRows : rows;
+  const filtered = effectiveRows.filter((row) =>
     Object.values(row).some((v) =>
       String(v).toLowerCase().includes(search.toLowerCase())
     )
   );
+  const pagedRows = filtered.slice(0, pageSize);
 
   return (
     <MainLayout>
@@ -143,14 +247,14 @@ export default function ReportsListPage({
         )}
 
         {/* Filter Card */}
-        {resolvedFilters.length > 0 && (
+        {resolvedFiltersWithStores.length > 0 && (
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5 mb-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-              {resolvedFilters.map((f) => (
+              {resolvedFiltersWithStores.map((f) => (
                 <div key={f.key}>
                   <label className="block text-xs font-medium text-gray-600 mb-1">{f.label}</label>
 
-                  {f.type === 'date-range' && (
+                  {(f.type === 'date-range' || f.type === 'daterange') && (
                     <div className="relative">
                       <input
                         type="text"
@@ -203,6 +307,7 @@ export default function ReportsListPage({
             {/* Filter Actions */}
             <div className="flex items-center justify-end gap-2 mt-4 pt-3 border-t border-gray-100">
               <button
+                onClick={handleDownload}
                 className="p-2 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 transition text-gray-500"
                 title="Download"
               >
@@ -212,11 +317,18 @@ export default function ReportsListPage({
               </button>
               <button
                 onClick={handleApply}
+                disabled={loading}
                 className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition"
               >
-                Apply
+                {loading ? 'Loading...' : 'Apply'}
               </button>
             </div>
+          </div>
+        )}
+
+        {error && (
+          <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
           </div>
         )}
 
@@ -263,14 +375,20 @@ export default function ReportsListPage({
                 </tr>
               </thead>
               <tbody>
-                {filtered.length === 0 ? (
+                {loading ? (
+                  <tr>
+                    <td colSpan={columns.length + 1} className="text-center text-gray-400 py-20">
+                      Loading report...
+                    </td>
+                  </tr>
+                ) : filtered.length === 0 ? (
                   <tr>
                     <td colSpan={columns.length + 1} className="text-center text-gray-400 py-20">
                       {emptyMessage}
                     </td>
                   </tr>
                 ) : (
-                  filtered.map((row) => (
+                  pagedRows.map((row) => (
                     <tr key={row.id} className="border-t border-gray-50 hover:bg-gray-50 transition-colors">
                       <td className="px-4 py-3">
                         <input

@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { ensureCustomersSchema } from '@/lib/customersSchema';
 import { validatePhoneNumber } from '@/lib/phoneValidator';
+import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
+import { ensureCustomerGroupsSchema } from '@/lib/customerGroupsSchema';
+import { requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 function normalizeText(value) {
   const text = String(value ?? '').trim();
@@ -24,10 +27,12 @@ function normalizeNumber(value) {
 function mapCustomerRow(row) {
   return {
     id: row.id,
-    name: [row.first_name, row.last_name].filter(Boolean).join(' ').trim(),
+    name: row.name || [row.first_name, row.last_name].filter(Boolean).join(' ').trim(),
     first_name: row.first_name,
     last_name: row.last_name,
     customer_type: row.customer_type,
+    customer_group_id: row.customer_group_id || null,
+    customer_group_name: row.customer_group_name || '',
     customer_code: row.customer_code || '',
     email_address: row.email_address || '',
     birthday: row.birthday,
@@ -52,21 +57,55 @@ function mapCustomerRow(row) {
     enable_crm: row.enable_crm,
     notes: row.notes || '',
     total_sales: row.total_sales,
+    order_count: row.order_count || 0,
+    source: row.source || 'registered',
+    store_names: row.store_names || '',
     status: row.status,
     created_at: row.created_at,
   };
 }
 
+function addVisibleStoreScope(user, params, requestedStoreId) {
+  const storeId = Number(requestedStoreId || 0) || null;
+
+  if (storeId) {
+    const storeCheck = requireStore(user, storeId);
+    if (storeCheck.error) return { error: storeCheck.error, sql: '' };
+    params.push(storeId);
+    return { error: null, sql: ` AND sb.store_id = $${params.length}` };
+  }
+
+  if (user.role === 'super_admin') return { error: null, sql: '' };
+
+  const assignedStores = (user.assigned_stores || []).map(Number).filter(Number.isFinite);
+  if (!assignedStores.length) return { error: null, sql: ' AND 1 = 0' };
+
+  params.push(assignedStores);
+  return { error: null, sql: ` AND sb.store_id = ANY($${params.length}::int[])` };
+}
+
 export async function GET(request) {
   try {
     await ensureCustomersSchema();
+    await ensureCustomerGroupsSchema();
+    await ensureSalesBillingSchema();
+    await ensureCustomerGroupsSchema();
+
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+
+    const permissionCheck = requirePermission(auth.user, 'VIEW_CUSTOMERS', 'MANAGE_CUSTOMERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const { searchParams } = new URL(request.url);
     const statusFilter = normalizeText(searchParams.get('status'));
     const search = normalizeText(searchParams.get('search'));
     const searchBy = normalizeText(searchParams.get('searchBy'));
+    const store = normalizeText(searchParams.get('store'));
     const params = [];
     const where = [];
+    const storeScope = addVisibleStoreScope(auth.user, params, store);
+    if (storeScope.error) return storeScope.error;
 
     if (statusFilter) {
       params.push(statusFilter);
@@ -78,7 +117,7 @@ export async function GET(request) {
       const idx = params.length;
 
       if (searchBy === 'Name') {
-        where.push(`TRIM(COALESCE(first_name, '') || ' ' || COALESCE(last_name, '')) ILIKE $${idx}`);
+        where.push(`name ILIKE $${idx}`);
       } else if (searchBy === 'Phone') {
         where.push(`COALESCE(mobile_number, '') ILIKE $${idx}`);
       } else if (searchBy === 'Email') {
@@ -91,9 +130,7 @@ export async function GET(request) {
         where.push(`CAST(id AS TEXT) ILIKE $${idx}`);
       } else {
         where.push(`(
-          COALESCE(first_name, '') ILIKE $${idx}
-          OR COALESCE(last_name, '') ILIKE $${idx}
-          OR TRIM(COALESCE(first_name, '') || ' ' || COALESCE(last_name, '')) ILIKE $${idx}
+          COALESCE(name, '') ILIKE $${idx}
           OR COALESCE(customer_code, '') ILIKE $${idx}
           OR COALESCE(mobile_number, '') ILIKE $${idx}
           OR COALESCE(email_address, '') ILIKE $${idx}
@@ -104,13 +141,89 @@ export async function GET(request) {
     const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
     const res = await query(
-      `SELECT id, first_name, last_name, customer_type, customer_code, email_address, birthday, mobile_number,
-              address_type, city, state, country, pincode, address_1, address_2, landmark, anniversary,
-              gender, gst_number, pan_number, aadhar_number, contact_person_name, contact_person_phone,
-              registration_points, credit_limit, enable_crm, notes, total_sales, status, created_at
-       FROM customers
+      `WITH scoped_bills AS (
+         SELECT sb.*, s.name AS store_name
+         FROM sales_bills sb
+         LEFT JOIN stores s ON s.id = sb.store_id
+         WHERE sb.status IN ('paid', 'completed')${storeScope.sql}
+           AND (
+             NULLIF(TRIM(sb.customer_mobile), '') IS NOT NULL
+             OR NULLIF(TRIM(sb.customer_name), '') IS NOT NULL
+           )
+       ),
+       registered AS (
+         SELECT
+           CASE
+             WHEN NULLIF(TRIM(c.mobile_number), '') IS NOT NULL THEN 'm:' || LOWER(TRIM(c.mobile_number))
+             WHEN NULLIF(TRIM(c.customer_code), '') IS NOT NULL THEN 'c:' || LOWER(TRIM(c.customer_code))
+             WHEN NULLIF(TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')), '') IS NOT NULL THEN 'n:' || LOWER(TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')))
+             ELSE 'id:' || c.id::text
+           END AS customer_key,
+           c.*
+         FROM customers c
+       ),
+       billed AS (
+         SELECT
+           CASE
+             WHEN NULLIF(TRIM(sb.customer_mobile), '') IS NOT NULL THEN 'm:' || LOWER(TRIM(sb.customer_mobile))
+             WHEN NULLIF(TRIM(sb.customer_name), '') IS NOT NULL THEN 'n:' || LOWER(TRIM(sb.customer_name))
+             ELSE 'bill:' || sb.id::text
+           END AS customer_key,
+           MAX(NULLIF(TRIM(sb.customer_name), '')) AS bill_name,
+           MAX(NULLIF(TRIM(sb.customer_mobile), '')) AS bill_mobile,
+           COUNT(sb.id)::int AS order_count,
+           COALESCE(SUM(sb.grand_total), 0) AS billed_sales,
+           STRING_AGG(DISTINCT COALESCE(sb.store_name, 'Store'), ', ' ORDER BY COALESCE(sb.store_name, 'Store')) AS store_names,
+           MAX(sb.created_at) AS last_bill_at
+         FROM scoped_bills sb
+         GROUP BY 1
+       ),
+       merged AS (
+         SELECT
+           COALESCE(r.id::text, b.customer_key) AS id,
+           COALESCE(NULLIF(TRIM(COALESCE(r.first_name, '') || ' ' || COALESCE(r.last_name, '')), ''), b.bill_name, 'Walk-in Customer') AS name,
+           r.first_name,
+           r.last_name,
+           r.customer_group_id,
+           cg.group_name AS customer_group_name,
+           COALESCE(r.customer_type, CASE WHEN r.id IS NULL THEN 'BILLED' ELSE 'INDIVIDUAL' END) AS customer_type,
+           COALESCE(r.customer_code, '') AS customer_code,
+           COALESCE(r.email_address, '') AS email_address,
+           r.birthday,
+           COALESCE(r.mobile_number, b.bill_mobile, '') AS mobile_number,
+           r.address_type,
+           r.city,
+           r.state,
+           r.country,
+           r.pincode,
+           r.address_1,
+           r.address_2,
+           r.landmark,
+           r.anniversary,
+           r.gender,
+           r.gst_number,
+           r.pan_number,
+           r.aadhar_number,
+           r.contact_person_name,
+           r.contact_person_phone,
+           r.registration_points,
+           r.credit_limit,
+           r.enable_crm,
+           r.notes,
+           COALESCE(b.billed_sales, r.total_sales, 0) AS total_sales,
+           COALESCE(b.order_count, 0) AS order_count,
+           COALESCE(b.store_names, '') AS store_names,
+           COALESCE(r.status, 'Billed') AS status,
+           COALESCE(r.created_at, b.last_bill_at) AS created_at,
+           CASE WHEN r.id IS NULL THEN 'billed' ELSE 'registered' END AS source
+         FROM registered r
+         FULL OUTER JOIN billed b ON b.customer_key = r.customer_key
+         LEFT JOIN customer_groups cg ON cg.id = r.customer_group_id
+       )
+       SELECT *
+       FROM merged
        ${whereClause}
-       ORDER BY created_at DESC, id DESC`
+       ORDER BY created_at DESC NULLS LAST, name ASC`
       ,
       params
     );
@@ -118,7 +231,7 @@ export async function GET(request) {
     return NextResponse.json(res.rows.map(mapCustomerRow));
   } catch (err) {
     console.error('[customers GET]', err.message);
-    return NextResponse.json([]);
+    return NextResponse.json({ error: 'Failed to fetch customers' }, { status: 500 });
   }
 }
 
@@ -126,9 +239,16 @@ export async function POST(request) {
   try {
     await ensureCustomersSchema();
 
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_CUSTOMERS');
+    if (permissionCheck.error) return permissionCheck.error;
+
     const body = await request.json();
     const firstName = normalizeText(body.first_name ?? body.firstName);
-    const mobileNumber = normalizeText(body.mobile_number ?? body.mobileNumber);
+    const mobileNumber = normalizeText(body.mobile_number ?? body.mobileNumber).replace(/\D/g, '');
+    const emailAddress = normalizeText(body.email_address ?? body.emailAddress).toLowerCase();
 
     if (!firstName) {
       return NextResponse.json({ error: 'First name is required' }, { status: 400 });
@@ -136,6 +256,12 @@ export async function POST(request) {
 
     if (!mobileNumber) {
       return NextResponse.json({ error: 'Mobile number is required' }, { status: 400 });
+    }
+    if (!/^\d{10}$/.test(mobileNumber)) {
+      return NextResponse.json({ error: 'Mobile number must be exactly 10 digits' }, { status: 400 });
+    }
+    if (emailAddress && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailAddress)) {
+      return NextResponse.json({ error: 'Enter a valid email address' }, { status: 400 });
     }
 
     const phoneValidation = validatePhoneNumber(mobileNumber);
@@ -147,8 +273,9 @@ export async function POST(request) {
       first_name: firstName,
       last_name: normalizeText(body.last_name ?? body.lastName),
       customer_type: normalizeText(body.customer_type ?? body.customerType) || 'INDIVIDUAL',
+      customer_group_id: body.customer_group_id ?? body.customerGroupId ?? null,
       customer_code: normalizeText(body.customer_code ?? body.customerCode),
-      email_address: normalizeText(body.email_address ?? body.emailAddress),
+      email_address: emailAddress,
       birthday: normalizeDate(body.birthday),
       mobile_number: mobileNumber,
       address_type: normalizeText(body.address_type ?? body.addressType) || 'Billing',
@@ -180,20 +307,27 @@ export async function POST(request) {
     }
 
     const customerCode = payload.customer_code || `CUST-${Date.now()}`;
+    let customerGroupId = Number(payload.customer_group_id || 0) || null;
+    if (!customerGroupId) {
+      const defaultGroup = await query(
+        `SELECT id FROM customer_groups WHERE is_default = TRUE AND status = 'Active' ORDER BY id DESC LIMIT 1`
+      );
+      customerGroupId = defaultGroup.rows[0]?.id || null;
+    }
 
     const res = await query(
       `INSERT INTO customers (
-         first_name, last_name, customer_type, customer_code, email_address, birthday, mobile_number,
+         first_name, last_name, customer_type, customer_group_id, customer_code, email_address, birthday, mobile_number,
          address_type, city, state, country, pincode, address_1, address_2, landmark, anniversary,
          gender, gst_number, pan_number, aadhar_number, contact_person_name, contact_person_phone,
          registration_points, credit_limit, enable_crm, notes, total_sales, status
        ) VALUES (
-         $1,$2,$3,$4,$5,$6,$7,
-         $8,$9,$10,$11,$12,$13,$14,$15,$16,
-         $17,$18,$19,$20,$21,$22,
-         $23,$24,$25,$26,0,'Active'
+         $1,$2,$3,$4,$5,$6,$7,$8,
+         $9,$10,$11,$12,$13,$14,$15,$16,$17,
+         $18,$19,$20,$21,$22,$23,
+         $24,$25,$26,$27,0,'Active'
        )
-       RETURNING id, first_name, last_name, customer_type, customer_code, email_address, birthday, mobile_number,
+       RETURNING id, first_name, last_name, customer_type, customer_group_id, customer_code, email_address, birthday, mobile_number,
                  address_type, city, state, country, pincode, address_1, address_2, landmark, anniversary,
                  gender, gst_number, pan_number, aadhar_number, contact_person_name, contact_person_phone,
                  registration_points, credit_limit, enable_crm, notes, total_sales, status, created_at`,
@@ -201,6 +335,7 @@ export async function POST(request) {
         payload.first_name,
         payload.last_name,
         payload.customer_type,
+        customerGroupId,
         customerCode,
         payload.email_address,
         payload.birthday,

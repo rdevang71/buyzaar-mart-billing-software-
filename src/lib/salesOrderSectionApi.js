@@ -1,5 +1,7 @@
 import { query } from '@/lib/db';
 import { ensureInvoiceSalesOrdersSchema } from '@/lib/invoiceSalesOrdersSchema';
+import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
+import { ensureCustomersSchema } from '@/lib/customersSchema';
 
 const VIEW_FILTER_SQL = {
   'invoice-sales-order': "(iso.invoice_id IS NOT NULL OR LOWER(COALESCE(iso.status, '')) LIKE 'invoiced%')",
@@ -66,13 +68,38 @@ function normalizeIds(ids) {
   if (!Array.isArray(ids)) return [];
 
   return ids
+    .map((value) => String(value).replace(/^(SO-|POS-)/, ''))
     .map((value) => Number(value))
     .filter((value) => Number.isFinite(value) && value > 0);
 }
 
+function asNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 function mapSalesOrderRow(row) {
+  const grossBill = asNumber(row.gross_bill);
+  const additionalChargeValue = asNumber(row.additional_charge_value);
+  const totalDiscount = asNumber(row.total_discount);
+  const writeOffAmount = asNumber(row.write_off_amount);
+  const grandTotal = asNumber(
+    row.grand_total,
+    Math.max(grossBill + additionalChargeValue - totalDiscount - writeOffAmount, 0)
+  );
+  const billNumber = row.bill_number || row.invoice_id || row.sales_order_id || '';
+  const paymentMode = row.payment_mode || row.channel || '';
+  const createdAt = row.created_at || row.invoice_date || row.booking_date || row.submitted_date;
+
   return {
     id: row.id,
+    source: row.source || 'sales_order',
+    billNumber,
+    customerName: row.customer_name || '',
+    billingUser: row.billing_username || row.billing_name || row.created_by || '',
+    grandTotal,
+    paymentMode,
+    createdAt,
     sales_order_id: row.sales_order_id,
     sales_order_type: row.sales_order_type || '',
     booking_id: row.booking_id,
@@ -106,65 +133,162 @@ function mapSalesOrderRow(row) {
   };
 }
 
+function buildInvoiceSalesOrderSql(whereSql) {
+  return `
+    SELECT ('SO-' || iso.id::text) AS id,
+           'sales_order' AS source,
+           iso.sales_order_id,
+           iso.sales_order_type,
+           COALESCE(NULLIF(iso.invoice_id, ''), iso.sales_order_id) AS bill_number,
+           iso.booking_id,
+           iso.booking_date,
+           COALESCE(iso.billing_username, u.name) AS billing_username,
+           COALESCE(
+             NULLIF(iso.customer_name, ''),
+             NULLIF(iso.meta->>'customerName', ''),
+             NULLIF(iso.meta->>'customer_name', ''),
+             NULLIF(TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')), '')
+           ) AS customer_name,
+           COALESCE(NULLIF(iso.payment_mode, ''), NULLIF(iso.meta->>'paymentMode', ''), NULLIF(iso.meta->>'payment_mode', ''), iso.channel) AS payment_mode,
+           iso.created_by,
+           iso.submitted_date,
+           iso.approver,
+           iso.gross_bill,
+           iso.additional_charge_value,
+           iso.total_discount,
+           iso.tds_rate,
+           iso.tds_value,
+           iso.tcs_rate,
+           iso.tcs_value,
+           iso.quotation_id,
+           iso.invoice_id,
+           iso.invoice_date,
+           iso.auto_invoice_id,
+           iso.auto_invoice_date,
+           iso.write_off_amount,
+           iso.write_off_reason,
+           iso.written_off_by,
+           iso.written_off_date,
+           iso.converted_by,
+           iso.converted_at,
+           iso.status,
+           iso.channel,
+           iso.store_id,
+           s.name AS store_name,
+           iso.created_at,
+           GREATEST(COALESCE(iso.gross_bill, 0) + COALESCE(iso.additional_charge_value, 0) - COALESCE(iso.total_discount, 0) - COALESCE(iso.write_off_amount, 0), 0) AS grand_total
+    FROM invoice_sales_orders iso
+    LEFT JOIN users u ON u.id = iso.billing_user_id
+    LEFT JOIN customers c ON (
+      iso.booking_id = c.customer_code
+      OR iso.booking_id = c.id::text
+      OR (iso.meta->>'customer_id') = c.id::text
+    )
+    LEFT JOIN stores s ON s.id = iso.store_id
+    ${whereSql}
+  `;
+}
+
+function buildSalesBillSql(whereSql) {
+  return `
+    SELECT ('POS-' || sb.id::text) AS id,
+           'sales_bill' AS source,
+           sb.bill_number AS sales_order_id,
+           'POS Sale' AS sales_order_type,
+           sb.bill_number AS bill_number,
+           COALESCE(sb.customer_mobile, sb.bill_number) AS booking_id,
+           sb.created_at::date AS booking_date,
+           COALESCE(u.name, '') AS billing_username,
+           COALESCE(NULLIF(sb.customer_name, ''), 'Walk-in Customer') AS customer_name,
+           sb.payment_mode AS payment_mode,
+           COALESCE(u.name, '') AS created_by,
+           sb.created_at::date AS submitted_date,
+           '' AS approver,
+           sb.subtotal AS gross_bill,
+           0::numeric AS additional_charge_value,
+           sb.discount_total AS total_discount,
+           0::numeric AS tds_rate,
+           0::numeric AS tds_value,
+           0::numeric AS tcs_rate,
+           0::numeric AS tcs_value,
+           '' AS quotation_id,
+           sb.bill_number AS invoice_id,
+           sb.created_at::date AS invoice_date,
+           '' AS auto_invoice_id,
+           NULL::date AS auto_invoice_date,
+           0::numeric AS write_off_amount,
+           '' AS write_off_reason,
+           '' AS written_off_by,
+           NULL::date AS written_off_date,
+           COALESCE(u.name, '') AS converted_by,
+           sb.created_at AS converted_at,
+           sb.status,
+           sb.payment_mode AS channel,
+           sb.store_id,
+           s.name AS store_name,
+           sb.created_at,
+           sb.grand_total
+    FROM sales_bills sb
+    LEFT JOIN users u ON u.id = sb.user_id
+    LEFT JOIN stores s ON s.id = sb.store_id
+    ${whereSql}
+      AND NOT EXISTS (
+        SELECT 1
+        FROM invoice_sales_orders iso_existing
+        WHERE iso_existing.sales_bill_id = sb.id
+           OR NULLIF(iso_existing.invoice_id, '') = sb.bill_number
+      )
+  `;
+}
+
 export async function listSalesOrderRows(view, request) {
-  await ensureInvoiceSalesOrdersSchema();
+  await Promise.all([
+    ensureInvoiceSalesOrdersSchema(),
+    ensureSalesBillingSchema(),
+    ensureCustomersSchema(),
+  ]);
 
   const url = request instanceof Request ? new URL(request.url) : new URL(String(request || 'http://localhost'));
   const normalizedView = normalizeView(view);
   const dateRange = parseDateRange(url.searchParams.get('dateRange'));
   const storeFilter = normalizeStoreFilter(url.searchParams.get('stores'));
 
-  const whereClauses = [VIEW_FILTER_SQL[normalizedView]];
+  const isoWhereClauses = [VIEW_FILTER_SQL[normalizedView]];
   const params = [];
 
   if (dateRange) {
     params.push(dateRange.start, dateRange.end);
-    whereClauses.push(`COALESCE(iso.invoice_date, iso.booking_date, iso.created_at::date) BETWEEN $${params.length - 1}::date AND $${params.length}::date`);
+    isoWhereClauses.push(`COALESCE(iso.invoice_date, iso.booking_date, iso.created_at::date) BETWEEN $${params.length - 1}::date AND $${params.length}::date`);
   }
 
   if (storeFilter) {
     params.push(storeFilter);
-    whereClauses.push(`(s.name = $${params.length} OR CAST(iso.store_id AS TEXT) = $${params.length})`);
+    isoWhereClauses.push(`(s.name = $${params.length} OR CAST(iso.store_id AS TEXT) = $${params.length})`);
   }
 
-  const whereSql = `WHERE ${whereClauses.join(' AND ')}`;
+  const selects = [buildInvoiceSalesOrderSql(`WHERE ${isoWhereClauses.join(' AND ')}`)];
+  const shouldIncludeSalesBills = ['invoice-sales-order', 'invoice-conversion-tracker'].includes(normalizedView);
+
+  if (shouldIncludeSalesBills) {
+    const salesBillWhereClauses = ["sb.status IN ('paid', 'completed')"];
+
+    if (dateRange) {
+      params.push(dateRange.start, dateRange.end);
+      salesBillWhereClauses.push(`sb.created_at::date BETWEEN $${params.length - 1}::date AND $${params.length}::date`);
+    }
+
+    if (storeFilter) {
+      params.push(storeFilter);
+      salesBillWhereClauses.push(`(s.name = $${params.length} OR CAST(sb.store_id AS TEXT) = $${params.length})`);
+    }
+
+    selects.push(buildSalesBillSql(`WHERE ${salesBillWhereClauses.join(' AND ')}`));
+  }
+
   const res = await query(
-    `SELECT iso.id,
-            iso.sales_order_id,
-            iso.sales_order_type,
-            iso.booking_id,
-            iso.booking_date,
-            COALESCE(iso.billing_username, u.name) AS billing_username,
-            iso.created_by,
-            iso.submitted_date,
-            iso.approver,
-            iso.gross_bill,
-            iso.additional_charge_value,
-            iso.total_discount,
-            iso.tds_rate,
-            iso.tds_value,
-            iso.tcs_rate,
-            iso.tcs_value,
-            iso.quotation_id,
-            iso.invoice_id,
-            iso.invoice_date,
-            iso.auto_invoice_id,
-            iso.auto_invoice_date,
-            iso.write_off_amount,
-            iso.write_off_reason,
-            iso.written_off_by,
-            iso.written_off_date,
-            iso.converted_by,
-            iso.converted_at,
-            iso.status,
-            iso.channel,
-            iso.store_id,
-            s.name AS store_name
-     FROM invoice_sales_orders iso
-     LEFT JOIN users u ON u.id = iso.billing_user_id
-     LEFT JOIN stores s ON s.id = iso.store_id
-     ${whereSql}
-     ORDER BY COALESCE(iso.invoice_date, iso.booking_date, iso.created_at::date) DESC, iso.id DESC`,
+    `SELECT *
+     FROM (${selects.join('\nUNION ALL\n')}) sales_order_rows
+     ORDER BY COALESCE(invoice_date, booking_date, created_at::date) DESC, id DESC`,
     params
   );
 
@@ -245,12 +369,16 @@ export async function applySalesOrderBulkAction(view, request) {
          ${update.extraSql},
          updated_at = NOW()
      WHERE id = ANY($2::bigint[])
-     RETURNING id,
+     RETURNING ('SO-' || id::text) AS id,
+               'sales_order' AS source,
                sales_order_id,
                sales_order_type,
+               COALESCE(NULLIF(invoice_id, ''), sales_order_id) AS bill_number,
                booking_id,
                booking_date,
                billing_username,
+               customer_name,
+               payment_mode,
                created_by,
                submitted_date,
                approver,
@@ -274,7 +402,10 @@ export async function applySalesOrderBulkAction(view, request) {
                converted_at,
                status,
                channel,
-               store_id`,
+               store_id,
+               NULL::text AS store_name,
+               created_at,
+               GREATEST(COALESCE(gross_bill, 0) + COALESCE(additional_charge_value, 0) - COALESCE(total_discount, 0) - COALESCE(write_off_amount, 0), 0) AS grand_total`,
     [update.status, ids]
   );
 

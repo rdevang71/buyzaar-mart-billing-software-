@@ -188,7 +188,15 @@ function randomPassword() {
   return `Emp${Array.from(bytes, (byte) => (byte % 36).toString(36)).join('')}`;
 }
 
-function MultiSelect({ label, options, value, onChange, placeholder = 'Select' }) {
+function normalizeMobileInput(value) {
+  return String(value || '').replace(/\D/g, '').slice(0, 10);
+}
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+}
+
+function MultiSelect({ label, options, value, onChange, placeholder = 'Select', required = false }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -209,7 +217,7 @@ function MultiSelect({ label, options, value, onChange, placeholder = 'Select' }
 
   return (
     <div ref={ref}>
-      <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">{label}</label>
+      <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">{label}{required ? ' *' : ''}</label>
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
@@ -250,12 +258,13 @@ function MultiSelect({ label, options, value, onChange, placeholder = 'Select' }
   );
 }
 
-function SelectField({ label, value, onChange, options }) {
+function SelectField({ label, value, onChange, options, required = false }) {
   return (
     <div>
-      <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">{label}</label>
+      <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">{label}{required ? ' *' : ''}</label>
       <div className="relative">
         <select
+          required={required}
           value={value}
           onChange={(event) => onChange(event.target.value)}
           className="w-full appearance-none border border-gray-200 rounded-lg px-3 py-2 pr-8 text-[13px] text-gray-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all bg-white"
@@ -559,11 +568,18 @@ export default function EmployeeStaffPage() {
   const handleSave = async () => {
     if (!form.firstName.trim()) return alert('First name is required');
     if (!form.username.trim()) return alert('Username is required');
+    if (!form.mobileNumber.trim()) return alert('Mobile number is required');
+    if (!/^\d{10}$/.test(form.mobileNumber)) return alert('Mobile number must be exactly 10 digits');
+    if (!form.emailAddress.trim()) return alert('Email address is required');
+    if (!isValidEmail(form.emailAddress)) return alert('Enter a valid email address');
+    if (!form.roleId) return alert('Role is required');
     if (!editingId && !form.password.trim()) return alert('Password is required');
+    if (!editingId && !form.confirmPassword.trim()) return alert('Confirm password is required');
     if (form.password && form.password !== form.confirmPassword) return alert('Passwords do not match');
     if (form.permissions.length === 0) return alert('Select at least one permission');
 
-    const selectedRoleName = roles.find((role) => String(role.id) === String(form.roleId))?.roleName || '';
+    const selectedRole = roles.find((role) => String(role.id) === String(form.roleId));
+    const selectedRoleName = selectedRole?.roleName || selectedRole?.role_name || '';
     const systemRole = selectedRoleName.trim().toLowerCase().replace(/\s+/g, '_');
     if ((systemRole === 'admin' || systemRole === 'manager') && !form.regionStore) {
       return alert('Select a store for Admin/Manager access');
@@ -576,8 +592,8 @@ export default function EmployeeStaffPage() {
         last_name: form.lastName,
         username: form.username,
         gender: form.gender,
-        mobile_number: form.mobileNumber,
-        email_address: form.emailAddress,
+        mobile_number: form.mobileNumber.trim(),
+        email_address: form.emailAddress.trim(),
         role_id: form.roleId ? Number(form.roleId) : null,
         role_name: selectedRoleName,
         assigned_stores: form.regionStore ? [Number(form.regionStore)].filter(Number.isFinite) : [],
@@ -895,6 +911,7 @@ export default function EmployeeStaffPage() {
                 <div>
                   <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">First Name *</label>
                   <input
+                    required
                     value={form.firstName}
                     onChange={(event) => setForm({ ...form, firstName: event.target.value })}
                     placeholder="First Name"
@@ -915,6 +932,7 @@ export default function EmployeeStaffPage() {
                 <div>
                   <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Username *</label>
                   <input
+                    required
                     value={form.username}
                     onChange={(event) => setForm({ ...form, username: event.target.value })}
                     placeholder="Username"
@@ -938,6 +956,7 @@ export default function EmployeeStaffPage() {
                   <div className="flex gap-2">
                     <input
                       type="password"
+                      required={!editingId}
                       value={form.password}
                       onChange={(event) => setForm({ ...form, password: event.target.value })}
                       placeholder="Password"
@@ -962,6 +981,7 @@ export default function EmployeeStaffPage() {
                   <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Confirm Password {editingId ? '(if changing)' : '*'}</label>
                   <input
                     type="password"
+                    required={!editingId || !!form.password}
                     value={form.confirmPassword}
                     onChange={(event) => setForm({ ...form, confirmPassword: event.target.value })}
                     placeholder="Confirm Password"
@@ -970,8 +990,13 @@ export default function EmployeeStaffPage() {
                 </div>
 
                 <div>
-                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Mobile Number</label>
+                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Mobile Number *</label>
                   <input
+                    type="tel"
+                    inputMode="numeric"
+                    pattern="[0-9]{10}"
+                    maxLength={10}
+                    required
                     value={form.mobileNumber}
                     onChange={(event) => {
                       const value = event.target.value.replace(/\D/g, '').slice(0, 10);
@@ -987,8 +1012,10 @@ export default function EmployeeStaffPage() {
                 </div>
 
                 <div>
-                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Email Address</label>
+                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Email Address *</label>
                   <input
+                    type="email"
+                    required
                     value={form.emailAddress}
                     onChange={(event) => setForm({ ...form, emailAddress: event.target.value })}
                     placeholder="Email Address"
@@ -1001,6 +1028,7 @@ export default function EmployeeStaffPage() {
                   value={form.roleId}
                   onChange={(roleId) => setForm({ ...form, roleId })}
                   options={roleOptions}
+                  required
                 />
 
                 <MultiSelect
@@ -1009,6 +1037,7 @@ export default function EmployeeStaffPage() {
                   value={form.permissions}
                   onChange={(permissionsSelected) => setForm({ ...form, permissions: permissionsSelected })}
                   placeholder="Select permissions"
+                  required
                 />
 
                 <SelectField

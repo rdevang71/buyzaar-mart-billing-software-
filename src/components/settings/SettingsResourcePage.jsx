@@ -31,6 +31,51 @@ function formatValue(field, value) {
   return String(value);
 }
 
+function isPhoneField(field) {
+  const key = String(field.key || '').toLowerCase();
+  const label = String(field.label || '').toLowerCase();
+  return key.includes('mobile') || key.includes('phone') || label.includes('mobile') || label.includes('phone');
+}
+
+function isEmailField(field) {
+  const key = String(field.key || '').toLowerCase();
+  const label = String(field.label || '').toLowerCase();
+  return field.type === 'email' || key.includes('email') || label.includes('email');
+}
+
+function normalizeConfigInput(field, value) {
+  if (isPhoneField(field)) return String(value || '').replace(/\D/g, '').slice(0, 10);
+  return value;
+}
+
+function fieldInputProps(field) {
+  if (isPhoneField(field)) {
+    return {
+      type: 'tel',
+      inputMode: 'numeric',
+      pattern: '[0-9]{10}',
+      maxLength: 10,
+      title: 'Enter exactly 10 digits',
+    };
+  }
+
+  if (isEmailField(field)) {
+    return {
+      type: 'email',
+      title: 'Enter a valid email address',
+    };
+  }
+
+  return {
+    type: field.type || 'text',
+  };
+}
+
+function isRequiredField(field, index = 0) {
+  if (field.required === false) return false;
+  return field.required === true || index === 0 || isEmailField(field) || isPhoneField(field);
+}
+
 export default function SettingsResourcePage({
   type,
   title,
@@ -146,6 +191,18 @@ export default function SettingsResourcePage({
 
   const saveRecord = async (event) => {
     event.preventDefault();
+    for (const [index, field] of fields.entries()) {
+      const value = form.config[field.key];
+      if (isRequiredField(field, index) && field.type !== 'checkbox' && !String(value ?? '').trim()) {
+        showToast(`${field.label} is required`, 'error');
+        return;
+      }
+      if (isPhoneField(field) && value && !/^\d{10}$/.test(String(value))) {
+        showToast(`${field.label} must be exactly 10 digits`, 'error');
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       const res = await fetch(endpoint, {
@@ -338,23 +395,26 @@ export default function SettingsResourcePage({
                   </select>
                 </label>
 
-                {fields.map((field) => (
+                {fields.map((field, index) => {
+                  const required = isRequiredField(field, index);
+                  return (
                   <label key={field.key} className={field.type === 'textarea' ? 'block md:col-span-2' : 'block'}>
-                    <span className="mb-1 block text-xs font-semibold text-gray-600">{field.label}</span>
+                    <span className="mb-1 block text-xs font-semibold text-gray-600">{field.label}{required ? ' *' : ''}</span>
                     {field.type === 'select' ? (
-                      <select value={form.config[field.key] ?? ''} onChange={(event) => setConfig(field.key, event.target.value)} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400">
+                      <select required={required} value={form.config[field.key] ?? ''} onChange={(event) => setConfig(field.key, event.target.value)} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400">
                         <option value="">Select</option>
                         {(field.options || []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                       </select>
                     ) : field.type === 'textarea' ? (
-                      <textarea rows={3} value={form.config[field.key] ?? ''} onChange={(event) => setConfig(field.key, event.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                      <textarea required={required} rows={3} value={form.config[field.key] ?? ''} onChange={(event) => setConfig(field.key, event.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-400" />
                     ) : field.type === 'checkbox' ? (
                       <input type="checkbox" checked={!!form.config[field.key]} onChange={(event) => setConfig(field.key, event.target.checked)} className="h-5 w-5 accent-blue-600" />
                     ) : (
-                      <input type={field.type || 'text'} value={form.config[field.key] ?? ''} onChange={(event) => setConfig(field.key, event.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                      <input {...fieldInputProps(field)} required={required} value={form.config[field.key] ?? ''} onChange={(event) => setConfig(field.key, normalizeConfigInput(field, event.target.value))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-400" />
                     )}
                   </label>
-                ))}
+                );
+                })}
 
                 <label className="block md:col-span-2">
                   <span className="mb-1 block text-xs font-semibold text-gray-600">Description</span>

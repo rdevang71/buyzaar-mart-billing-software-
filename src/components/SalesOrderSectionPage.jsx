@@ -6,7 +6,8 @@ import SalesOrderListPage from '@/components/SalesOrderListPage';
 const DEFAULT_BULK_OPERATIONS = ['Create Invoice', 'Write Off', 'Export'];
 
 function formatTodayRange() {
-  const today = new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   return `${today} - ${today}`;
 }
 
@@ -46,11 +47,16 @@ export default function SalesOrderSectionPage({
     try {
       const res = await fetch('/api/stores');
       const data = await res.json();
-      const options = Array.isArray(data)
+      const stores = Array.isArray(data)
         ? data
+        : Array.isArray(data?.stores)
+          ? data.stores
+          : Array.isArray(data?.data?.stores)
+            ? data.data.stores
+            : [];
+      const options = stores
             .filter((store) => store && store.id !== undefined && store.name)
-            .map((store) => ({ value: String(store.id), label: store.name }))
-        : [];
+            .map((store) => ({ value: String(store.id), label: store.name }));
 
       setStoreOptions([
         { value: 'all', label: 'All Regions & Stores' },
@@ -143,6 +149,7 @@ export default function SalesOrderSectionPage({
       rows={rows}
       onFetch={handleFetch}
       onBulkOperation={handleBulkOperation}
+      onDownload={downloadCsv}
       totalLabel={totalLabel}
       emptyMessage={error || emptyMessage}
       bulkOperations={bulkOperations}

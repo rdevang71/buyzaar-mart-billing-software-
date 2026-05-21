@@ -57,6 +57,35 @@ function normalizeStoreIds(input) {
   return Number.isFinite(single) ? [single] : [];
 }
 
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+}
+
+function validateEmployeeInput({
+  username,
+  firstName,
+  password,
+  confirmPassword,
+  mobileNumber,
+  emailAddress,
+  roleId,
+  roleName,
+  permissions,
+  isCreate = true,
+}) {
+  if (!username) return 'Username is required';
+  if (!firstName) return 'First name is required';
+  if (!mobileNumber) return 'Mobile number is required';
+  if (!/^\d{10}$/.test(mobileNumber)) return 'Mobile number must be exactly 10 digits';
+  if (!emailAddress) return 'Email address is required';
+  if (!isValidEmail(emailAddress)) return 'Enter a valid email address';
+  if (!roleId && !roleName) return 'Role is required';
+  if (!Array.isArray(permissions) || permissions.length === 0) return 'Select at least one permission';
+  if (isCreate && !password) return 'Password is required';
+  if (password && password !== confirmPassword) return 'Passwords do not match';
+  return '';
+}
+
 function mapEmployeeRow(row) {
   return {
     id: row.id,
@@ -171,11 +200,20 @@ export async function POST(request) {
     const employmentStatus = toString(body.employment_status || body.employmentStatus) || 'Active';
     const contractorName = toString(body.contractor_name || body.contractorName);
 
-    if (!username) return NextResponse.json({ error: 'Username is required' }, { status: 400 });
-    if (!firstName) return NextResponse.json({ error: 'First name is required' }, { status: 400 });
-    if (!password) return NextResponse.json({ error: 'Password is required' }, { status: 400 });
-    if (password !== confirmPassword) {
-      return NextResponse.json({ error: 'Passwords do not match' }, { status: 400 });
+    const validationError = validateEmployeeInput({
+      username,
+      firstName,
+      password,
+      confirmPassword,
+      mobileNumber,
+      emailAddress,
+      roleId,
+      roleName,
+      permissions,
+      isCreate: true,
+    });
+    if (validationError) {
+      return NextResponse.json({ error: validationError }, { status: 400 });
     }
 
     if (mobileNumber) {

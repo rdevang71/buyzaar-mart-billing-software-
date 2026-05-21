@@ -5,6 +5,14 @@ import MainLayout from '@/components/MainLayout';
 
 const tableHeaders = ['S. No.', 'Vendor Name', 'Mobile Number', 'Email Address', 'Address', 'Actions'];
 
+function normalizeMobile(value) {
+  return String(value || '').replace(/\D/g, '').slice(0, 10);
+}
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+}
+
 export default function VendorsPage() {
   const [vendors, setVendors] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -48,6 +56,10 @@ export default function VendorsPage() {
 
   const handleSave = async () => {
     if (!form.name.trim()) return alert('Vendor name is required');
+    if (!form.mobile_number.trim()) return alert('Mobile number is required');
+    if (!/^\d{10}$/.test(form.mobile_number)) return alert('Mobile number must be exactly 10 digits');
+    if (!form.email.trim()) return alert('Email address is required');
+    if (!isValidEmail(form.email)) return alert('Enter a valid email address');
     setSaving(true);
     try {
       const res = await fetch('/api/vendors', {

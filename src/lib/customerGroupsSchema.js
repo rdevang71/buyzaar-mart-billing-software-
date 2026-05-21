@@ -1,9 +1,12 @@
 import { query } from '@/lib/db';
+import { ensureCustomersSchema } from '@/lib/customersSchema';
 
 let ensured = false;
 
 export async function ensureCustomerGroupsSchema() {
   if (ensured) return;
+
+  await ensureCustomersSchema();
 
   await query(`
     CREATE TABLE IF NOT EXISTS customer_groups (
@@ -23,6 +26,9 @@ export async function ensureCustomerGroupsSchema() {
 
     CREATE INDEX IF NOT EXISTS idx_customer_groups_group_name ON customer_groups(group_name);
     CREATE INDEX IF NOT EXISTS idx_customer_groups_group_code ON customer_groups(group_code);
+
+    ALTER TABLE customers ADD COLUMN IF NOT EXISTS customer_group_id BIGINT REFERENCES customer_groups(id) ON DELETE SET NULL;
+    CREATE INDEX IF NOT EXISTS idx_customers_customer_group_id ON customers(customer_group_id);
   `);
 
   ensured = true;

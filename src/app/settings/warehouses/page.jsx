@@ -183,6 +183,7 @@ function NotificationEmailInput({ value, onChange }) {
   const addEmail = () => {
     const email = draft.trim();
     if (!email) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return;
     if (value.includes(email)) {
       setDraft('');
       return;
@@ -229,6 +230,10 @@ function formatAddress(warehouse) {
   return [warehouse.addressLine1, warehouse.addressLine2, warehouse.city, warehouse.state, warehouse.pincode, warehouse.country]
     .filter(Boolean)
     .join(', ') || '—';
+}
+
+function normalizeMobile(value) {
+  return String(value || '').replace(/\D/g, '').slice(0, 10);
 }
 
 export default function Page() {
@@ -329,8 +334,16 @@ export default function Page() {
       setError('Mobile number is required');
       return;
     }
+    if (!/^\d{10}$/.test(form.mobileNumber)) {
+      setError('Mobile number must be exactly 10 digits');
+      return;
+    }
     if (!form.email.trim()) {
       setError('Warehouse email is required');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      setError('Enter a valid warehouse email');
       return;
     }
 
@@ -582,6 +595,10 @@ export default function Page() {
                     <div className="mt-2 flex overflow-hidden rounded-lg border border-gray-300 bg-white">
                       <span className="flex items-center border-r border-gray-200 bg-gray-50 px-3 text-sm text-gray-600">+91</span>
                       <input
+                        type="tel"
+                        inputMode="numeric"
+                        pattern="[0-9]{10}"
+                        maxLength={10}
                         value={form.mobileNumber}
                         onChange={(event) => {
                           const digits = event.target.value.replace(/\D/g, '').slice(0, 10);

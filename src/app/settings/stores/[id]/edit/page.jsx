@@ -124,13 +124,26 @@ export default function EditStorePage() {
     return () => { mounted = false; };
   }, [params.id]);
 
-  const onChange = (e) => setForm((p) => ({ ...p, [e.target.name]: e.target.value }));
+  const onChange = (e) => {
+    const value = e.target.name === 'managerMobile'
+      ? e.target.value.replace(/\D/g, '').slice(0, 10)
+      : e.target.value;
+    setForm((p) => ({ ...p, [e.target.name]: value }));
+  };
   const onCheck = (e) => setForm((p) => ({ ...p, [e.target.name]: e.target.checked }));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setSuccess('');
+    if (!/^\d{10}$/.test(form.managerMobile)) {
+      setError('Mobile number must be exactly 10 digits');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.managerEmail.trim())) {
+      setError('Enter a valid e-mail address');
+      return;
+    }
     setSaving(true);
 
     try {
@@ -196,7 +209,7 @@ export default function EditStorePage() {
           <h3 className="text-[15px] font-semibold text-blue-700 mb-4">Store Information</h3>
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Manager Name"><input name="managerName" value={form.managerName} onChange={onChange} className="input" /></Field>
-            <Field label="Mobile Number *"><input name="managerMobile" value={form.managerMobile} onChange={onChange} required className="input" /></Field>
+            <Field label="Mobile Number *"><input name="managerMobile" type="tel" inputMode="numeric" pattern="[0-9]{10}" maxLength={10} value={form.managerMobile} onChange={onChange} required className="input" /></Field>
             <Field label="E-mail Address *"><input name="managerEmail" type="email" value={form.managerEmail} onChange={onChange} required className="input" /></Field>
             <Field label="Opening Time"><input name="openingTime" value={form.openingTime} onChange={onChange} className="input" /></Field>
             <Field label="Closing Time"><input name="closingTime" value={form.closingTime} onChange={onChange} className="input" /></Field>

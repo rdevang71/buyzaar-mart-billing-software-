@@ -121,6 +121,19 @@ function hasAnyPermission(user, permissions = []) {
   return permissions.some((permission) => userPermissions.includes(permission));
 }
 
+function permissionAllowed(user, permissions = []) {
+  if (!permissions.length) return true;
+  if (!user) return false;
+  if (user.role === 'super_admin') return true;
+  const userPermissions = Array.isArray(user.permissions) ? user.permissions : [];
+  return userPermissions.includes('*') || permissions.some((permission) => userPermissions.includes(permission));
+}
+
+function accessEntryAllowed(user, roles = [], permissions = []) {
+  if (permissions.length) return permissionAllowed(user, permissions);
+  return roleAllowed(user?.role, roles);
+}
+
 function pathMatches(pathname, href) {
   if (href === '/') return pathname === '/';
   return pathname === href || pathname.startsWith(`${href}/`);

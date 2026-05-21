@@ -7,6 +7,7 @@ const initialForm = {
   firstName: '',
   lastName: '',
   customerType: 'INDIVIDUAL',
+  customerGroupId: '',
   customerCode: '',
   emailAddress: '',
   birthday: '',
@@ -66,14 +67,29 @@ function CustomerSection({ title, children }) {
   );
 }
 
+function normalizeMobileInput(value) {
+  return String(value || '').replace(/\D/g, '').slice(0, 10);
+}
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+}
+
 function TextField({ label, value, onChange, required = false, placeholder = '', type = 'text' }) {
+  const lowerLabel = String(label || '').toLowerCase();
+  const isPhone = lowerLabel.includes('mobile') || lowerLabel.includes('phone');
+  const inputType = isPhone ? 'tel' : type;
   return (
     <div>
       <label className="block text-[12px] text-gray-700 mb-1">{label}{required ? ' *' : ''}</label>
       <input
-        type={type}
+        type={inputType}
+        inputMode={isPhone ? 'numeric' : undefined}
+        pattern={isPhone ? '[0-9]{10}' : undefined}
+        maxLength={isPhone ? 10 : undefined}
+        required={required}
         value={value}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event) => onChange(isPhone ? normalizeMobileInput(event.target.value) : event.target.value)}
         placeholder={placeholder}
         className="w-full rounded-lg border border-gray-300 px-3 py-2 text-[13px] text-gray-800 bg-white placeholder:text-gray-400 focus:outline-none focus:border-blue-500"
       />
@@ -109,15 +125,26 @@ export default function ListOfCustomersPage() {
   const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [search, setSearch] = useState('');
+  const [selectedStore, setSelectedStore] = useState('all');
+  const [stores, setStores] = useState([]);
+  const [groups, setGroups] = useState([]);
+  const [pageSize, setPageSize] = useState(10);
   const [error, setError] = useState('');
   const [form, setForm] = useState(initialForm);
 
-  const fetchCustomers = async () => {
+  const fetchCustomers = async (nextSearch = search, nextStore = selectedStore) => {
     setLoading(true);
     setError('');
 
     try {
-      const res = await fetch('/api/customers');
+      const params = new URLSearchParams();
+      if (nextSearch.trim()) params.set('search', nextSearch.trim());
+      if (nextStore && nextStore !== 'all') params.set('store', nextStore);
+
+      const res = await fetch(`/api/customers${params.toString() ? `?${params}` : ''}`, {
+        cache: 'no-store',
+        credentials: 'include',
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to fetch customers');
       setCustomers(Array.isArray(data) ? data : []);
@@ -131,24 +158,46 @@ export default function ListOfCustomersPage() {
   };
 
   useEffect(() => {
-    fetchCustomers();
+    let cancelled = false;
+
+    async function loadStores() {
+      try {
+        const [storesRes, groupsRes] = await Promise.all([
+          fetch('/api/stores', { cache: 'no-store', credentials: 'include' }),
+          fetch('/api/customer-groups', { cache: 'no-store', credentials: 'include' }),
+        ]);
+        const storesJson = await storesRes.json().catch(() => ({}));
+        const groupsJson = await groupsRes.json().catch(() => ([]));
+        if (!cancelled && storesRes.ok && storesJson?.success) {
+          setStores(Array.isArray(storesJson?.data?.stores) ? storesJson.data.stores : []);
+        }
+        if (!cancelled && groupsRes.ok) {
+          setGroups(Array.isArray(groupsJson) ? groupsJson.filter((group) => group.status === 'Active') : []);
+        }
+      } catch (err) {
+        console.error('[ListOfCustomersPage] Failed to load filters', err);
+      }
+    }
+
+    loadStores();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const filteredCustomers = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) return customers;
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchCustomers(search, selectedStore);
+    }, 250);
 
-    return customers.filter((customer) =>
-      [
-        customer.name,
-        customer.mobile_number,
-        customer.email_address,
-        customer.customer_type,
-        customer.customer_code,
-        customer.status,
-      ].some((value) => String(value ?? '').toLowerCase().includes(query))
-    );
-  }, [customers, search]);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, selectedStore]);
+
+  const visibleCustomers = useMemo(
+    () => customers.slice(0, pageSize),
+    [customers, pageSize]
+  );
 
   const openCreateForm = () => {
     setForm(initialForm);
@@ -163,6 +212,18 @@ export default function ListOfCustomersPage() {
 
     if (!form.mobileNumber.trim()) {
       alert('Mobile number is required');
+      return;
+    }
+    if (!/^\d{10}$/.test(form.mobileNumber)) {
+      alert('Mobile number must be exactly 10 digits');
+      return;
+    }
+    if (form.emailAddress.trim() && !isValidEmail(form.emailAddress)) {
+      alert('Enter a valid email address');
+      return;
+    }
+    if (form.contactPersonPhone.trim() && !/^\d{10}$/.test(form.contactPersonPhone)) {
+      alert('Contact person phone must be exactly 10 digits');
       return;
     }
 
@@ -188,6 +249,31 @@ export default function ListOfCustomersPage() {
     }
   };
 
+  const handleExport = () => {
+    const headers = ['S. No.', 'Name', 'Phone', 'Email', 'Group', 'Total Sales', 'Status', 'Source', 'Stores'];
+    const lines = [
+      headers.join(','),
+      ...customers.map((customer, index) => [
+        index + 1,
+        customer.name || '',
+        customer.mobile_number || '',
+        customer.email_address || '',
+        customer.customer_type || '',
+        formatMoney(customer.total_sales),
+        customer.status || '',
+        customer.source || '',
+        customer.store_names || '',
+      ].map((value) => `"${String(value).replace(/"/g, '""')}"`).join(',')),
+    ];
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `customers-${new Date().toISOString().slice(0, 10)}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <MainLayout>
       <div className="flex items-center gap-2 text-[12px] text-gray-500 mb-4 flex-wrap">
@@ -199,7 +285,7 @@ export default function ListOfCustomersPage() {
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-5">
         <div>
           <h1 className="text-[28px] font-semibold text-gray-900 leading-tight">List Of Customers</h1>
-          <p className="text-[12.5px] text-gray-400 mt-1">Manage all your customers</p>
+          <p className="text-[12.5px] text-gray-400 mt-1">Registered customers plus customers captured from POS bills</p>
         </div>
 
         <button
@@ -207,13 +293,13 @@ export default function ListOfCustomersPage() {
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-[13px] font-medium text-white hover:bg-blue-700 transition-colors flex-shrink-0"
         >
           <i className="ti ti-plus text-[16px]" />
-          Create List Of Customers
+          Create Customer
         </button>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
         <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200 justify-between flex-wrap">
-          <div className="flex items-center gap-2 flex-1 min-w-[260px] max-w-[340px] bg-gray-50 rounded-lg px-3 py-2">
+          <div className="flex items-center gap-2 flex-1 min-w-[240px] max-w-[340px] bg-gray-50 rounded-lg px-3 py-2">
             <i className="ti ti-search text-gray-400 text-[16px]" />
             <input
               type="text"
@@ -223,8 +309,22 @@ export default function ListOfCustomersPage() {
               className="flex-1 bg-transparent text-[13px] text-gray-700 outline-none placeholder:text-gray-400"
             />
           </div>
-          <div className="flex items-center gap-2">
-            <button className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
+          <select
+            value={selectedStore}
+            onChange={(event) => setSelectedStore(event.target.value)}
+            className="min-w-[190px] rounded-lg border border-gray-200 bg-white px-3 py-2 text-[13px] text-gray-700 focus:outline-none focus:border-blue-500"
+          >
+            <option value="all">All Stores</option>
+            {stores.map((store) => (
+              <option key={store.id} value={store.id}>{store.name}</option>
+            ))}
+          </select>
+          <div className="flex items-center gap-2 ml-auto">
+            <button
+              onClick={handleExport}
+              className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
+              title="Export CSV"
+            >
               <i className="ti ti-download text-gray-500 text-[16px]" />
             </button>
           </div>
@@ -240,29 +340,33 @@ export default function ListOfCustomersPage() {
                 <th className="px-4 py-3 text-left text-[11px] font-bold text-gray-500 tracking-wide uppercase">Email</th>
                 <th className="px-4 py-3 text-left text-[11px] font-bold text-gray-500 tracking-wide uppercase">Group</th>
                 <th className="px-4 py-3 text-left text-[11px] font-bold text-gray-500 tracking-wide uppercase">Total Sales</th>
+                <th className="px-4 py-3 text-left text-[11px] font-bold text-gray-500 tracking-wide uppercase">Source</th>
                 <th className="px-4 py-3 text-left text-[11px] font-bold text-gray-500 tracking-wide uppercase">Status</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td className="px-4 py-6 text-[13px] text-gray-500" colSpan={7}>Loading...</td>
+                  <td className="px-4 py-6 text-[13px] text-gray-500" colSpan={8}>Loading...</td>
                 </tr>
-              ) : filteredCustomers.length === 0 ? (
+              ) : customers.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-6 text-[13px] text-gray-500" colSpan={7}>
+                  <td className="px-4 py-6 text-[13px] text-gray-500" colSpan={8}>
                     {error || 'No customers found'}
                   </td>
                 </tr>
               ) : (
-                filteredCustomers.map((customer, index) => (
+                visibleCustomers.map((customer, index) => (
                   <tr key={customer.id} className="border-b border-gray-100 hover:bg-blue-50/50 transition-colors">
                     <td className="px-4 py-3 text-[13px] text-gray-700">{index + 1}</td>
                     <td className="px-4 py-3 text-[13px] text-gray-700">{customer.name || '-'}</td>
                     <td className="px-4 py-3 text-[13px] text-gray-700">{customer.mobile_number || '-'}</td>
                     <td className="px-4 py-3 text-[13px] text-gray-700">{customer.email_address || '-'}</td>
-                    <td className="px-4 py-3 text-[13px] text-gray-700">{customer.customer_type || '-'}</td>
+                    <td className="px-4 py-3 text-[13px] text-gray-700">{customer.customer_group_name || customer.customer_type || '-'}</td>
                     <td className="px-4 py-3 text-[13px] text-gray-700">{formatMoney(customer.total_sales)}</td>
+                    <td className="px-4 py-3 text-[13px] text-gray-700">
+                      {customer.source === 'billed' ? 'Billed' : 'Registered'}
+                    </td>
                     <td className="px-4 py-3 text-[13px] text-gray-700">{customer.status || '-'}</td>
                   </tr>
                 ))
@@ -272,12 +376,16 @@ export default function ListOfCustomersPage() {
         </div>
 
         <div className="flex items-center gap-3 px-4 py-3 border-t border-gray-100 text-[12px] text-gray-400">
-          <select className="border border-gray-200 rounded-lg px-3 py-2 bg-white text-[12px] text-gray-600">
-            <option>10</option>
-            <option>20</option>
-            <option>50</option>
+          <select
+            value={pageSize}
+            onChange={(event) => setPageSize(Number(event.target.value))}
+            className="border border-gray-200 rounded-lg px-3 py-2 bg-white text-[12px] text-gray-600"
+          >
+            <option value={10}>10</option>
+            <option value={20}>20</option>
+            <option value={50}>50</option>
           </select>
-          <span>Showing {filteredCustomers.length} Results</span>
+          <span>Showing {Math.min(pageSize, customers.length)} of {customers.length} Results</span>
         </div>
       </div>
 
@@ -287,8 +395,8 @@ export default function ListOfCustomersPage() {
           <div className="relative w-full max-w-[1200px] bg-white rounded-xl border border-gray-300 shadow-xl overflow-hidden my-4">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">Create List Of Customers</h3>
-                <p className="text-[12px] text-gray-400 mt-1">Description Need Help?</p>
+                <h3 className="text-lg font-semibold text-gray-900">Create Customer</h3>
+                <p className="text-[12px] text-gray-400 mt-1">Save a reusable customer profile for billing, credit, loyalty, and reports.</p>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -313,6 +421,15 @@ export default function ListOfCustomersPage() {
                   <TextField label="First Name" value={form.firstName} onChange={(value) => setForm({ ...form, firstName: value })} required />
                   <TextField label="Last Name" value={form.lastName} onChange={(value) => setForm({ ...form, lastName: value })} />
                   <SelectField label="Customer Type" value={form.customerType} onChange={(value) => setForm({ ...form, customerType: value })} options={customerTypeOptions} required />
+                  <SelectField
+                    label="Customer Group"
+                    value={form.customerGroupId}
+                    onChange={(value) => setForm({ ...form, customerGroupId: value })}
+                    options={[
+                      { value: '', label: 'Use Default Group' },
+                      ...groups.map((group) => ({ value: String(group.id), label: group.group_name || group.name })),
+                    ]}
+                  />
                   <TextField label="Customer Code" value={form.customerCode} onChange={(value) => setForm({ ...form, customerCode: value })} />
                   <TextField label="Email Address" value={form.emailAddress} onChange={(value) => setForm({ ...form, emailAddress: value })} type="email" />
                   <TextField label="Birthday" value={form.birthday} onChange={(value) => setForm({ ...form, birthday: value })} type="date" />
