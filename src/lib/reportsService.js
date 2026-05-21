@@ -50,6 +50,20 @@ const REPORTS = {
       { key: 'avg_order_value', label: 'Avg Order Value' },
     ],
   },
+  'daily-sales-dsr': {
+    title: 'Daily Sales (DSR)',
+    worksheet: 'DSR',
+    columns: [
+      { key: 'store',     label: 'Store'     },
+      { key: 'date',      label: 'Date'      },
+      { key: 'orders',    label: 'Orders'    },
+      { key: 'sales',     label: 'Sales'     },
+      { key: 'discount',  label: 'Discount'  },
+      { key: 'net_bill',  label: 'Net Bill'  },
+      { key: 'taxes',     label: 'Taxes'     },
+      { key: 'gross_bill',label: 'Gross Bill'},
+    ],
+  },
   'net-sales': {
     title: 'Net Sales',
     worksheet: 'Net Sales',
@@ -67,15 +81,30 @@ const REPORTS = {
     title: 'Stock Level',
     worksheet: 'Stock Level',
     columns: [
-      { key: 'product', label: 'Product' },
-      { key: 'sku', label: 'SKU' },
-      { key: 'store', label: 'Store' },
+      { key: 'product',       label: 'Product'       },
+      { key: 'sku',           label: 'SKU'           },
+      { key: 'store',         label: 'Store'         },
       { key: 'opening_stock', label: 'Opening Stock' },
-      { key: 'stock_in', label: 'Stock In' },
-      { key: 'stock_out', label: 'Stock Out' },
+      { key: 'stock_in',      label: 'Stock In'      },
+      { key: 'stock_out',     label: 'Stock Out'     },
       { key: 'current_stock', label: 'Current Stock' },
-      { key: 'unit', label: 'Unit' },
-      { key: 'status', label: 'Status' },
+      { key: 'unit',          label: 'Unit'          },
+      { key: 'status',        label: 'Status'        },
+    ],
+  },
+  'stock-level': {
+    title: 'Stock Level',
+    worksheet: 'Stock Level',
+    columns: [
+      { key: 'product',       label: 'Product'       },
+      { key: 'sku',           label: 'SKU'           },
+      { key: 'store',         label: 'Store'         },
+      { key: 'opening_stock', label: 'Opening Stock' },
+      { key: 'stock_in',      label: 'Stock In'      },
+      { key: 'stock_out',     label: 'Stock Out'     },
+      { key: 'current_stock', label: 'Current Stock' },
+      { key: 'unit',          label: 'Unit'          },
+      { key: 'status',        label: 'Status'        },
     ],
   },
 };
@@ -216,8 +245,10 @@ export async function getReportRows(reportKey, filters = {}, user) {
 
   if (reportKey === 'orders/list-of-orders') return getOrdersReport(filters, user);
   if (reportKey === 'sales/daily-sales') return getDailySalesReport(filters, user);
+  if (reportKey === 'daily-sales-dsr') return getDailySalesReport(filters, user);
   if (reportKey === 'net-sales') return getNetSalesReport(filters, user);
   if (reportKey === 'inventory/stock-level') return getStockLevelReport(filters, user);
+  if (reportKey === 'stock-level') return getStockLevelReport(filters, user);
 
   return [];
 }
@@ -356,67 +387,122 @@ async function getNetSalesReport(filters, user) {
 }
 
 async function getStockLevelReport(filters, user) {
-  const params = [];
+  const range    = parseDateRange(filters.date_range);
+  const fromDate = range.from;
+  const toDate   = range.to;
+
+  const params     = [];
   const conditions = ['COALESCE(p.is_active, TRUE) = TRUE'];
+
+  // Store scope on outer product_saleability — sub-queries reference ps.store_id
   addStoreScope({ conditions, params, user, alias: 'ps', requestedStoreId: filters.store });
+
+  if (filters.product && String(filters.product).trim()) {
+    params.push(`%${String(filters.product).trim()}%`);
+    conditions.push(`(p.name ILIKE $${params.length} OR COALESCE(p.sku,'') ILIKE $${params.length})`);
+  }
+
+  // Date params — sub-queries share these positional params
+  params.push(fromDate); const pFrom = params.length;
+  params.push(toDate);   const pTo   = params.length;
 
   const res = await query(
     `SELECT
        p.id,
-       p.name AS product,
+       p.name  AS product,
        p.sku,
        p.unit,
-       COALESCE(s.name, 'Store') AS store,
-       COALESCE(stock_in_totals.qty, 0) AS stock_in,
-       COALESCE(sales_totals.qty, 0) + COALESCE(manual_stock_out_totals.qty, 0) AS stock_out,
-       COALESCE(ps.low_stock_value, 0) AS low_stock_value,
-       COALESCE(stock_in_totals.qty, 0)
-        - COALESCE(sales_totals.qty, 0)
-        - COALESCE(manual_stock_out_totals.qty, 0) AS current_stock
+       COALESCE(s.name, 'Unknown Store') AS store,
+       COALESCE(ps.low_stock_value, 0)   AS low_stock_value,
+
+       -- Opening stock = all-time stock in BEFORE fromDate minus all-time stock out BEFORE fromDate
+       COALESCE((
+         SELECT SUM(sii.qty)
+         FROM stock_in_items sii
+         JOIN stock_in si ON si.id = sii.stock_in_id
+         WHERE sii.product_id = p.id
+           AND si.destination_id = ps.store_id
+           AND si.status = 'confirmed'
+           AND DATE(si.created_at) < $${pFrom}
+       ), 0)
+       - COALESCE((
+         SELECT SUM(soi.qty)
+         FROM stock_out_items soi
+         JOIN stock_out so ON so.id = soi.stock_out_id
+         WHERE soi.product_id = p.id
+           AND so.destination_id = ps.store_id
+           AND so.status = 'confirmed'
+           AND DATE(so.created_at) < $${pFrom}
+       ), 0)
+       - COALESCE((
+         SELECT SUM(sbi.qty)
+         FROM sales_bill_items sbi
+         JOIN sales_bills sb ON sb.id = sbi.sales_bill_id
+         WHERE sbi.product_id = p.id
+           AND sb.store_id = ps.store_id
+           AND sb.status IN ('paid', 'completed')
+           AND DATE(sb.created_at) < $${pFrom}
+       ), 0) AS opening_stock,
+
+       -- Stock In within date range
+       COALESCE((
+         SELECT SUM(sii.qty)
+         FROM stock_in_items sii
+         JOIN stock_in si ON si.id = sii.stock_in_id
+         WHERE sii.product_id = p.id
+           AND si.destination_id = ps.store_id
+           AND si.status = 'confirmed'
+           AND DATE(si.created_at) BETWEEN $${pFrom} AND $${pTo}
+       ), 0) AS stock_in,
+
+       -- Stock Out within date range (manual stock_out + sales)
+       COALESCE((
+         SELECT SUM(soi.qty)
+         FROM stock_out_items soi
+         JOIN stock_out so ON so.id = soi.stock_out_id
+         WHERE soi.product_id = p.id
+           AND so.destination_id = ps.store_id
+           AND so.status = 'confirmed'
+           AND DATE(so.created_at) BETWEEN $${pFrom} AND $${pTo}
+       ), 0)
+       + COALESCE((
+         SELECT SUM(sbi.qty)
+         FROM sales_bill_items sbi
+         JOIN sales_bills sb ON sb.id = sbi.sales_bill_id
+         WHERE sbi.product_id = p.id
+           AND sb.store_id = ps.store_id
+           AND sb.status IN ('paid', 'completed')
+           AND DATE(sb.created_at) BETWEEN $${pFrom} AND $${pTo}
+       ), 0) AS stock_out
+
      FROM product_saleability ps
      INNER JOIN products p ON p.id = ps.product_id
-     LEFT JOIN stores s ON s.id = ps.store_id
-     LEFT JOIN (
-       SELECT si.destination_id AS store_id, sii.product_id, SUM(sii.qty) AS qty
-       FROM stock_in_items sii
-       INNER JOIN stock_in si ON si.id = sii.stock_in_id
-       WHERE si.status = 'confirmed'
-       GROUP BY si.destination_id, sii.product_id
-     ) stock_in_totals ON stock_in_totals.store_id = ps.store_id AND stock_in_totals.product_id = p.id
-     LEFT JOIN (
-       SELECT sb.store_id, sbi.product_id, SUM(sbi.qty) AS qty
-       FROM sales_bill_items sbi
-       INNER JOIN sales_bills sb ON sb.id = sbi.sales_bill_id
-       WHERE sb.status IN ('paid', 'completed')
-       GROUP BY sb.store_id, sbi.product_id
-     ) sales_totals ON sales_totals.store_id = ps.store_id AND sales_totals.product_id = p.id
-     LEFT JOIN (
-       SELECT so.destination_id AS store_id, soi.product_id, SUM(soi.qty) AS qty
-       FROM stock_out_items soi
-       INNER JOIN stock_out so ON so.id = soi.stock_out_id
-       WHERE so.status = 'confirmed' AND COALESCE(so.reference_type, '') <> 'sales_bill'
-       GROUP BY so.destination_id, soi.product_id
-     ) manual_stock_out_totals ON manual_stock_out_totals.store_id = ps.store_id AND manual_stock_out_totals.product_id = p.id
+     LEFT  JOIN stores s ON s.id = ps.store_id
      WHERE ${conditions.join(' AND ')}
-     ORDER BY current_stock ASC, p.name ASC
+     ORDER BY p.name ASC, s.name ASC
      LIMIT 1000`,
     params
   );
 
   return res.rows.map((row) => {
-    const currentStock = number(row.current_stock);
+    const opening       = number(row.opening_stock);
+    const stockIn       = number(row.stock_in);
+    const stockOut      = number(row.stock_out);
+    const currentStock  = opening + stockIn - stockOut;
     const lowStockValue = number(row.low_stock_value);
     return {
-      id: `stock-${row.id}-${row.store}`,
-      product: row.product,
-      sku: row.sku || '',
-      store: row.store,
-      opening_stock: money(0),
-      stock_in: number(row.stock_in),
-      stock_out: number(row.stock_out),
+      id:            `stock-${row.id}-${row.store}`,
+      product:       row.product,
+      sku:           row.sku || '',
+      store:         row.store,
+      opening_stock: opening,
+      stock_in:      stockIn,
+      stock_out:     stockOut,
       current_stock: currentStock,
-      unit: row.unit || 'PCS',
-      status: lowStockValue > 0 && currentStock <= lowStockValue ? 'Low' : currentStock <= 0 ? 'Out' : 'In Stock',
+      unit:          row.unit || 'PCS',
+      status:        lowStockValue > 0 && currentStock <= lowStockValue
+                       ? 'Low'
+                       : currentStock <= 0 ? 'Out' : 'In Stock',
     };
   });
 }

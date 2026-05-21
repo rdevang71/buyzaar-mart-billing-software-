@@ -310,7 +310,7 @@ export default function EmployeeStaffPage() {
     confirmPassword: '',
     mobileNumber: '',
     emailAddress: '',
-    roleId: '',
+    roleName: '',
     permissions: [],
     regionStore: '',
     warehouse: '',
@@ -527,7 +527,7 @@ export default function EmployeeStaffPage() {
       confirmPassword: '',
       mobileNumber: employee.mobileNumber,
       emailAddress: employee.emailAddress,
-      roleId: employee.role ? String(roles.find((r) => (r.roleName || r.role_name) === employee.role)?.id || '') : '',
+      roleName: employee.role || '',
       permissions: employee.permissions,
       regionStore: employee.regionStore,
       warehouse: employee.warehouse,
@@ -572,15 +572,13 @@ export default function EmployeeStaffPage() {
     if (!/^\d{10}$/.test(form.mobileNumber)) return alert('Mobile number must be exactly 10 digits');
     if (!form.emailAddress.trim()) return alert('Email address is required');
     if (!isValidEmail(form.emailAddress)) return alert('Enter a valid email address');
-    if (!form.roleId) return alert('Role is required');
+    if (!form.roleName.trim()) return alert('Role is required');
     if (!editingId && !form.password.trim()) return alert('Password is required');
     if (!editingId && !form.confirmPassword.trim()) return alert('Confirm password is required');
     if (form.password && form.password !== form.confirmPassword) return alert('Passwords do not match');
     if (form.permissions.length === 0) return alert('Select at least one permission');
 
-    const selectedRole = roles.find((role) => String(role.id) === String(form.roleId));
-    const selectedRoleName = selectedRole?.roleName || selectedRole?.role_name || '';
-    const systemRole = selectedRoleName.trim().toLowerCase().replace(/\s+/g, '_');
+    const systemRole = form.roleName.trim().toLowerCase().replace(/\s+/g, '_');
     if ((systemRole === 'admin' || systemRole === 'manager') && !form.regionStore) {
       return alert('Select a store for Admin/Manager access');
     }
@@ -594,8 +592,8 @@ export default function EmployeeStaffPage() {
         gender: form.gender,
         mobile_number: form.mobileNumber.trim(),
         email_address: form.emailAddress.trim(),
-        role_id: form.roleId ? Number(form.roleId) : null,
-        role_name: selectedRoleName,
+        role_id: null,
+        role_name: form.roleName.trim(),
         assigned_stores: form.regionStore ? [Number(form.regionStore)].filter(Number.isFinite) : [],
         permissions: form.permissions,
         region_store: form.regionStore,
@@ -1023,13 +1021,16 @@ export default function EmployeeStaffPage() {
                   />
                 </div>
 
-                <SelectField
-                  label="Role"
-                  value={form.roleId}
-                  onChange={(roleId) => setForm({ ...form, roleId })}
-                  options={roleOptions}
-                  required
-                />
+                <div>
+                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Role *</label>
+                  <input
+                    required
+                    value={form.roleName}
+                    onChange={(event) => setForm({ ...form, roleName: event.target.value })}
+                    placeholder="Enter role name"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-gray-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all"
+                  />
+                </div>
 
                 <MultiSelect
                   label="Permissions"
@@ -1071,17 +1072,6 @@ export default function EmployeeStaffPage() {
                     { value: 'Temporary', label: 'Temporary' },
                   ]}
                 />
-
-                <div className="col-span-2">
-                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">IP Address / Address</label>
-                  <textarea
-                    value={form.address}
-                    onChange={(event) => setForm({ ...form, address: event.target.value })}
-                    placeholder="Please enter the IP Address and press Enter"
-                    rows={4}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-gray-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all resize-none"
-                  />
-                </div>
 
                 <SelectField
                   label="User Type"

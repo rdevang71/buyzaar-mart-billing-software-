@@ -1,69 +1,22 @@
 import ReportsListPage from '@/components/ReportListPage';
 
 const filters = [
-  {
-    "key": "date_range",
-    "label": "Date Range",
-    "type": "date-range"
-  },
-  {
-    "key": "region",
-    "label": "Select Region",
-    "type": "text"
-  },
-  {
-    "key": "store",
-    "label": "Store",
-    "type": "select",
-    "options": [
-      "All Stores"
-    ]
-  },
-  {
-    "key": "product",
-    "label": "Product",
-    "type": "text",
-    "placeholder": "Search product..."
-  }
+  { key: 'date_range', label: 'Date Range',     type: 'date-range' },
+  { key: 'region',     label: 'Select Region',  type: 'text' },
+  { key: 'store',      label: 'Store',          type: 'select', options: [] },
+  { key: 'product',    label: 'Product',        type: 'text', placeholder: 'Search product...' },
 ];
 
 const columns = [
-  {
-    "key": "product",
-    "label": "Product"
-  },
-  {
-    "key": "sku",
-    "label": "SKU"
-  },
-  {
-    "key": "store",
-    "label": "Store"
-  },
-  {
-    "key": "opening_stock",
-    "label": "Opening Stock"
-  },
-  {
-    "key": "stock_in",
-    "label": "Stock In"
-  },
-  {
-    "key": "stock_out",
-    "label": "Stock Out"
-  },
-  {
-    "key": "current_stock",
-    "label": "Current Stock"
-  },
-  {
-    "key": "unit",
-    "label": "Unit"
-  },
-  {
-    "key": "status",
-    "label": "Status"
-  }
+  { key: 'product',       label: 'Product'       },
+  { key: 'sku',           label: 'SKU'           },
+  { key: 'store',         label: 'Store'         },
+  { key: 'opening_stock', label: 'Opening Stock' },
+  { key: 'stock_in',      label: 'Stock In'      },
+  { key: 'stock_out',     label: 'Stock Out'     },
+  { key: 'current_stock', label: 'Current Stock' },
+  { key: 'unit',          label: 'Unit'          },
+  { key: 'status',        label: 'Status'        },
 ];
 
 export default function StockLevelPage() {
@@ -78,7 +31,7 @@ export default function StockLevelPage() {
       description="Current stock levels across all stores"
       filters={filters}
       columns={columns}
-      actionButtons={[]}
+      reportKey="stock-level"
     />
   );
 }

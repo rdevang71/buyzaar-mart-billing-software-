@@ -8,6 +8,7 @@ import { verifyToken } from '@/lib/auth-enhanced';
 import { query } from '@/lib/db';
 import { unauthorizedError, forbiddenError } from '@/lib/api-response';
 import { ensureUsersTable } from '@/lib/userAuth';
+import { ensureRolesSchema } from '@/lib/rolesSchema';
 
 
 /**

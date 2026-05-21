@@ -7,7 +7,14 @@ import MainLayout from '@/components/MainLayout';
 async function fetchStores() {
   const res = await fetch('/api/stores');
   if (!res.ok) throw new Error('Failed to fetch stores');
-  return res.json();
+  const data = await res.json();
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.data?.stores)) return data.data.stores;
+  if (Array.isArray(data?.data?.records)) return data.data.records;
+  if (Array.isArray(data?.stores)) return data.stores;
+  if (Array.isArray(data?.records)) return data.records;
+  if (data?.success && Array.isArray(data.data)) return data.data;
+  return [];
 }
 
 async function postGrn(payload) {
