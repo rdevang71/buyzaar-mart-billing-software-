@@ -973,10 +973,17 @@ export default function EmployeeStaffPage() {
                   <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Mobile Number</label>
                   <input
                     value={form.mobileNumber}
-                    onChange={(event) => setForm({ ...form, mobileNumber: event.target.value })}
-                    placeholder="Mobile Number"
+                    onChange={(event) => {
+                      const value = event.target.value.replace(/\D/g, '').slice(0, 10);
+                      setForm({ ...form, mobileNumber: value });
+                    }}
+                    placeholder="Mobile Number (10 digits)"
+                    maxLength="10"
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-gray-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all"
                   />
+                  {form.mobileNumber && !validatePhoneNumber(form.mobileNumber).isValid && (
+                    <p className="text-[11px] text-red-600 mt-1">{validatePhoneNumber(form.mobileNumber).error}</p>
+                  )}
                 </div>
 
                 <div>

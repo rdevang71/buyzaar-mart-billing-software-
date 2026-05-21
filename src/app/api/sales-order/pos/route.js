@@ -4,6 +4,7 @@ import { verifyToken } from '@/lib/auth-enhanced';
 import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
 import { extractAuthUser, requirePermission, requireStore } from '@/lib/api-protection';
 import { ensureCatalogExtrasSchema } from '@/lib/catalogExtrasSchema';
+import { validatePhoneNumber } from '@/lib/phoneValidator';
 
 function toNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -80,6 +81,11 @@ export async function POST(req) {
       orderDiscount = 0,
       roundOff = 0,
     } = body;
+
+    if (customerMobile) {
+      const phoneValidation = validatePhoneNumber(customerMobile);
+      if (!phoneValidation.isValid) return errorResponse(phoneValidation.error, 400);
+    }
 
     if (!storeId || !items.length || !paymentMode) {
       return errorResponse('Missing required fields', 400);

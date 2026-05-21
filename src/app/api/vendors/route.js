@@ -3,6 +3,7 @@ import { query } from '@/lib/db';
 import { ensureStockInSchema } from '@/lib/stockInSchema';
 import { ensureStockOutSchema } from '@/lib/stockOutSchema';
 import { ensureVendorsSchema } from '@/lib/vendorsSchema';
+import { validatePhoneNumber } from '@/lib/phoneValidator';
 
 export async function GET() {
   try {
@@ -67,6 +68,13 @@ export async function POST(req) {
 
     if (!name || !String(name).trim()) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 });
+    }
+
+    if (mobile_number) {
+      const phoneValidation = validatePhoneNumber(mobile_number);
+      if (!phoneValidation.isValid) {
+        return NextResponse.json({ error: phoneValidation.error }, { status: 400 });
+      }
     }
 
     const res = await query(

@@ -217,7 +217,21 @@ export default function VendorsPage() {
 
                   <div className="grid grid-cols-2 gap-3">
                     <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="Email Address" className="rounded-lg border border-gray-300 px-3 py-2 text-[13px] text-gray-800 bg-white placeholder:text-gray-400 focus:outline-none focus:border-blue-500" />
-                    <input value={form.mobile_number} onChange={(e) => setForm({ ...form, mobile_number: e.target.value })} placeholder="Mobile Number" className="rounded-lg border border-gray-300 px-3 py-2 text-[13px] text-gray-800 bg-white placeholder:text-gray-400 focus:outline-none focus:border-blue-500" />
+                    <div className="flex flex-col">
+                      <input 
+                        value={form.mobile_number} 
+                        onChange={(e) => {
+                          const digits = e.target.value.replace(/\D/g, '').slice(0, 10);
+                          setForm({ ...form, mobile_number: digits });
+                        }}
+                        placeholder="Mobile Number (10 digits)" 
+                        maxLength="10"
+                        className="rounded-lg border border-gray-300 px-3 py-2 text-[13px] text-gray-800 bg-white placeholder:text-gray-400 focus:outline-none focus:border-blue-500" 
+                      />
+                      {form.mobile_number && !validatePhoneNumber(form.mobile_number).isValid && (
+                        <p className="text-[11px] text-red-600 mt-0.5">{validatePhoneNumber(form.mobile_number).error}</p>
+                      )}
+                    </div>
                   </div>
                 </div>
               </section>
