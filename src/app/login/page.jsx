@@ -4,6 +4,7 @@ import AuthScreen from '@/components/AuthScreen';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useState, useEffect } from 'react';
 import { getDefaultRouteForUser } from '@/lib/accessControl';
+import { fetchAuthEndpoint } from '@/lib/auth-endpoints';
 
 const highlights = [
   {
@@ -41,7 +42,7 @@ function LoginPageContent() {
     if (explicitNext) return explicitNext;
 
     try {
-      const res = await fetch('/api/auth/me', { cache: 'no-store', credentials: 'include' });
+      const res = await fetchAuthEndpoint('/api/auth/me');
       const json = await res.json();
       return json?.data?.user ? getDefaultRouteForUser(json.data.user) : fallback;
     } catch {
@@ -85,10 +86,9 @@ function LoginPageContent() {
 
       // Make login request to API
       // Don't follow redirects - we'll handle them ourselves
-      const res = await fetch('/api/auth/login', {
+      const res = await fetchAuthEndpoint('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include', // Important: Include cookies in request
         redirect: 'manual', // Don't follow redirects automatically
         body: JSON.stringify({
           email: form.email,
@@ -151,9 +151,7 @@ function LoginPageContent() {
         console.log('[LOGIN PAGE] Checking if user is already authenticated');
 
         // Check authentication status
-        const res = await fetch('/api/auth/me', {
-          credentials: 'include',
-        });
+        const res = await fetchAuthEndpoint('/api/auth/me');
 
         if (!mounted) return;
 

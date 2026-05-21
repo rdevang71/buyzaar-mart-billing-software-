@@ -160,6 +160,18 @@ async function createEmployee(payload) {
   return data;
 }
 
+async function updateEmployee(id, payload) {
+  const res = await fetch(`/api/employee/staff/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to update employee');
+  return data;
+}
+
 async function deleteEmployee(id) {
   const res = await fetch(`/api/employee/staff/${id}`, {
     method: 'DELETE',
@@ -596,7 +608,8 @@ export default function EmployeeStaffPage() {
       }
 
       if (editingId) {
-        alert('Edit API endpoint needed - please create PUT /api/employee/staff/[id]');
+        const updated = await updateEmployee(editingId, payload);
+        setEmployees((current) => current.map((emp) => (emp.id === editingId ? mapEmployeeRow(updated.employee || updated) : emp)));
       } else {
         const created = await createEmployee(payload);
         setEmployees((current) => [mapEmployeeRow(created), ...current]);

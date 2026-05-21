@@ -73,7 +73,7 @@ export async function GET(request) {
     }
 
     const user = auth.user;
-    if (user && user.role !== 'super_admin') {
+    if (user && !(Array.isArray(user.permissions) && user.permissions.includes('*'))) {
       const assignedStores = (user.assigned_stores || []).map(Number).filter(Number.isFinite);
       if (assignedStores.length === 0) {
         return NextResponse.json([]);

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import MainLayout from '@/components/MainLayout';
+import { fetchAuthEndpoint } from '@/lib/auth-endpoints';
 
 // ============================================================================
 // UTILITIES
@@ -193,7 +194,7 @@ export default function POSPage() {
 
   const loadAuth = useCallback(async () => {
     try {
-      const res = await fetch('/api/auth/me');
+      const res = await fetchAuthEndpoint('/api/auth/me');
       const json = await res.json();
       if (json.success && json.data?.user) {
         setUser(json.data.user);

@@ -5,75 +5,120 @@ const ROLE_HOME_PATHS = {
   user: '/sales/pos',
 };
 
-const MENU_ROLES = {
-  Home: ['super_admin', 'admin', 'manager'],
-  Sales: ['super_admin', 'admin', 'manager', 'user'],
-  Catalog: ['super_admin', 'admin'],
-  Inventory: ['super_admin', 'admin', 'manager'],
-  Purchase: ['super_admin', 'admin', 'manager'],
-  'Sales Order': ['super_admin', 'admin', 'manager'],
-  Employee: ['super_admin', 'admin'],
-  Customer: ['super_admin', 'admin', 'manager'],
-  Settings: ['super_admin', 'admin'],
-  Reports: ['super_admin', 'admin', 'manager'],
+const SUPER_ADMIN_PERMISSION = '*';
+
+const SECTION_PERMISSION_RULES = {
+  Home: ['ACCESS_DASHBOARD'],
+  Sales: ['CREATE_POS_BILL', 'MANAGE_ORDERS', 'VIEW_ORDERS'],
+  Catalog: ['MANAGE_CATALOG', 'VIEW_CATALOG'],
+  Inventory: ['MANAGE_INVENTORY', 'VIEW_INVENTORY'],
+  Purchase: ['MANAGE_PURCHASE_ORDERS', 'MANAGE_VENDORS'],
+  'Sales Order': ['MANAGE_ORDERS', 'VIEW_ORDERS'],
+  Employee: ['MANAGE_ROLES', 'MANAGE_USERS', 'VIEW_USERS'],
+  Customer: ['MANAGE_CUSTOMERS', 'VIEW_CUSTOMERS'],
+  Settings: ['MANAGE_STORES', 'VIEW_STORES', 'MANAGE_PAYMENTS', 'MANAGE_TAXES'],
+  Reports: ['VIEW_FINANCIAL_REPORTS', 'VIEW_STORE_REPORTS'],
 };
 
-const SUB_ITEM_ROLES = {
-  '/home/master-dashboard': ['super_admin'],
-  '/': ['admin', 'manager'],
-  '/sales/pos': ['super_admin', 'admin', 'manager', 'user'],
-  '/sales/returns': ['super_admin', 'admin', 'manager'],
-  '/employee/roles': ['super_admin'],
-  '/employee/permissions': ['super_admin'],
-  '/employee/staffdepartments': ['super_admin', 'admin'],
-  '/employee/staff': ['super_admin', 'admin'],
-  '/employee/user-counter-session': ['super_admin', 'admin', 'manager'],
-  '/settings/stores': ['super_admin'],
-  '/settings/warehouses': ['super_admin'],
-  '/settings/regions': ['super_admin'],
-  '/settings/payment/chain-payment-settings': ['super_admin'],
-  '/settings/billing/chain-attributes': ['super_admin'],
-  '/settings/business-info': ['super_admin'],
-  '/settings/app-settings': ['super_admin'],
-  '/settings/store-payment-modes': ['super_admin', 'admin'],
+const ITEM_PERMISSION_RULES = {
+  '/': ['ACCESS_DASHBOARD'],
+  '/home': ['ACCESS_DASHBOARD'],
+  '/home/master-dashboard': ['ACCESS_DASHBOARD'],
+  '/sales': ['CREATE_POS_BILL', 'MANAGE_ORDERS', 'VIEW_ORDERS'],
+  '/sales/pos': ['CREATE_POS_BILL'],
+  '/sales/returns': ['MANAGE_ORDERS', 'VIEW_ORDERS'],
+  '/catalog': ['MANAGE_CATALOG', 'VIEW_CATALOG'],
+  '/inventory': ['MANAGE_INVENTORY', 'VIEW_INVENTORY'],
+  '/purchase': ['MANAGE_PURCHASE_ORDERS', 'MANAGE_VENDORS'],
+  '/sales-order': ['MANAGE_ORDERS', 'VIEW_ORDERS'],
+  '/customer': ['MANAGE_CUSTOMERS', 'VIEW_CUSTOMERS'],
+  '/reports': ['VIEW_FINANCIAL_REPORTS', 'VIEW_STORE_REPORTS'],
+  '/employee': ['MANAGE_ROLES', 'MANAGE_USERS', 'VIEW_USERS'],
+  '/employee/roles': ['MANAGE_ROLES'],
+  '/employee/permissions': ['MANAGE_ROLES'],
+  '/employee/staffdepartments': ['MANAGE_USERS', 'VIEW_USERS'],
+  '/employee/staff': ['MANAGE_USERS', 'VIEW_USERS'],
+  '/employee/user-counter-session': ['OPEN_CLOSE_SESSION'],
+  '/settings': ['MANAGE_STORES', 'VIEW_STORES', 'MANAGE_BILLING', 'MANAGE_PAYMENTS', 'MANAGE_TAXES'],
+  '/settings/stores': ['MANAGE_STORES', 'VIEW_STORES'],
+  '/settings/warehouses': ['MANAGE_STORES', 'VIEW_STORES'],
+  '/settings/regions': ['MANAGE_STORES', 'VIEW_STORES'],
+  '/settings/device-config/store-device-map': ['MANAGE_STORES'],
+  '/settings/device-config/application-device-settings': ['MANAGE_STORES'],
+  '/settings/device-config/device-sync-logs': ['MANAGE_STORES'],
+  '/settings/device-config/device-data-sync': ['MANAGE_STORES'],
+  '/settings/billing/customize-receipt-print': ['MANAGE_BILLING'],
+  '/settings/billing/remarks': ['MANAGE_BILLING'],
+  '/settings/billing/kot-printer-config': ['MANAGE_BILLING'],
+  '/settings/billing/chain-attributes': ['MANAGE_BILLING'],
+  '/settings/inventory/system-attributes': ['MANAGE_STORES', 'MANAGE_INVENTORY'],
+  '/settings/inventory/custom-attributes': ['MANAGE_STORES', 'MANAGE_INVENTORY'],
+  '/settings/inventory/measurement-unit': ['MANAGE_STORES', 'MANAGE_INVENTORY'],
+  '/settings/payment/chain-payment-settings': ['MANAGE_PAYMENTS'],
+  '/settings/billing/chain-attributes': ['MANAGE_BILLING'],
+  '/settings/payment/store-payment-settings': ['MANAGE_PAYMENTS'],
+  '/settings/credit-note/redemption-configuration': ['MANAGE_BILLING'],
+  '/settings/credit-note/refund-configuration': ['MANAGE_BILLING'],
+  '/settings/business-info': ['MANAGE_BILLING'],
+  '/settings/receipts-print': ['MANAGE_BILLING'],
+  '/settings/kot-printers': ['MANAGE_BILLING'],
+  '/settings/system-attributes': ['MANAGE_STORES', 'MANAGE_INVENTORY'],
+  '/settings/custom-attributes': ['MANAGE_STORES', 'MANAGE_INVENTORY'],
+  '/settings/rooms-tables': ['MANAGE_STORES'],
+  '/settings/sales-targets': ['MANAGE_BILLING'],
+  '/settings/app-settings': ['MANAGE_BILLING'],
+  '/settings/store-payment-modes': ['MANAGE_PAYMENTS'],
 };
 
-const ROUTE_RULES = [
-  { prefix: '/login', roles: ['guest', 'super_admin', 'admin', 'manager', 'user'] },
-  { prefix: '/home/master-dashboard', roles: ['super_admin'] },
-  { prefix: '/sales/pos', roles: ['super_admin', 'admin', 'manager', 'user'] },
-  { prefix: '/sales/returns', roles: ['super_admin', 'admin', 'manager'] },
-  { prefix: '/sales', roles: ['super_admin', 'admin', 'manager', 'user'] },
-  { prefix: '/employee/roles', roles: ['super_admin'] },
-  { prefix: '/employee/permissions', roles: ['super_admin'] },
-  { prefix: '/employee/staffdepartments', roles: ['super_admin', 'admin'] },
-  { prefix: '/employee/staff', roles: ['super_admin', 'admin'] },
-  { prefix: '/employee/user-counter-session', roles: ['super_admin', 'admin', 'manager'] },
-  { prefix: '/employee', roles: ['super_admin', 'admin'] },
-  { prefix: '/settings/stores', roles: ['super_admin'] },
-  { prefix: '/settings/warehouses', roles: ['super_admin'] },
-  { prefix: '/settings/regions', roles: ['super_admin'] },
-  { prefix: '/settings/payment/chain-payment-settings', roles: ['super_admin'] },
-  { prefix: '/settings/billing/chain-attributes', roles: ['super_admin'] },
-  { prefix: '/settings/business-info', roles: ['super_admin'] },
-  { prefix: '/settings/app-settings', roles: ['super_admin'] },
-  { prefix: '/settings', roles: ['super_admin', 'admin'] },
-  { prefix: '/catalog', roles: ['super_admin', 'admin'] },
-  { prefix: '/inventory', roles: ['super_admin', 'admin', 'manager'] },
-  { prefix: '/purchase', roles: ['super_admin', 'admin', 'manager'] },
-  { prefix: '/sales-order', roles: ['super_admin', 'admin', 'manager'] },
-  { prefix: '/customer', roles: ['super_admin', 'admin', 'manager'] },
-  { prefix: '/reports', roles: ['super_admin', 'admin', 'manager'] },
-  { prefix: '/home', roles: ['admin', 'manager'] },
-  { prefix: '/', roles: ['admin', 'manager'] },
+const ROUTE_PERMISSION_RULES = [
+  { prefix: '/login', permissions: [] },
+  { prefix: '/home/master-dashboard', permissions: ['ACCESS_DASHBOARD'] },
+  { prefix: '/home', permissions: ['ACCESS_DASHBOARD'] },
+  { prefix: '/sales/pos', permissions: ['CREATE_POS_BILL'] },
+  { prefix: '/sales/returns', permissions: ['MANAGE_ORDERS', 'VIEW_ORDERS'] },
+  { prefix: '/sales-order', permissions: ['MANAGE_ORDERS', 'VIEW_ORDERS'] },
+  { prefix: '/sales', permissions: ['CREATE_POS_BILL', 'MANAGE_ORDERS', 'VIEW_ORDERS'] },
+  { prefix: '/catalog', permissions: ['MANAGE_CATALOG', 'VIEW_CATALOG'] },
+  { prefix: '/inventory', permissions: ['MANAGE_INVENTORY', 'VIEW_INVENTORY'] },
+  { prefix: '/purchase', permissions: ['MANAGE_PURCHASE_ORDERS', 'MANAGE_VENDORS'] },
+  { prefix: '/employee/roles', permissions: ['MANAGE_ROLES'] },
+  { prefix: '/employee/permissions', permissions: ['MANAGE_ROLES'] },
+  { prefix: '/employee/staffdepartments', permissions: ['MANAGE_USERS', 'VIEW_USERS'] },
+  { prefix: '/employee/staff', permissions: ['MANAGE_USERS', 'VIEW_USERS'] },
+  { prefix: '/employee/user-counter-session', permissions: ['OPEN_CLOSE_SESSION'] },
+  { prefix: '/employee', permissions: ['MANAGE_ROLES', 'MANAGE_USERS', 'VIEW_USERS'] },
+  { prefix: '/settings/stores', permissions: ['MANAGE_STORES', 'VIEW_STORES'] },
+  { prefix: '/settings/warehouses', permissions: ['MANAGE_STORES', 'VIEW_STORES'] },
+  { prefix: '/settings/regions', permissions: ['MANAGE_STORES', 'VIEW_STORES'] },
+  { prefix: '/settings/payment/chain-payment-settings', permissions: ['MANAGE_PAYMENTS'] },
+  { prefix: '/settings/billing/chain-attributes', permissions: ['MANAGE_BILLING'] },
+  { prefix: '/settings/business-info', permissions: ['MANAGE_BILLING'] },
+  { prefix: '/settings/app-settings', permissions: ['MANAGE_BILLING'] },
+  { prefix: '/settings/store-payment-modes', permissions: ['MANAGE_PAYMENTS'] },
+  { prefix: '/settings', permissions: ['MANAGE_STORES', 'VIEW_STORES', 'MANAGE_PAYMENTS', 'MANAGE_TAXES'] },
+  { prefix: '/customer', permissions: ['MANAGE_CUSTOMERS', 'VIEW_CUSTOMERS'] },
+  { prefix: '/reports', permissions: ['VIEW_FINANCIAL_REPORTS', 'VIEW_STORE_REPORTS'] },
 ];
 
 function normalizeRole(role) {
   return role || 'guest';
 }
 
-function roleAllowed(role, roles = []) {
-  return roles.includes(normalizeRole(role));
+function getPermissionList(user) {
+  if (!user) return [];
+  if (Array.isArray(user.permissions)) return user.permissions.filter(Boolean);
+  return [];
+}
+
+function isSuperAdmin(user) {
+  return getPermissionList(user).includes(SUPER_ADMIN_PERMISSION);
+}
+
+function hasAnyPermission(user, permissions = []) {
+  if (isSuperAdmin(user)) return true;
+  const userPermissions = getPermissionList(user);
+  if (permissions.length === 0) return false;
+  return permissions.some((permission) => userPermissions.includes(permission));
 }
 
 function pathMatches(pathname, href) {
@@ -81,33 +126,56 @@ function pathMatches(pathname, href) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function getDefaultRouteForUser(user) {
-  return ROLE_HOME_PATHS[normalizeRole(user?.role)] || '/login';
+function getMatchingRouteRule(pathname) {
+  const sortedRules = [...ROUTE_PERMISSION_RULES].sort((a, b) => b.prefix.length - a.prefix.length);
+  return sortedRules.find((entry) => pathMatches(pathname, entry.prefix));
+}
+
+function getItemPermissions(item, sectionLabel) {
+  return ITEM_PERMISSION_RULES[item?.href] || SECTION_PERMISSION_RULES[sectionLabel] || [];
+}
+
+export function getDefaultRouteForUser(/* user */) {
+  return '/home';
 }
 
 export function canAccessPath(user, pathname) {
-  const role = normalizeRole(user?.role);
-  const sortedRules = [...ROUTE_RULES].sort((a, b) => b.prefix.length - a.prefix.length);
-  const rule = sortedRules.find((entry) => pathMatches(pathname, entry.prefix));
-  return rule ? roleAllowed(role, rule.roles) : role !== 'guest';
+  if (isSuperAdmin(user)) return true;
+
+  const rule = getMatchingRouteRule(pathname);
+  if (!rule) return false;
+  if (rule.permissions.length === 0) return true;
+
+  return hasAnyPermission(user, rule.permissions);
 }
 
 export function filterMenuItemsForUser(menuItems, user) {
-  const role = normalizeRole(user?.role);
-
+  if (isSuperAdmin(user)) return menuItems;
   return menuItems
-    .filter((item) => roleAllowed(role, MENU_ROLES[item.label] || []))
     .map((item) => {
-      if (!item.subSidebar?.groups) return item;
+      if (!item.subSidebar?.groups) {
+        return hasAnyPermission(user, getItemPermissions(item, item.label)) ? item : null;
+      }
+
+      // For sensitive sections like Settings and Employee, require a
+      // section-level permission before exposing the section at all.
+      if (['Settings', 'Employee'].includes(item.label)) {
+        const sectionPerms = SECTION_PERMISSION_RULES[item.label] || [];
+        if (!hasAnyPermission(user, sectionPerms)) {
+          return null;
+        }
+      }
 
       const groups = item.subSidebar.groups
         .map((group) => ({
           ...group,
           items: group.items.filter((subItem) =>
-            roleAllowed(role, SUB_ITEM_ROLES[subItem.href] || MENU_ROLES[item.label] || [])
+            hasAnyPermission(user, getItemPermissions(subItem, item.label))
           ),
         }))
         .filter((group) => group.items.length > 0);
+
+      if (groups.length === 0) return null;
 
       return {
         ...item,
@@ -117,14 +185,14 @@ export function filterMenuItemsForUser(menuItems, user) {
         },
       };
     })
-    .filter((item) => !item.subSidebar?.groups || item.subSidebar.groups.length > 0);
+    .filter(Boolean);
 }
 
 export function getFirstAccessibleHref(menuItems, user) {
   const filtered = filterMenuItemsForUser(menuItems, user);
   const first = filtered[0];
   const firstSubItem = first?.subSidebar?.groups?.[0]?.items?.[0];
-  return firstSubItem?.href || first?.href || getDefaultRouteForUser(user);
+  return firstSubItem?.href || first?.href || null;
 }
 
 export function getPageTitleForMenu(menuItems, pathname) {

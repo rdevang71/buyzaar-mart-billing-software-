@@ -36,7 +36,7 @@ function mapSession(row) {
 
 function isStoreAllowed(user, storeId) {
   if (!storeId) return false;
-  if (user?.role === 'super_admin') return true;
+  if (user?.permissions?.includes && user.permissions.includes('*')) return true;
   return (user?.assigned_stores || []).map(Number).includes(Number(storeId));
 }
 
@@ -348,7 +348,7 @@ export async function GET(req) {
       [auth.user.id]
     );
 
-    const isGlobalStoreAccess = auth.user.role === 'super_admin';
+    const isGlobalStoreAccess = Array.isArray(auth.user.permissions) && auth.user.permissions.includes('*');
     const assignedStores = (auth.user.assigned_stores || []).map(Number).filter(Number.isFinite);
     const storesRes = isGlobalStoreAccess
       ? await query('SELECT id, name FROM stores ORDER BY name ASC')

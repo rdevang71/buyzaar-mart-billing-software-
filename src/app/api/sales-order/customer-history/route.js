@@ -31,7 +31,7 @@ export async function GET(request) {
       if (storeCheck.error) return storeCheck.error;
       params.push(requestedStoreId);
       where.push(`sb.store_id = $${params.length}`);
-    } else if (auth.user.role !== 'super_admin') {
+    } else if (!(Array.isArray(auth.user.permissions) && auth.user.permissions.includes('*'))) {
       const assignedStores = (auth.user.assigned_stores || []).map(Number).filter(Number.isFinite);
       if (assignedStores.length === 0) {
         return successResponse({

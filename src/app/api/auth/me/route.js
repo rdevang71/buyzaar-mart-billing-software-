@@ -45,10 +45,30 @@ export async function GET() {
       return successResponse({ user: null }, 'Not authenticated');
     }
 
-    const roleResult = await query(
-      `SELECT permissions FROM roles WHERE role_name = $1 LIMIT 1`,
-      [dbUser.role || 'user']
-    );
+    // Do not fetch role-based permissions here — permissions must come
+    // from the employee record or from the token payload. Roles are
+    // informational only.
+
+    let employeeRoleName = null;
+    let employeePermissions = null;
+    try {
+      const employeeResult = await query(
+        `SELECT role_name, permissions
+         FROM employees
+         WHERE user_id = $1
+            OR LOWER(email_address) = LOWER($2)
+            OR LOWER(username) = LOWER($3)
+         ORDER BY updated_at DESC, id DESC
+         LIMIT 1`,
+        [dbUser.id, dbUser.email || '', dbUser.name || '']
+      );
+      if (employeeResult.rows.length > 0) {
+        employeeRoleName = employeeResult.rows[0]?.role_name || null;
+        employeePermissions = Array.isArray(employeeResult.rows[0]?.permissions)
+          ? employeeResult.rows[0].permissions
+          : [];
+      }
+    } catch {}
 
     const storesResult = await query(
       `SELECT us.store_id, s.name AS store_name
@@ -65,9 +85,10 @@ export async function GET() {
       email: dbUser.email,
       name: dbUser.name || dbUser.email,
       role: dbUser.role || 'user',
-      permissions: Array.isArray(roleResult.rows[0]?.permissions)
-        ? roleResult.rows[0].permissions
-        : payload.permissions || [],
+      role_name: employeeRoleName || dbUser.role || 'user',
+      permissions: employeePermissions !== null
+        ? employeePermissions
+        : (Array.isArray(payload.permissions) ? payload.permissions : []),
       assigned_stores: storesResult.rows.map((row) => Number(row.store_id)),
       assigned_store_names: storesResult.rows
         .map((row) => row.store_name)

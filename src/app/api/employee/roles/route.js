@@ -109,8 +109,8 @@ export async function PUT(request) {
       return NextResponse.json({ error: 'Permission is required' }, { status: 400 });
     }
 
-    if (roleName === 'super_admin' && auth.user.role !== 'super_admin') {
-      return NextResponse.json({ error: 'Only Super Admin can edit Super Admin role' }, { status: 403 });
+    if (roleName === 'super_admin' && !(Array.isArray(auth.user.permissions) && auth.user.permissions.includes('*'))) {
+      return NextResponse.json({ error: 'Only Super Admin (wildcard permission) can edit Super Admin role' }, { status: 403 });
     }
 
     const res = await query(

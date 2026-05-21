@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, createContext, useContext } from 'react';
+import { fetchAuthEndpoint } from '@/lib/auth-endpoints';
 
 /**
  * UserContext - Global user state
@@ -32,10 +33,7 @@ export function UserProvider({ children }) {
   const fetchUser = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/auth/me', {
-        cache: 'no-store',
-        credentials: 'include',
-      });
+      const res = await fetchAuthEndpoint('/api/auth/me');
 
       const json = await parseJsonResponse(res, 'Failed to fetch user');
 
@@ -62,10 +60,7 @@ export function UserProvider({ children }) {
 
   const logout = useCallback(async () => {
     try {
-      await fetch('/api/auth/logout', {
-        method: 'POST',
-        credentials: 'include',
-      });
+      await fetchAuthEndpoint('/api/auth/logout', { method: 'POST' });
       setUser(null);
       window.location.href = '/login';
     } catch (err) {
@@ -115,8 +110,8 @@ export function useCanAccess(permission) {
   
   if (!user) return false;
   
-  // Super admin has all permissions
-  if (user.role === 'super_admin' || user.permissions?.includes('*')) return true;
+  // Super admin wildcard permission grants all access
+  if (user.permissions?.includes('*')) return true;
   
   // Check if user has the permission
   return user.permissions?.includes(permission) || false;
@@ -147,9 +142,9 @@ export function useCanAccessStore(storeId) {
   
   if (!user) return false;
   
-  // Only super admin can access all stores. Admin/manager must be assigned.
-  if (user.role === 'super_admin') return true;
-  
+  // Global wildcard permission grants access to all stores
+  if (user.permissions?.includes('*')) return true;
+
   // Check if store is in assigned stores
   return user.assigned_stores?.includes(Number(storeId)) || false;
 }
