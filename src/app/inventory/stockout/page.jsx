@@ -17,6 +17,19 @@ async function fetchStockOutList() {
   return res.json();
 }
 
+async function fetchInventoryProducts(storeId, searchTerm) {
+  if (!storeId) return [];
+  const params = new URLSearchParams({
+    store_id: String(storeId),
+    search: searchTerm,
+    pageSize: '50',
+  });
+  const res = await fetch(`/api/inventory/products?${params.toString()}`);
+  if (!res.ok) throw new Error('Failed to fetch inventory products');
+  const json = await res.json();
+  return json.data?.records || json.records || [];
+}
+
 async function postStockOut(payload) {
   const res = await fetch('/api/inventory/stockout', {
     method: 'POST',
@@ -77,7 +90,7 @@ export default function StockOutPage() {
   const [stores, setStores] = useState([]);
   const [loadingStores, setLoadingStores] = useState(false);
   const [activeTab, setActiveTab] = useState('stock_out');
-  const [destination, setDestination] = useState('all');
+  const [destination, setDestination] = useState('');
   const [purchaseOrderId, setPurchaseOrderId] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [applyTaxes, setApplyTaxes] = useState(true);
@@ -102,14 +115,18 @@ export default function StockOutPage() {
     if (!showModal) return;
     setLoadingStores(true);
     fetchStores()
-      .then((data) => setStores(Array.isArray(data) ? data : []))
+      .then((data) => {
+        const nextStores = Array.isArray(data) ? data : [];
+        setStores(nextStores);
+        setDestination((current) => current || String(nextStores[0]?.id || ''));
+      })
       .catch(() => setStores([]))
       .finally(() => setLoadingStores(false));
   }, [showModal]);
 
   const handleOpen = () => {
     setActiveTab('stock_out');
-    setDestination('all');
+    setDestination('');
     setPurchaseOrderId('');
     setInvoiceNumber('');
     setApplyTaxes(true);
@@ -140,7 +157,7 @@ export default function StockOutPage() {
           const payload = {
             method,
             destination: method === 'stock_out'
-              ? String(getBulkField(row, ['destination_id', 'destination'], 'all'))
+              ? String(getBulkField(row, ['destination_id', 'destination'], stores[0]?.id || ''))
               : 'all',
             applyTaxes: toBoolean(getBulkField(row, ['apply_taxes']), true),
             addProductsPrefill: toBoolean(getBulkField(row, ['add_products_prefill']), true),
@@ -266,7 +283,7 @@ export default function StockOutPage() {
                       value={destination}
                       onChange={(e) => setDestination(e.target.value)}
                     >
-                      <option value="all">All</option>
+                      <option value="">Select Destination</option>
                       {loadingStores ? (
                         <option disabled>Loading...</option>
                       ) : (
@@ -415,23 +432,19 @@ function StockOutLineItemsWindow({ id, onClose, onConfirmed }) {
   }, [id]);
 
   useEffect(() => {
-    if (!searchTerm.trim()) {
-      setProducts([]);
-      return;
-    }
-
     const timer = setTimeout(() => {
-      fetch(`/api/catalog/products?search=${encodeURIComponent(searchTerm)}&pageSize=20`)
-        .then((res) => res.json())
-        .then((res) => {
-          const records = res?.data?.records ?? res?.records ?? [];
-          setProducts(records);
-        })
+      const storeId = draft?.destination || draft?.destination_id || draft?.destinationId;
+      if (!storeId) {
+        setProducts([]);
+        return;
+      }
+      fetchInventoryProducts(storeId, searchTerm)
+        .then((records) => setProducts((records || []).filter((product) => Number(product.availableStock ?? product.available_stock ?? 0) > 0)))
         .catch(() => setProducts([]));
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [searchTerm]);
+  }, [searchTerm, draft?.destination, draft?.destination_id, draft?.destinationId]);
 
   const filteredCart = cartFilter.trim()
     ? cart.filter((item) => (item.name || '').toLowerCase().includes(cartFilter.toLowerCase()))
@@ -453,12 +466,15 @@ function StockOutLineItemsWindow({ id, onClose, onConfirmed }) {
 
   const addToCart = (product) => {
     const productId = product.id ?? product.product_id;
+    const availableStock = Number(product.availableStock ?? product.available_stock ?? 0);
+    if (availableStock <= 0) return;
     setCart((current) => {
       const existing = current.find((item) => String(item.product_id) === String(productId));
       if (existing) {
+        const nextQty = Math.min(Number(existing.qty) + 1, availableStock);
         return current.map((item) =>
           String(item.product_id) === String(productId)
-            ? { ...item, qty: Number(item.qty) + 1 }
+            ? { ...item, qty: nextQty }
             : item
         );
       }
@@ -473,6 +489,7 @@ function StockOutLineItemsWindow({ id, onClose, onConfirmed }) {
           sku: product.sku,
           cost_price: cost,
           tax_value: draft?.applyTaxes ? (cost * taxRate) / 100 : 0,
+          available_stock: availableStock,
           qty: 1,
         },
       ];
@@ -485,10 +502,22 @@ function StockOutLineItemsWindow({ id, onClose, onConfirmed }) {
     setCart((current) =>
       current.map((item) =>
         String(item.product_id) === String(productId)
-          ? { ...item, qty: Math.max(1, Number(qty) || 1) }
+          ? { ...item, qty: Math.min(Math.max(1, Number(qty) || 1), Number(item.available_stock || 1)) }
           : item
       )
     );
+  };
+
+  const validateCart = () => {
+    for (const item of cart) {
+      const qty = Number(item.qty || 0);
+      const available = Number(item.available_stock || 0);
+      if (qty > available) {
+        alert(`${item.name} only has ${available} available in this store.`);
+        return false;
+      }
+    }
+    return true;
   };
 
   const removeItem = (productId) => {
@@ -497,6 +526,7 @@ function StockOutLineItemsWindow({ id, onClose, onConfirmed }) {
 
   const confirm = async () => {
     if (cart.length === 0) return alert('Add at least one product');
+    if (!validateCart()) return;
 
     setConfirming(true);
     try {
@@ -634,18 +664,20 @@ function StockOutLineItemsWindow({ id, onClose, onConfirmed }) {
               </div>
 
               <div className="flex-1 overflow-auto p-4">
-                {searchTerm.trim() && products.length > 0 && (
+                {products.length > 0 && (
                   <div className="mb-4 divide-y divide-gray-100 rounded-lg border border-gray-100">
                     {products.map((product) => (
                       <button
                         key={product.id}
                         type="button"
                         onClick={() => addToCart(product)}
+                        disabled={Number(product.availableStock || product.available_stock || 0) <= 0}
                         className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-blue-50/60"
                       >
                         <div>
                           <div className="text-[13px] font-medium text-gray-900">{product.name}</div>
                           <div className="text-[12px] text-gray-500">SKU: {product.sku || '-'}</div>
+                          <div className="text-[12px] text-gray-500">Available in store: {Number(product.availableStock || product.available_stock || 0)}</div>
                         </div>
                         <span className="text-[12px] font-medium text-blue-600">Add</span>
                       </button>
@@ -653,7 +685,7 @@ function StockOutLineItemsWindow({ id, onClose, onConfirmed }) {
                   </div>
                 )}
 
-                {searchTerm.trim() && products.length === 0 && !loading && (
+                {products.length === 0 && !loading && (
                   <p className="py-8 text-center text-[13px] text-gray-500">No products found</p>
                 )}
 

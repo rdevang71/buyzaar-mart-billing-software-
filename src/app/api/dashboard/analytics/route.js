@@ -118,7 +118,7 @@ export async function GET(req) {
         COALESCE(COUNT(DISTINCT ps.product_id), 0) as total_products,
         COALESCE(SUM(stock.available_stock), 0) as total_stock_units,
         COALESCE(SUM(stock.available_stock * COALESCE(p.cost_price, 0)), 0) as inventory_value_cost,
-        COALESCE(SUM(stock.available_stock * COALESCE(NULLIF(ps.mrp, 0), p.mrp, 0)), 0) as inventory_value_retail
+        COALESCE(SUM(stock.available_stock * COALESCE(NULLIF(ps.selling_price, 0), p.selling_price, 0)), 0) as inventory_value_retail
       FROM product_saleability ps
       INNER JOIN products p ON p.id = ps.product_id
       LEFT JOIN stores s ON s.id = ps.store_id
@@ -238,6 +238,63 @@ export async function GET(req) {
       LIMIT 50
     `).catch(() => ({ rows: [] }));
 
+    // 8. Stockout forecast across all active products
+    const stockForecastRes = await query(`
+      SELECT 
+        p.id,
+        p.name,
+        p.sku,
+        COALESCE(stock.available_stock, 0) as current_stock,
+        COALESCE(NULLIF(ps.low_stock_value, 0), 10) as reorder_level,
+        COALESCE(SUM(sbi.qty), 0) as last_30days_sales,
+        CASE
+          WHEN COALESCE(SUM(sbi.qty), 0) > 0
+            THEN ROUND(COALESCE(stock.available_stock, 0)::numeric / NULLIF((SUM(sbi.qty)::numeric / 30), 0), 1)
+          ELSE NULL
+        END as days_of_cover
+      FROM products p
+      INNER JOIN product_saleability ps ON ps.product_id = p.id AND ps.is_active = TRUE
+      LEFT JOIN LATERAL (
+        SELECT
+          COALESCE(in_qty.qty, 0) - COALESCE(sale_qty.qty, 0) - COALESCE(out_qty.qty, 0) AS available_stock
+        FROM (
+          SELECT SUM(sii.qty) AS qty
+          FROM stock_in_items sii
+          INNER JOIN stock_in si ON si.id = sii.stock_in_id
+          WHERE si.status = 'confirmed'
+            AND si.destination_id = ps.store_id
+            AND sii.product_id = ps.product_id
+        ) in_qty,
+        (
+          SELECT SUM(sbi2.qty) AS qty
+          FROM sales_bill_items sbi2
+          INNER JOIN sales_bills sb2 ON sb2.id = sbi2.sales_bill_id
+          WHERE sb2.status IN ('paid', 'completed')
+            AND sb2.store_id = ps.store_id
+            AND sbi2.product_id = ps.product_id
+        ) sale_qty,
+        (
+          SELECT SUM(soi.qty) AS qty
+          FROM stock_out_items soi
+          INNER JOIN stock_out so ON so.id = soi.stock_out_id
+          WHERE so.status = 'confirmed'
+            AND so.destination_id = ps.store_id
+            AND COALESCE(so.reference_type, '') <> 'sales_bill'
+            AND soi.product_id = ps.product_id
+        ) out_qty
+      ) stock ON TRUE
+      LEFT JOIN sales_bill_items sbi ON p.id = sbi.product_id
+      LEFT JOIN sales_bills sb ON sbi.sales_bill_id = sb.id
+        AND DATE(sb.created_at) >= DATE(CURRENT_DATE - INTERVAL '30 days')
+        AND sb.status != 'cancelled'
+        AND sb.store_id = ps.store_id
+      WHERE ps.is_active = TRUE
+        ${hasStoreFilter ? `AND ps.store_id = ${selectedStoreId}` : ''}
+      GROUP BY p.id, p.name, p.sku, ps.low_stock_value, stock.available_stock
+      ORDER BY days_of_cover ASC NULLS LAST, current_stock ASC, last_30days_sales DESC
+      LIMIT 8
+    `).catch(() => ({ rows: [] }));
+
     // 8. Top Customers
     const topCustomersRes = await query(`
       SELECT 
@@ -315,6 +372,7 @@ export async function GET(req) {
       inventory: inventoryRes.rows[0] || {},
       moving_items: movingItemsRes.rows || [],
       stock_alerts: stockAlertsRes.rows || [],
+      stock_forecast: stockForecastRes.rows || [],
       top_customers: topCustomersRes.rows || [],
       staff_productivity: staffProductivityRes.rows || [],
       payment_modes: paymentModesRes.rows || [],
