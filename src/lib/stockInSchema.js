@@ -1,9 +1,12 @@
 import { query } from '@/lib/db';
 
-let ensured = false;
+// Bump this version when schema migrations change so hot-reload re-runs them
+const SCHEMA_VERSION = 2;
+let ensuredVersion = 0;
 
 export async function ensureStockInSchema() {
-  if (ensured) return;
+  if (ensuredVersion === SCHEMA_VERSION) return;
+
   await query(`
     CREATE TABLE IF NOT EXISTS stores (
       id SERIAL PRIMARY KEY,
@@ -45,5 +48,33 @@ export async function ensureStockInSchema() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
   `);
-  ensured = true;
+
+  // Migration v2: add FK constraint linking stock_in_items → products catalog
+  // Wrapped in DO block so it is idempotent — skipped if constraint already exists.
+  // Any orphaned rows (product_id not in products) are logged and cleaned up first
+  // so the constraint can always be applied cleanly.
+  await query(`
+    DO $$
+    BEGIN
+      -- Remove any orphaned items whose product_id no longer exists in the catalog
+      DELETE FROM stock_in_items
+      WHERE product_id NOT IN (SELECT id FROM products);
+
+      -- Add FK only if it doesn't already exist
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'fk_stock_in_items_product'
+          AND conrelid = 'stock_in_items'::regclass
+      ) THEN
+        ALTER TABLE stock_in_items
+          ADD CONSTRAINT fk_stock_in_items_product
+          FOREIGN KEY (product_id)
+          REFERENCES products(id)
+          ON DELETE RESTRICT;
+      END IF;
+    END
+    $$;
+  `);
+
+  ensuredVersion = SCHEMA_VERSION;
 }

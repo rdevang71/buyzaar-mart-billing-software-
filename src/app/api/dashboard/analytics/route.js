@@ -29,7 +29,7 @@ export async function GET(req) {
     const hasStoreFilter = Number.isFinite(selectedStoreId) && selectedStoreId > 0;
     const date_from = searchParams.get('date_from') || new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0];
     const date_to = searchParams.get('date_to') || new Date().toISOString().split('T')[0];
-    const period = searchParams.get('period') || 'daily'; // daily, monthly, yearly
+
 
     // Base query filter
     const storeFilter = hasStoreFilter ? `AND sb.store_id = ${selectedStoreId}` : '';
@@ -91,7 +91,6 @@ export async function GET(req) {
     `).catch(() => ({ rows: [] }));
 
     // 4. Daily/Monthly Sales Trend
-    const dateFormat = period === 'monthly' ? 'YYYY-MM' : 'YYYY-MM-DD';
     const trendsRes = await query(`
       SELECT 
         DATE(sb.created_at)::text as date,
@@ -113,46 +112,58 @@ export async function GET(req) {
     `).catch(() => ({ rows: [] }));
 
     // 5. Inventory Valuation
+    // Uses same stock formula as catalog: global sin − sout(excl sales_bill) − sold
+    // Products are deduplicated via DISTINCT so multi-store saleability rows don't inflate the sum.
+    // When a store filter is applied all three subqueries are restricted to that store.
     const inventoryRes = await query(`
       SELECT
-        COALESCE(COUNT(DISTINCT ps.product_id), 0) as total_products,
-        COALESCE(SUM(stock.available_stock), 0) as total_stock_units,
-        COALESCE(SUM(stock.available_stock * COALESCE(p.cost_price, 0)), 0) as inventory_value_cost,
-        COALESCE(SUM(stock.available_stock * COALESCE(NULLIF(ps.selling_price, 0), p.selling_price, 0)), 0) as inventory_value_retail
-      FROM product_saleability ps
-      INNER JOIN products p ON p.id = ps.product_id
-      LEFT JOIN stores s ON s.id = ps.store_id
-      LEFT JOIN LATERAL (
-        SELECT
-          COALESCE(in_qty.qty, 0) - COALESCE(sale_qty.qty, 0) - COALESCE(out_qty.qty, 0) AS available_stock
-        FROM (
-          SELECT SUM(sii.qty) AS qty
-          FROM stock_in_items sii
-          INNER JOIN stock_in si ON si.id = sii.stock_in_id
-          WHERE si.status = 'confirmed'
-            AND si.destination_id = ps.store_id
-            AND sii.product_id = ps.product_id
-        ) in_qty,
-        (
-          SELECT SUM(sbi.qty) AS qty
-          FROM sales_bill_items sbi
-          INNER JOIN sales_bills sb ON sb.id = sbi.sales_bill_id
-          WHERE sb.status IN ('paid', 'completed')
-            AND sb.store_id = ps.store_id
-            AND sbi.product_id = ps.product_id
-        ) sale_qty,
-        (
-          SELECT SUM(soi.qty) AS qty
-          FROM stock_out_items soi
-          INNER JOIN stock_out so ON so.id = soi.stock_out_id
-          WHERE so.status = 'confirmed'
-            AND so.destination_id = ps.store_id
-            AND COALESCE(so.reference_type, '') <> 'sales_bill'
-            AND soi.product_id = ps.product_id
-        ) out_qty
-      ) stock ON TRUE
-      WHERE ps.is_active = TRUE
-        ${hasStoreFilter ? `AND ps.store_id = ${selectedStoreId}` : ''}
+        COUNT(DISTINCT p.id)::int AS total_products,
+        COALESCE(SUM(GREATEST(0,
+          COALESCE(sin_agg.qty, 0)
+          - COALESCE(sout_agg.qty, 0)
+          - COALESCE(sold_agg.qty, 0)
+        )), 0) AS total_stock_units,
+        COALESCE(SUM(GREATEST(0,
+          COALESCE(sin_agg.qty, 0)
+          - COALESCE(sout_agg.qty, 0)
+          - COALESCE(sold_agg.qty, 0)
+        ) * COALESCE(p.cost_price, 0)), 0) AS inventory_value_cost,
+        COALESCE(SUM(GREATEST(0,
+          COALESCE(sin_agg.qty, 0)
+          - COALESCE(sout_agg.qty, 0)
+          - COALESCE(sold_agg.qty, 0)
+        ) * COALESCE(NULLIF(p.selling_price, 0), 0)), 0) AS inventory_value_retail
+      FROM (
+        SELECT DISTINCT product_id
+        FROM product_saleability
+        WHERE is_active = TRUE
+        ${hasStoreFilter ? `AND store_id = ${selectedStoreId}` : ''}
+      ) active_ps
+      INNER JOIN products p ON p.id = active_ps.product_id
+      LEFT JOIN (
+        SELECT sii.product_id, SUM(sii.qty) AS qty
+        FROM stock_in_items sii
+        JOIN stock_in si ON si.id = sii.stock_in_id AND si.status = 'confirmed'
+        ${hasStoreFilter ? `AND si.destination_id = ${selectedStoreId}` : ''}
+        GROUP BY sii.product_id
+      ) sin_agg ON sin_agg.product_id = p.id
+      LEFT JOIN (
+        SELECT soi.product_id, SUM(soi.qty) AS qty
+        FROM stock_out_items soi
+        JOIN stock_out so ON so.id = soi.stock_out_id
+          AND so.status = 'confirmed'
+          AND COALESCE(so.reference_type, '') <> 'sales_bill'
+          ${hasStoreFilter ? `AND so.destination_id = ${selectedStoreId}` : ''}
+        GROUP BY soi.product_id
+      ) sout_agg ON sout_agg.product_id = p.id
+      LEFT JOIN (
+        SELECT sbi.product_id, SUM(sbi.qty) AS qty
+        FROM sales_bill_items sbi
+        JOIN sales_bills sb ON sb.id = sbi.sales_bill_id
+          AND sb.status IN ('paid', 'completed')
+          ${hasStoreFilter ? `AND sb.store_id = ${selectedStoreId}` : ''}
+        GROUP BY sbi.product_id
+      ) sold_agg ON sold_agg.product_id = p.id
     `).catch(() => ({ rows: [{ total_products: 0, total_stock_units: 0, inventory_value_cost: 0, inventory_value_retail: 0 }] }));
 
     // 6. Fast-moving vs Slow-moving Items

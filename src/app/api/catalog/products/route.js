@@ -1,10 +1,18 @@
 import { query, getClient } from '@/lib/db';
-import { successResponse, errorResponse, notFoundError, validationError } from '@/lib/api-response';
+import { successResponse, errorResponse, validationError } from '@/lib/api-response';
 import { ensureStockInSchema } from '@/lib/stockInSchema';
+import { ensureStockOutSchema } from '@/lib/stockOutSchema';
+import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
 
 // ─── GET /api/catalog/products ───────────────────────────────
 export async function GET(request) {
   try {
+    await Promise.allSettled([
+      ensureStockInSchema(),
+      ensureStockOutSchema(),
+      ensureSalesBillingSchema(),
+    ]);
+
     const { searchParams } = new URL(request.url);
     const search      = searchParams.get('search')   || '';
     const department_id = searchParams.get('department_id') || '';
@@ -66,15 +74,40 @@ export async function GET(request) {
         d.name  AS department_name,
         ih.name AS income_head_name,
         t.name  AS tax_name,
-        t.rate  AS tax_rate
+        t.rate  AS tax_rate,
+        GREATEST(0,
+          COALESCE(sin_agg.qty, 0)
+          - COALESCE(sout_agg.qty, 0)
+          - COALESCE(sold_agg.qty, 0)
+        ) AS actual_stock
        FROM products p
-       LEFT JOIN categories    c  ON p.category_id     = c.id
-       LEFT JOIN sub_categories sc ON p.sub_category_id = sc.id
-       LEFT JOIN brands         b  ON p.brand_id        = b.id
-       LEFT JOIN manufacturers  m  ON p.manufacturer_id = m.id
-       LEFT JOIN departments    d  ON p.department_id   = d.id
-       LEFT JOIN income_heads   ih ON p.income_head_id  = ih.id
-       LEFT JOIN taxes          t  ON p.tax_id          = t.id
+       LEFT JOIN categories     c   ON p.category_id     = c.id
+       LEFT JOIN sub_categories sc  ON p.sub_category_id = sc.id
+       LEFT JOIN brands         b   ON p.brand_id        = b.id
+       LEFT JOIN manufacturers  m   ON p.manufacturer_id = m.id
+       LEFT JOIN departments    d   ON p.department_id   = d.id
+       LEFT JOIN income_heads   ih  ON p.income_head_id  = ih.id
+       LEFT JOIN taxes          t   ON p.tax_id          = t.id
+       LEFT JOIN (
+         SELECT sii.product_id, SUM(sii.qty) AS qty
+         FROM stock_in_items sii
+         JOIN stock_in si ON si.id = sii.stock_in_id AND si.status = 'confirmed'
+         GROUP BY sii.product_id
+       ) sin_agg  ON sin_agg.product_id  = p.id
+       LEFT JOIN (
+         SELECT soi.product_id, SUM(soi.qty) AS qty
+         FROM stock_out_items soi
+         JOIN stock_out so ON so.id = soi.stock_out_id
+           AND so.status = 'confirmed'
+           AND COALESCE(so.reference_type, '') <> 'sales_bill'
+         GROUP BY soi.product_id
+       ) sout_agg ON sout_agg.product_id = p.id
+       LEFT JOIN (
+         SELECT sbi.product_id, SUM(sbi.qty) AS qty
+         FROM sales_bill_items sbi
+         JOIN sales_bills sb ON sb.id = sbi.sales_bill_id AND sb.status IN ('paid', 'completed')
+         GROUP BY sbi.product_id
+       ) sold_agg ON sold_agg.product_id = p.id
        ${where}
        ORDER BY p.id DESC
        LIMIT $${i} OFFSET $${i + 1}`,
@@ -98,7 +131,7 @@ export async function POST(request) {
   try {
     await ensureStockInSchema();
     const body = await request.json();
-    const { name, sku, mrp, selling_price } = body;
+    const { name } = body;
 
     if (!name?.trim()) {
       return validationError({ name: 'Product name is required' });

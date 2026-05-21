@@ -113,7 +113,7 @@ export default function ProductsPage() {
         category: record.category_name || '—',
         brand: record.brand_name || '—',
         price: `₹${record.selling_price ?? record.mrp ?? 0}`,
-        stock: record.available_stock ?? '—',
+        stock: record.actual_stock ?? '—',
       })}
     />
   );
