@@ -14,6 +14,9 @@ export default function MasterDashboardPage() {
   const [dateTo, setDateTo] = useState(new Date().toISOString().split('T')[0]);
   const [storeId, setStoreId] = useState('all');
   const [stores, setStores] = useState([]);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [staffQuery, setStaffQuery] = useState('');
+  const liveRefreshMs = 15000;
 
   useEffect(() => {
     fetchStores();
@@ -21,6 +24,14 @@ export default function MasterDashboardPage() {
 
   useEffect(() => {
     fetchDashboardData();
+  }, [dateFrom, dateTo, storeId]);
+
+  useEffect(() => {
+    const refreshTimer = setInterval(() => {
+      fetchDashboardData({ silent: true });
+    }, liveRefreshMs);
+
+    return () => clearInterval(refreshTimer);
   }, [dateFrom, dateTo, storeId]);
 
   async function fetchStores() {
@@ -35,15 +46,19 @@ export default function MasterDashboardPage() {
     }
   }
 
-  async function fetchDashboardData() {
-    setLoading(true);
+  async function fetchDashboardData({ silent = false } = {}) {
+    if (!silent) {
+      setLoading(true);
+    }
     try {
       const params = new URLSearchParams();
       params.set('date_from', dateFrom);
       params.set('date_to', dateTo);
       if (storeId !== 'all') params.set('store_id', storeId);
 
-      const res = await fetch(`/api/dashboard/analytics?${params}`);
+      const res = await fetch(`/api/dashboard/analytics?${params}`, {
+        cache: 'no-store',
+      });
 
       if (!res.ok) {
         console.error(`API error: ${res.status}`);
@@ -54,11 +69,14 @@ export default function MasterDashboardPage() {
       const json = await res.json();
       if (json.success && json.data) {
         setData(json.data);
+        setLastUpdated(new Date());
       }
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   }
 
@@ -96,11 +114,36 @@ export default function MasterDashboardPage() {
   }
 
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+  const staffWindowSource = Array.isArray(data.staff_productivity) ? data.staff_productivity : [];
+  const staffQueryNormalized = staffQuery.trim().toLowerCase();
+  const staffWindow = staffQueryNormalized
+    ? staffWindowSource.filter((person) => {
+        const name = String(person.name || '').toLowerCase();
+        const id = String(person.id || '').toLowerCase();
+        return name.includes(staffQueryNormalized) || id.includes(staffQueryNormalized);
+      })
+    : staffWindowSource;
 
   return (
     <MainLayout>
       <div className="p-6 bg-gray-50 min-h-screen">
-        <h1 className="text-5xl font-black text-gray-900 mb-8 tracking-tight">Master Dashboard</h1>
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between mb-8">
+          <div>
+            <h1 className="text-5xl font-black text-gray-900 tracking-tight">Master Dashboard</h1>
+            <p className="mt-3 text-sm font-semibold text-gray-600">
+              Live staff productivity and store performance, refreshed from the database every 15 seconds.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-emerald-700">
+              <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              Live
+            </div>
+            <p className="mt-2 text-sm font-semibold text-gray-700">
+              {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Waiting for fresh data'}
+            </p>
+          </div>
+        </div>
 
         {/* Filters */}
         <div className="bg-white rounded-lg shadow-md p-5 mb-8 flex gap-4 flex-wrap border border-gray-200">
@@ -244,7 +287,7 @@ export default function MasterDashboardPage() {
           ) : <p className="text-gray-600 font-medium">No store data</p>}
         </div>
 
-        {/* Top Customers */}
+        {/* Top Customers + Staff */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
           <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
             <h3 className="text-2xl font-black text-gray-900 mb-5">Top 10 Customers</h3>
@@ -271,24 +314,87 @@ export default function MasterDashboardPage() {
           </div>
 
           <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
-            <h3 className="text-2xl font-black text-gray-900 mb-5">Staff Productivity</h3>
-            <div className="overflow-x-auto">
+            <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between mb-5">
+              <div>
+                <h3 className="text-2xl font-black text-gray-900">Staff Productivity</h3>
+                <p className="text-sm font-semibold text-gray-500 mt-1">Track live sales throughput per staff member. The list stays inside this window even when the team grows very large.</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <MiniStat
+                  label="Active now"
+                  value={data.staff_productivity?.filter(staff => staff.is_active_now)?.length || 0}
+                />
+                <MiniStat
+                  label="Live refresh"
+                  value={`${Math.round(liveRefreshMs / 1000)}s`}
+                />
+              </div>
+            </div>
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
+              <div className="flex flex-wrap gap-3 text-sm font-semibold text-gray-600">
+                <span className="rounded-full bg-gray-100 px-3 py-1">Showing {staffWindow.length} of {data.staff_productivity?.length || 0}</span>
+                <span className="rounded-full bg-gray-100 px-3 py-1">Scrollable window</span>
+              </div>
+              <input
+                type="search"
+                value={staffQuery}
+                onChange={(e) => setStaffQuery(e.target.value)}
+                placeholder="Search staff by name or ID"
+                className="w-full md:w-80 border-2 border-gray-200 rounded-xl px-4 py-2.5 font-medium text-gray-900 focus:border-blue-500 focus:outline-none"
+              />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+              <MiniStat
+                label="Total staff tracked"
+                value={data.staff_productivity?.length || 0}
+              />
+              <MiniStat
+                label="Bills processed"
+                value={data.staff_productivity?.reduce((sum, staff) => sum + Number(staff.bills_created || 0), 0) || 0}
+              />
+              <MiniStat
+                label="Sales value"
+                value={`₹${parseFloat(data.staff_productivity?.reduce((sum, staff) => sum + Number(staff.sales_value || 0), 0) || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`}
+              />
+            </div>
+            <div className="max-h-[70vh] overflow-auto rounded-2xl border border-gray-200 bg-white">
               <table className="w-full">
-                <thead className="bg-gray-100 border-b-2 border-gray-300">
+                <thead className="sticky top-0 z-10 bg-slate-950 text-white">
                   <tr>
-                    <th className="px-4 py-3 text-left font-bold text-gray-900">Staff</th>
-                    <th className="px-4 py-3 text-right font-bold text-gray-900">Bills</th>
-                    <th className="px-4 py-3 text-right font-bold text-gray-900">Sales</th>
+                    <th className="px-4 py-4 text-left text-xs font-black uppercase tracking-[0.2em] text-white/80">Staff</th>
+                    <th className="px-4 py-4 text-right text-xs font-black uppercase tracking-[0.2em] text-white/80">Bills</th>
+                    <th className="px-4 py-4 text-right text-xs font-black uppercase tracking-[0.2em] text-white/80">Sales</th>
+                    <th className="px-4 py-4 text-right text-xs font-black uppercase tracking-[0.2em] text-white/80">Last Sale</th>
+                    <th className="px-4 py-4 text-right text-xs font-black uppercase tracking-[0.2em] text-white/80">Last 60m</th>
+                    <th className="px-4 py-4 text-left text-xs font-black uppercase tracking-[0.2em] text-white/80">Status</th>
                   </tr>
                 </thead>
-                <tbody className="text-gray-800">
-                  {data.staff_productivity?.slice(0, 10).map(staff => (
-                    <tr key={staff.id} className="border-b border-gray-200 hover:bg-gray-50">
-                      <td className="px-4 py-3 font-medium text-gray-900">{staff.name}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-gray-900">{staff.bills_created}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-gray-900">₹{parseFloat(staff.sales_value).toFixed(0)}</td>
+                <tbody className="text-slate-700">
+                  {staffWindow.map(staff => (
+                    <tr key={staff.id} className="border-b border-slate-100 hover:bg-sky-50/60 transition-colors">
+                      <td className="px-4 py-3 font-semibold text-slate-900">{staff.name}</td>
+                      <td className="px-4 py-3 text-right font-bold text-slate-900">{staff.bills_created}</td>
+                      <td className="px-4 py-3 text-right font-bold text-slate-900">₹{parseFloat(staff.sales_value).toFixed(0)}</td>
+                      <td className="px-4 py-3 text-right font-medium text-slate-600">
+                        {staff.last_bill_at ? new Date(staff.last_bill_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-right font-bold text-slate-900">
+                        {staff.bills_last_hour || 0}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-black uppercase tracking-wide ${staff.is_active_now ? 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200' : 'bg-slate-100 text-slate-500'}`}>
+                          {staff.is_active_now ? 'Active now' : 'Idle'}
+                        </span>
+                      </td>
                     </tr>
                   ))}
+                  {staffWindow.length === 0 && (
+                    <tr>
+                      <td className="px-4 py-10 text-center text-slate-500 font-semibold" colSpan={6}>
+                        No staff matched your search.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -367,19 +473,28 @@ export default function MasterDashboardPage() {
 
 function KPICard({ title, value, subtitle, color }) {
   return (
-    <div className={`${color} border-2 rounded-lg p-6 shadow-md`}>
-      <h3 className="text-gray-700 text-sm font-bold uppercase tracking-wide">{title}</h3>
-      <p className="text-3xl font-black text-gray-900 mt-3">{value}</p>
-      <p className="text-xs text-gray-600 font-semibold mt-2">{subtitle}</p>
+    <div className={`${color} rounded-3xl border p-6 shadow-[0_16px_40px_rgba(15,23,42,0.08)] transition-transform duration-200 hover:-translate-y-1`}>
+      <h3 className="text-xs font-black uppercase tracking-[0.3em] text-slate-500">{title}</h3>
+      <p className="mt-3 text-3xl font-black tracking-tight text-slate-950">{value}</p>
+      <p className="mt-2 text-sm font-semibold text-slate-600">{subtitle}</p>
     </div>
   );
 }
 
 function StatRow({ label, value }) {
   return (
-    <div className="flex justify-between items-center py-2 border-b border-gray-100">
-      <span className="text-gray-700 font-semibold">{label}</span>
-      <span className="font-black text-lg text-gray-900">{value}</span>
+    <div className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50/70 px-4 py-3">
+      <span className="text-sm font-semibold text-slate-600">{label}</span>
+      <span className="text-lg font-black text-slate-950">{value}</span>
+    </div>
+  );
+}
+
+function MiniStat({ label, value }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 shadow-sm">
+      <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">{label}</p>
+      <p className="mt-1 text-lg font-black text-slate-950">{value}</p>
     </div>
   );
 }
