@@ -3,6 +3,7 @@ import { query } from '@/lib/db';
 import { ensureCustomersSchema } from '@/lib/customersSchema';
 import { ensureInvoiceSalesOrdersSchema } from '@/lib/invoiceSalesOrdersSchema';
 import { ensureStockInSchema } from '@/lib/stockInSchema';
+import { requireAuth, requirePermission } from '@/lib/api-protection';
 
 function parsePositiveInteger(value, fallback) {
   const number = Number(value);
@@ -45,6 +46,12 @@ export async function GET(request) {
       ensureInvoiceSalesOrdersSchema(),
       ensureStockInSchema(),
     ]);
+
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+
+    const permissionCheck = requirePermission(auth.user, 'VIEW_CUSTOMERS', 'MANAGE_CUSTOMERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const { searchParams } = new URL(request.url);
     const page = parsePositiveInteger(searchParams.get('page'), 1);

@@ -43,7 +43,7 @@ export async function POST(request) {
 
     const body = await request.json();
     const name = String(body.name || '').trim();
-    const mobileNumber = String(body.mobileNumber || '').trim();
+    const mobileNumber = String(body.mobileNumber || '').replace(/\D/g, '');
     const email = String(body.email || body.warehouseEmail || '').trim().toLowerCase();
 
     if (!name) {
@@ -53,9 +53,15 @@ export async function POST(request) {
     if (!mobileNumber) {
       return validationError([{ field: 'mobileNumber', message: 'Mobile number is required' }]);
     }
+    if (!/^\d{10}$/.test(mobileNumber)) {
+      return validationError([{ field: 'mobileNumber', message: 'Mobile number must be exactly 10 digits' }]);
+    }
 
     if (!email) {
       return validationError([{ field: 'email', message: 'Warehouse email is required' }]);
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return validationError([{ field: 'email', message: 'Enter a valid warehouse email' }]);
     }
 
     const users = parseList(body.users ?? body.userIds);
@@ -108,7 +114,7 @@ export async function PUT(request) {
     const body = await request.json();
     const id = parsePositiveIntegerId(body.id);
     const name = String(body.name || '').trim();
-    const mobileNumber = String(body.mobileNumber || '').trim();
+    const mobileNumber = String(body.mobileNumber || '').replace(/\D/g, '');
     const email = String(body.email || body.warehouseEmail || '').trim().toLowerCase();
 
     if (!id) {
@@ -122,9 +128,15 @@ export async function PUT(request) {
     if (!mobileNumber) {
       return validationError([{ field: 'mobileNumber', message: 'Mobile number is required' }]);
     }
+    if (!/^\d{10}$/.test(mobileNumber)) {
+      return validationError([{ field: 'mobileNumber', message: 'Mobile number must be exactly 10 digits' }]);
+    }
 
     if (!email) {
       return validationError([{ field: 'email', message: 'Warehouse email is required' }]);
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return validationError([{ field: 'email', message: 'Enter a valid warehouse email' }]);
     }
 
     const users = parseList(body.users ?? body.userIds);

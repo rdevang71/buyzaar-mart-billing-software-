@@ -263,6 +263,7 @@ export default function OrdersListOfOrdersPage() {
       description="List of all invoices generated for selected stores and timeframe"
       filters={filters}
       columns={columns}
+      reportKey="orders/list-of-orders"
       actionButtons={[{ label: "Convert B2B to B2C" }]}
     />
   );

@@ -1,6 +1,4 @@
-'use client';
-
-import SalesOrderListPage from '@/components/SalesOrderListPage';
+import SalesOrderSectionPage from '@/components/SalesOrderSectionPage';
 
 const columns = [
   { key: 'id',           label: 'ID' },
@@ -15,7 +13,8 @@ const columns = [
 
 export default function InvoiceSalesOrderPage() {
   return (
-    <SalesOrderListPage
+    <SalesOrderSectionPage
+      view="invoice-sales-order"
       breadcrumbs={[
         { label: 'Sales Order', href: '/sales-order' },
         { label: 'Invoice Sales Order' },
@@ -23,7 +22,7 @@ export default function InvoiceSalesOrderPage() {
       title="Invoice Sales Order"
       description="List of invoice sales orders"
       columns={columns}
-      rows={[]}
+      bulkOperations={['Export']}
     />
   );
 }

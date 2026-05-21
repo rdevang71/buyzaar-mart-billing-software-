@@ -123,7 +123,7 @@ export async function GET(request) {
     return NextResponse.json(res.rows.map(normalizeSessionRow));
   } catch (err) {
     console.error('[employee user counter session GET]', err.message);
-    return NextResponse.json([]);
+    return NextResponse.json({ error: err.message || 'Failed to fetch user counter sessions' }, { status: 500 });
   }
 }
 

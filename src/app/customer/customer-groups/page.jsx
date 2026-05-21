@@ -6,6 +6,7 @@ import * as XLSX from 'xlsx';
 import MainLayout from '@/components/MainLayout';
 
 const initialForm = {
+  id: null,
   groupName: '',
   groupCode: '',
   description: '',
@@ -76,13 +77,19 @@ export default function CustomerGroupsPage() {
   const [form, setForm] = useState(initialForm);
   const [selectedFileName, setSelectedFileName] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const isEditing = Boolean(form.id);
 
   const fetchGroups = async () => {
     setLoading(true);
     setError('');
 
     try {
-      const res = await fetch('/api/customer-groups');
+      const params = new URLSearchParams();
+      if (search.trim()) params.set('search', search.trim());
+      const res = await fetch(`/api/customer-groups${params.toString() ? `?${params}` : ''}`, {
+        cache: 'no-store',
+        credentials: 'include',
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to fetch customer groups');
       setGroups(Array.isArray(data) ? data : []);
@@ -96,19 +103,12 @@ export default function CustomerGroupsPage() {
   };
 
   useEffect(() => {
-    fetchGroups();
-  }, []);
+    const timer = setTimeout(fetchGroups, 250);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
 
-  const filteredGroups = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) return groups;
-
-    return groups.filter((group) =>
-      [group.group_name, group.group_code, group.description, group.status].some((value) =>
-        String(value ?? '').toLowerCase().includes(query)
-      )
-    );
-  }, [groups, search]);
+  const filteredGroups = groups;
 
   const downloadTemplate = () => {
     const workbook = XLSX.utils.book_new();
@@ -147,7 +147,7 @@ export default function CustomerGroupsPage() {
     setSaving(true);
     try {
       const res = await fetch('/api/customer-groups', {
-        method: 'POST',
+        method: isEditing ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       });
@@ -165,6 +165,42 @@ export default function CustomerGroupsPage() {
       alert(err.message || 'Failed to save customer group');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const openCreate = () => {
+    setForm(initialForm);
+    setSelectedFileName('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    setShowModal(true);
+  };
+
+  const openEdit = (group) => {
+    setForm({
+      id: group.id,
+      groupName: group.group_name || '',
+      groupCode: group.group_code || '',
+      description: group.description || '',
+      isDefault: Boolean(group.is_default),
+      templateFileName: group.template_filename || '',
+    });
+    setSelectedFileName(group.template_filename || '');
+    setShowModal(true);
+  };
+
+  const updateGroupAction = async (group, action, status = '') => {
+    try {
+      const res = await fetch('/api/customer-groups', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: group.id, action, status }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update customer group');
+      await fetchGroups();
+    } catch (err) {
+      console.error(err);
+      alert(err.message || 'Failed to update customer group');
     }
   };
 
@@ -186,15 +222,10 @@ export default function CustomerGroupsPage() {
           </button>
           <button
             type="button"
-            onClick={() => {
-              setForm(initialForm);
-              setSelectedFileName('');
-              if (fileInputRef.current) fileInputRef.current.value = '';
-              setShowModal(true);
-            }}
+            onClick={openCreate}
             className="px-4 py-2 rounded-lg bg-blue-600 text-white text-[12.5px] font-semibold hover:bg-blue-700 disabled:opacity-70"
           >
-            Create Customer Groups
+            Create Customer Group
           </button>
         </div>
       </div>
@@ -223,16 +254,17 @@ export default function CustomerGroupsPage() {
                   <th className="px-4 py-3 text-left text-[12px] font-semibold text-gray-600">Default</th>
                   <th className="px-4 py-3 text-left text-[12px] font-semibold text-gray-600">Total Customers</th>
                   <th className="px-4 py-3 text-left text-[12px] font-semibold text-gray-600">Status</th>
+                  <th className="px-4 py-3 text-left text-[12px] font-semibold text-gray-600">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-6 text-[13px] text-gray-500">Loading...</td>
+                    <td colSpan={8} className="px-4 py-6 text-[13px] text-gray-500">Loading...</td>
                   </tr>
                 ) : filteredGroups.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-6 text-[13px] text-gray-500">
+                    <td colSpan={8} className="px-4 py-6 text-[13px] text-gray-500">
                       {error || 'No customer groups found'}
                     </td>
                   </tr>
@@ -246,6 +278,33 @@ export default function CustomerGroupsPage() {
                       <td className="px-4 py-3 text-[13px] text-gray-700">{group.is_default ? 'Yes' : 'No'}</td>
                       <td className="px-4 py-3 text-[13px] text-gray-700">{group.total_customers ?? 0}</td>
                       <td className="px-4 py-3 text-[13px] text-gray-700">{group.status || 'Active'}</td>
+                      <td className="px-4 py-3 text-[13px] text-gray-700">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => openEdit(group)}
+                            className="px-2 py-1 rounded-md border border-gray-200 hover:bg-gray-50 text-[12px]"
+                          >
+                            Edit
+                          </button>
+                          {!group.is_default && (
+                            <button
+                              type="button"
+                              onClick={() => updateGroupAction(group, 'set_default')}
+                              className="px-2 py-1 rounded-md border border-blue-200 text-blue-700 hover:bg-blue-50 text-[12px]"
+                            >
+                              Set Default
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => updateGroupAction(group, 'toggle_status', group.status === 'Active' ? 'Inactive' : 'Active')}
+                            className="px-2 py-1 rounded-md border border-gray-200 hover:bg-gray-50 text-[12px]"
+                          >
+                            {group.status === 'Active' ? 'Deactivate' : 'Activate'}
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))
                 )}
@@ -261,8 +320,8 @@ export default function CustomerGroupsPage() {
           <div className="relative w-full max-w-[1200px] bg-white rounded-xl border border-gray-300 shadow-xl overflow-hidden my-4">
             <div className="flex items-center justify-between gap-4 px-6 py-4 border-b border-gray-200 flex-wrap">
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">Create Customer Groups</h3>
-                <p className="text-[12px] text-gray-400 mt-1">Description Need Help?</p>
+                <h3 className="text-lg font-semibold text-gray-900">{isEditing ? 'Edit Customer Group' : 'Create Customer Group'}</h3>
+                <p className="text-[12px] text-gray-400 mt-1">Groups classify customers for default assignment, credit rules, offers, and reporting.</p>
               </div>
               <div className="flex items-center gap-2">
                 <button

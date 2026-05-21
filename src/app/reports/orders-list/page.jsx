@@ -82,6 +82,7 @@ export default function OrdersListPage() {
       description="List of all orders for today"
       filters={filters}
       columns={columns}
+      reportKey="orders/list-of-orders"
       actionButtons={[]}
     />
   );

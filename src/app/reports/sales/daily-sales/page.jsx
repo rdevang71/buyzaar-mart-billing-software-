@@ -64,6 +64,7 @@ export default function SalesDailySalesPage() {
       description="Daily sales summary (DSR)"
       filters={filters}
       columns={columns}
+      reportKey="sales/daily-sales"
       actionButtons={[]}
     />
   );

@@ -161,6 +161,9 @@ export default function PermissionsPage() {
                     Description
                   </th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-700 whitespace-nowrap">
+                    Users
+                  </th>
+                  <th className="px-4 py-3 text-left font-semibold text-gray-700 whitespace-nowrap">
                     &nbsp;
                   </th>
                   <th className="px-4 py-3 w-12" />
@@ -169,13 +172,13 @@ export default function PermissionsPage() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={8} className="text-center text-gray-400 py-16 text-[13px]">
+                    <td colSpan={9} className="text-center text-gray-400 py-16 text-[13px]">
                       Loading permissions...
                     </td>
                   </tr>
                 ) : paginated.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center text-gray-400 py-16 text-[13px]">
+                    <td colSpan={9} className="text-center text-gray-400 py-16 text-[13px]">
                       No matching record found
                     </td>
                   </tr>
@@ -197,6 +200,7 @@ export default function PermissionsPage() {
                       </td>
                       <td className="px-4 py-3 text-gray-800 whitespace-nowrap">{row.displayName}</td>
                       <td className="px-4 py-3 text-gray-600 leading-snug">{row.description}</td>
+                      <td className="px-4 py-3 text-gray-800 whitespace-nowrap">{row.userCount || 0}</td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <button
                           type="button"

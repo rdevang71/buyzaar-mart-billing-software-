@@ -29,6 +29,7 @@ export default function SalesOrderListPage({
   rows           = [],
   onFetch,
   onBulkOperation,
+  onDownload,
   totalLabel     = 'Results',
   emptyMessage   = 'No matching record found',
   bulkOperations = ['Create Invoice', 'Write Off', 'Export'],
@@ -37,7 +38,10 @@ export default function SalesOrderListPage({
   loading        = false,
 }) {
   /* ── date helper ── */
-  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const todayIso = useMemo(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  }, []);
   const normalizedStoreOptions = useMemo(() => {
     return Array.isArray(storeOptions) && storeOptions.length > 0
       ? storeOptions
@@ -106,6 +110,10 @@ export default function SalesOrderListPage({
     });
 
     setBulkOpen(false);
+  };
+
+  const handleDownload = () => {
+    onDownload?.(filtered);
   };
 
   const handleAllCheck = () => {
@@ -277,7 +285,10 @@ export default function SalesOrderListPage({
 
             {/* Download icon — pushed to far right */}
             <div className="ml-auto">
-              <button className="p-[7px] border border-gray-300 rounded-md bg-white hover:bg-gray-50 transition shadow-sm text-gray-500">
+              <button
+                onClick={handleDownload}
+                className="p-[7px] border border-gray-300 rounded-md bg-white hover:bg-gray-50 transition shadow-sm text-gray-500"
+              >
                 <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none">
                   <path
                     d="M10 3v10m0 0l-3.5-3.5M10 13l3.5-3.5M4 17h12"

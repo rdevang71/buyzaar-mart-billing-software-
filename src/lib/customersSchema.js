@@ -11,6 +11,7 @@ export async function ensureCustomersSchema() {
       first_name VARCHAR(120) NOT NULL,
       last_name VARCHAR(120),
       customer_type VARCHAR(50) NOT NULL DEFAULT 'INDIVIDUAL',
+      customer_group_id BIGINT,
       customer_code VARCHAR(80) UNIQUE,
       email_address VARCHAR(255),
       birthday DATE,
@@ -45,6 +46,8 @@ export async function ensureCustomersSchema() {
     CREATE INDEX IF NOT EXISTS idx_customers_mobile_number ON customers(mobile_number);
     CREATE INDEX IF NOT EXISTS idx_customers_email_address ON customers(email_address);
     CREATE INDEX IF NOT EXISTS idx_customers_customer_type ON customers(customer_type);
+    ALTER TABLE customers ADD COLUMN IF NOT EXISTS customer_group_id BIGINT;
+    CREATE INDEX IF NOT EXISTS idx_customers_customer_group_id ON customers(customer_group_id);
   `);
 
   ensured = true;

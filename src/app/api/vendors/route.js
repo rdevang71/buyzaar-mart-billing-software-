@@ -68,12 +68,26 @@ export async function POST(req) {
     if (!name || !String(name).trim()) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 });
     }
+    const normalizedMobile = String(mobile_number || '').replace(/\D/g, '');
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    if (!normalizedMobile) {
+      return NextResponse.json({ error: 'Mobile number is required' }, { status: 400 });
+    }
+    if (!/^\d{10}$/.test(normalizedMobile)) {
+      return NextResponse.json({ error: 'Mobile number must be exactly 10 digits' }, { status: 400 });
+    }
+    if (!normalizedEmail) {
+      return NextResponse.json({ error: 'Email address is required' }, { status: 400 });
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      return NextResponse.json({ error: 'Enter a valid email address' }, { status: 400 });
+    }
 
     const res = await query(
       `INSERT INTO vendors (name, company, short_code, business, address_1, address_2, city, state, pincode, country, email, mobile_number, gst_number, pan_number, margin)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
        RETURNING id, name, company, short_code, business, address_1, address_2, city, state, pincode, country, email, mobile_number, gst_number, pan_number, margin, created_at`,
-      [name, company, short_code, business, address_1, address_2, city, state, pincode, country, email, mobile_number, gst_number, pan_number, margin]
+      [name, company, short_code, business, address_1, address_2, city, state, pincode, country, normalizedEmail, normalizedMobile, gst_number, pan_number, margin]
     );
 
     return NextResponse.json(res.rows[0], { status: 201 });

@@ -64,6 +64,7 @@ export default function NetSalesPage() {
       description="Net sales today after tax and discount"
       filters={filters}
       columns={columns}
+      reportKey="net-sales"
       actionButtons={[]}
     />
   );

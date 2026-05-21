@@ -53,12 +53,25 @@ export default function CreateStorePage() {
   const [error, setError] = useState('');
   const [savedStore, setSavedStore] = useState(null);
 
-  const onChange = (e) => setForm((p) => ({ ...p, [e.target.name]: e.target.value }));
+  const onChange = (e) => {
+    const value = e.target.name === 'managerMobile'
+      ? e.target.value.replace(/\D/g, '').slice(0, 10)
+      : e.target.value;
+    setForm((p) => ({ ...p, [e.target.name]: value }));
+  };
   const onCheck = (e) => setForm((p) => ({ ...p, [e.target.name]: e.target.checked }));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    if (!/^\d{10}$/.test(form.managerMobile)) {
+      setError('Mobile number must be exactly 10 digits');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.managerEmail.trim())) {
+      setError('Enter a valid e-mail address');
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch('/api/stores', {
@@ -258,7 +271,7 @@ export default function CreateStorePage() {
 
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="Mobile Number *">
-                <input name="managerMobile" value={form.managerMobile} onChange={onChange} required className="input" placeholder="995 8160 899" />
+                <input name="managerMobile" type="tel" inputMode="numeric" pattern="[0-9]{10}" maxLength={10} value={form.managerMobile} onChange={onChange} required className="input" placeholder="9958160899" />
               </Field>
               <Field label="E-mail Address *">
                 <input name="managerEmail" type="email" value={form.managerEmail} onChange={onChange} required className="input" placeholder="contact@queuebuster.co" />

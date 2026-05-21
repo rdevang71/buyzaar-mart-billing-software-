@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import MainLayout from '@/components/MainLayout';
 
@@ -217,11 +217,54 @@ function ReportCard({ item, iconKey }) {
 
 export default function ReportsHomePage() {
   const [search, setSearch] = useState('');
+  const [dashboard, setDashboard] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadDashboard() {
+      try {
+        const res = await fetch('/api/reports/dashboard', { cache: 'no-store', credentials: 'include' });
+        const json = await res.json().catch(() => ({}));
+        if (!cancelled && res.ok && json?.success) setDashboard(json.data);
+      } catch (err) {
+        console.error('[ReportsHomePage] Failed to load dashboard', err);
+      }
+    }
+
+    loadDashboard();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const allItems = SECTIONS.flatMap((s) => s.items.map((i) => ({ ...i, iconKey: s.iconKey })));
   const filtered = search.trim()
     ? allItems.filter((i) => i.label.toLowerCase().includes(search.toLowerCase()))
     : null;
+  const livePinned = PINNED.map((card) => {
+    if (card.href === '/reports/orders/list-of-orders') {
+      return { ...card, value: dashboard?.pinned?.orders?.label || card.value };
+    }
+    if (card.href === '/reports/sales/daily-sales') {
+      return { ...card, value: dashboard?.pinned?.dailySales?.label || card.value };
+    }
+    if (card.href === '/reports/net-sales') {
+      return { ...card, value: dashboard?.pinned?.netSales?.label || card.value };
+    }
+    if (card.href === '/reports/inventory/stock-level') {
+      return {
+        ...card,
+        value: dashboard?.pinned?.stockLevel?.label || card.value,
+        badge: dashboard?.pinned?.stockLevel ? `${dashboard.pinned.stockLevel.low} low` : card.badge,
+      };
+    }
+    return card;
+  });
+
+  const openPinnedExcel = () => {
+    window.location.href = '/api/reports/sales/daily-sales?export=xlsx';
+  };
 
   return (
     <MainLayout>
@@ -239,7 +282,10 @@ export default function ReportsHomePage() {
             <i className="ti ti-calendar-down text-[14px]" />
             Schedule reports
           </button>
-          <button className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 rounded-lg bg-white text-xs text-gray-700 hover:bg-gray-50 transition">
+          <button
+            onClick={openPinnedExcel}
+            className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 rounded-lg bg-white text-xs text-gray-700 hover:bg-gray-50 transition"
+          >
             <i className="ti ti-external-link text-[14px]" />
             Open in Excel
           </button>
@@ -289,7 +335,7 @@ export default function ReportsHomePage() {
               <span className="text-xs text-gray-400">{PINNED.length}</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-              {PINNED.map((card) => (
+              {livePinned.map((card) => (
                 <Link
                   key={card.href}
                   href={card.href}

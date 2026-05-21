@@ -64,6 +64,7 @@ export default function InventoryStockLevelPage() {
       description="Current stock levels"
       filters={filters}
       columns={columns}
+      reportKey="inventory/stock-level"
       actionButtons={[]}
     />
   );

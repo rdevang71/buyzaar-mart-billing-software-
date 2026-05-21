@@ -102,6 +102,14 @@ export async function POST(request) {
     if (!name) {
       return validationError([{ field: 'name', message: 'Store name is required' }]);
     }
+    const managerMobile = String(body.managerMobile || '').replace(/\D/g, '');
+    const managerEmail = String(body.managerEmail || '').trim().toLowerCase();
+    if (managerMobile && !/^\d{10}$/.test(managerMobile)) {
+      return validationError([{ field: 'managerMobile', message: 'Mobile number must be exactly 10 digits' }]);
+    }
+    if (managerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(managerEmail)) {
+      return validationError([{ field: 'managerEmail', message: 'Enter a valid e-mail address' }]);
+    }
 
     const meta = buildStoreMeta(body);
 
@@ -121,8 +129,8 @@ export async function POST(request) {
         body.pincode || null,
         body.country || 'India',
         body.managerName || null,
-        body.managerMobile || null,
-        body.managerEmail || null,
+        managerMobile || null,
+        managerEmail || null,
         body.openingTime || null,
         body.closingTime || null,
         JSON.stringify(meta),

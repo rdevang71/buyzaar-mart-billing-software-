@@ -18,6 +18,10 @@ const MENU_ROLES = {
   Reports: ['super_admin', 'admin', 'manager'],
 };
 
+const MENU_PERMISSIONS = {
+  Customer: ['VIEW_CUSTOMERS', 'MANAGE_CUSTOMERS'],
+};
+
 const SUB_ITEM_ROLES = {
   '/home/master-dashboard': ['super_admin'],
   '/': ['admin', 'manager'],
@@ -36,6 +40,10 @@ const SUB_ITEM_ROLES = {
   '/settings/business-info': ['super_admin'],
   '/settings/app-settings': ['super_admin'],
   '/settings/store-payment-modes': ['super_admin', 'admin'],
+};
+
+const SUB_ITEM_PERMISSIONS = {
+  '/customer': ['VIEW_CUSTOMERS', 'MANAGE_CUSTOMERS'],
 };
 
 const ROUTE_RULES = [
@@ -62,7 +70,7 @@ const ROUTE_RULES = [
   { prefix: '/inventory', roles: ['super_admin', 'admin', 'manager'] },
   { prefix: '/purchase', roles: ['super_admin', 'admin', 'manager'] },
   { prefix: '/sales-order', roles: ['super_admin', 'admin', 'manager'] },
-  { prefix: '/customer', roles: ['super_admin', 'admin', 'manager'] },
+  { prefix: '/customer', roles: ['super_admin', 'admin', 'manager'], permissions: ['VIEW_CUSTOMERS', 'MANAGE_CUSTOMERS'] },
   { prefix: '/reports', roles: ['super_admin', 'admin', 'manager'] },
   { prefix: '/home', roles: ['admin', 'manager'] },
   { prefix: '/', roles: ['admin', 'manager'] },
@@ -76,6 +84,19 @@ function roleAllowed(role, roles = []) {
   return roles.includes(normalizeRole(role));
 }
 
+function permissionAllowed(user, permissions = []) {
+  if (!permissions.length) return true;
+  if (!user) return false;
+  if (user.role === 'super_admin') return true;
+  const userPermissions = Array.isArray(user.permissions) ? user.permissions : [];
+  return userPermissions.includes('*') || permissions.some((permission) => userPermissions.includes(permission));
+}
+
+function accessEntryAllowed(user, roles = [], permissions = []) {
+  if (permissions.length) return permissionAllowed(user, permissions);
+  return roleAllowed(user?.role, roles);
+}
+
 function pathMatches(pathname, href) {
   if (href === '/') return pathname === '/';
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -86,26 +107,35 @@ export function getDefaultRouteForUser(user) {
 }
 
 export function canAccessPath(user, pathname) {
-  const role = normalizeRole(user?.role);
   const sortedRules = [...ROUTE_RULES].sort((a, b) => b.prefix.length - a.prefix.length);
   const rule = sortedRules.find((entry) => pathMatches(pathname, entry.prefix));
-  return rule ? roleAllowed(role, rule.roles) : role !== 'guest';
+  return rule ? accessEntryAllowed(user, rule.roles, rule.permissions || []) : normalizeRole(user?.role) !== 'guest';
 }
 
 export function filterMenuItemsForUser(menuItems, user) {
   const role = normalizeRole(user?.role);
 
   return menuItems
-    .filter((item) => roleAllowed(role, MENU_ROLES[item.label] || []))
+    .filter((item) => {
+      const permissions = MENU_PERMISSIONS[item.label] || [];
+      return permissions.length
+        ? permissionAllowed(user, permissions)
+        : roleAllowed(role, MENU_ROLES[item.label] || []);
+    })
     .map((item) => {
       if (!item.subSidebar?.groups) return item;
 
       const groups = item.subSidebar.groups
         .map((group) => ({
           ...group,
-          items: group.items.filter((subItem) =>
-            roleAllowed(role, SUB_ITEM_ROLES[subItem.href] || MENU_ROLES[item.label] || [])
-          ),
+          items: group.items.filter((subItem) => {
+            const permissions = SUB_ITEM_PERMISSIONS[subItem.href]
+              || (subItem.href.startsWith('/customer') ? ['VIEW_CUSTOMERS', 'MANAGE_CUSTOMERS'] : []);
+
+            return permissions.length
+              ? permissionAllowed(user, permissions)
+              : roleAllowed(role, SUB_ITEM_ROLES[subItem.href] || MENU_ROLES[item.label] || []);
+          }),
         }))
         .filter((group) => group.items.length > 0);
 

@@ -1,6 +1,7 @@
 import { query } from '@/lib/db';
 import { ensureUsersTable } from '@/lib/userAuth';
 import { ensureStockInSchema } from '@/lib/stockInSchema';
+import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
 
 const CREATE_INVOICE_SALES_ORDERS_SQL = `
   CREATE TABLE IF NOT EXISTS invoice_sales_orders (
@@ -12,6 +13,10 @@ const CREATE_INVOICE_SALES_ORDERS_SQL = `
     booking_date DATE,
     billing_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
     billing_username VARCHAR(255),
+    sales_bill_id BIGINT REFERENCES sales_bills(id) ON DELETE SET NULL,
+    customer_name VARCHAR(190),
+    customer_mobile VARCHAR(40),
+    payment_mode VARCHAR(40),
     created_by VARCHAR(255),
     submitted_date DATE,
     approver VARCHAR(255),
@@ -23,8 +28,8 @@ const CREATE_INVOICE_SALES_ORDERS_SQL = `
     tcs_rate NUMERIC(10, 2) NOT NULL DEFAULT 0,
     tcs_value NUMERIC(14, 2) NOT NULL DEFAULT 0,
     quotation_id VARCHAR(50),
-    invoice_id VARCHAR(50) NOT NULL UNIQUE,
-    invoice_date DATE NOT NULL DEFAULT NOW(),
+    invoice_id VARCHAR(50) UNIQUE,
+    invoice_date DATE,
     auto_invoice_id VARCHAR(50),
     auto_invoice_date DATE,
     write_off_amount NUMERIC(14, 2) NOT NULL DEFAULT 0,
@@ -42,6 +47,10 @@ const CREATE_INVOICE_SALES_ORDERS_SQL = `
   );
 
   ALTER TABLE invoice_sales_orders ADD COLUMN IF NOT EXISTS sales_order_type VARCHAR(50);
+  ALTER TABLE invoice_sales_orders ADD COLUMN IF NOT EXISTS sales_bill_id BIGINT REFERENCES sales_bills(id) ON DELETE SET NULL;
+  ALTER TABLE invoice_sales_orders ADD COLUMN IF NOT EXISTS customer_name VARCHAR(190);
+  ALTER TABLE invoice_sales_orders ADD COLUMN IF NOT EXISTS customer_mobile VARCHAR(40);
+  ALTER TABLE invoice_sales_orders ADD COLUMN IF NOT EXISTS payment_mode VARCHAR(40);
   ALTER TABLE invoice_sales_orders ADD COLUMN IF NOT EXISTS created_by VARCHAR(255);
   ALTER TABLE invoice_sales_orders ADD COLUMN IF NOT EXISTS submitted_date DATE;
   ALTER TABLE invoice_sales_orders ADD COLUMN IF NOT EXISTS approver VARCHAR(255);
@@ -59,12 +68,15 @@ const CREATE_INVOICE_SALES_ORDERS_SQL = `
   ALTER TABLE invoice_sales_orders ADD COLUMN IF NOT EXISTS written_off_date DATE;
   ALTER TABLE invoice_sales_orders ADD COLUMN IF NOT EXISTS converted_by VARCHAR(255);
   ALTER TABLE invoice_sales_orders ADD COLUMN IF NOT EXISTS converted_at TIMESTAMPTZ;
+  ALTER TABLE invoice_sales_orders ALTER COLUMN invoice_id DROP NOT NULL;
+  ALTER TABLE invoice_sales_orders ALTER COLUMN invoice_date DROP NOT NULL;
 
   CREATE INDEX IF NOT EXISTS idx_invoice_sales_orders_invoice_date ON invoice_sales_orders(invoice_date);
   CREATE INDEX IF NOT EXISTS idx_invoice_sales_orders_booking_date ON invoice_sales_orders(booking_date);
   CREATE INDEX IF NOT EXISTS idx_invoice_sales_orders_sales_order_id ON invoice_sales_orders(sales_order_id);
   CREATE INDEX IF NOT EXISTS idx_invoice_sales_orders_invoice_id ON invoice_sales_orders(invoice_id);
   CREATE INDEX IF NOT EXISTS idx_invoice_sales_orders_status ON invoice_sales_orders(status);
+  CREATE INDEX IF NOT EXISTS idx_invoice_sales_orders_sales_bill_id ON invoice_sales_orders(sales_bill_id);
 `;
 
 const globalForInvoiceSalesOrders = globalThis;
@@ -74,6 +86,7 @@ export async function ensureInvoiceSalesOrdersSchema() {
     globalForInvoiceSalesOrders._invoiceSalesOrdersSchemaReadyPromise = (async () => {
       await ensureUsersTable();
       await ensureStockInSchema();
+      await ensureSalesBillingSchema();
       await query(CREATE_INVOICE_SALES_ORDERS_SQL);
     })().catch((err) => {
       globalForInvoiceSalesOrders._invoiceSalesOrdersSchemaReadyPromise = null;
