@@ -600,12 +600,19 @@ export default function Page() {
                         pattern="[0-9]{10}"
                         maxLength={10}
                         value={form.mobileNumber}
-                        onChange={(event) => setForm({ ...form, mobileNumber: normalizeMobile(event.target.value) })}
+                        onChange={(event) => {
+                          const digits = event.target.value.replace(/\D/g, '').slice(0, 10);
+                          setForm({ ...form, mobileNumber: digits });
+                        }}
                         className="w-full px-3 py-2 text-[13px] text-gray-800 outline-none"
-                        placeholder="9654443799"
+                        placeholder="10 digits"
+                        maxLength="10"
                         required
                       />
                     </div>
+                    {form.mobileNumber && !validatePhoneNumber(form.mobileNumber).isValid && (
+                      <p className="text-[12px] text-red-600 mt-1 ml-0.5">{validatePhoneNumber(form.mobileNumber).error}</p>
+                    )}
                   </Field>
 
                   <Field label="Warehouse Email">

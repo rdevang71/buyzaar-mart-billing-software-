@@ -4,6 +4,7 @@ import { verifyToken } from '@/lib/auth-enhanced';
 import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
 import { extractAuthUser, requirePermission, requireStore } from '@/lib/api-protection';
 import { ensureCatalogExtrasSchema } from '@/lib/catalogExtrasSchema';
+import { validatePhoneNumber } from '@/lib/phoneValidator';
 
 function toNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -36,7 +37,7 @@ function mapSession(row) {
 
 function isStoreAllowed(user, storeId) {
   if (!storeId) return false;
-  if (user?.role === 'super_admin') return true;
+  if (user?.permissions?.includes && user.permissions.includes('*')) return true;
   return (user?.assigned_stores || []).map(Number).includes(Number(storeId));
 }
 
@@ -80,6 +81,11 @@ export async function POST(req) {
       orderDiscount = 0,
       roundOff = 0,
     } = body;
+
+    if (customerMobile) {
+      const phoneValidation = validatePhoneNumber(customerMobile);
+      if (!phoneValidation.isValid) return errorResponse(phoneValidation.error, 400);
+    }
 
     if (!storeId || !items.length || !paymentMode) {
       return errorResponse('Missing required fields', 400);
@@ -348,7 +354,7 @@ export async function GET(req) {
       [auth.user.id]
     );
 
-    const isGlobalStoreAccess = auth.user.role === 'super_admin';
+    const isGlobalStoreAccess = Array.isArray(auth.user.permissions) && auth.user.permissions.includes('*');
     const assignedStores = (auth.user.assigned_stores || []).map(Number).filter(Number.isFinite);
     const storesRes = isGlobalStoreAccess
       ? await query('SELECT id, name FROM stores ORDER BY name ASC')

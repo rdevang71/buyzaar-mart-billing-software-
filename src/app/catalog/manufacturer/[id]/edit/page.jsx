@@ -194,10 +194,17 @@ export default function EditManufacturerPage() {
             <input
               type="text"
               value={form.phone}
-              onChange={(event) => set('phone', event.target.value)}
-              placeholder="Enter Phone Number"
+              onChange={(event) => {
+                const digits = event.target.value.replace(/\D/g, '').slice(0, 10);
+                set('phone', digits);
+              }}
+              placeholder="Enter Phone Number (10 digits)"
+              maxLength="10"
               className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
+            {form.phone && !validatePhoneNumber(form.phone).isValid && (
+              <p className="text-xs text-red-600 mt-1">{validatePhoneNumber(form.phone).error}</p>
+            )}
           </div>
 
           <div className="lg:col-span-2">

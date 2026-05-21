@@ -1,6 +1,45 @@
 import { successResponse, errorResponse, notFoundError } from '@/lib/api-response';
-import { query } from '@/lib/db';
+import { getClient, query } from '@/lib/db';
 import { ensureStoresSchema } from '@/lib/storesSchema';
+
+const STORE_DELETE_DEPENDENCIES = [
+  { table: 'stock_in', column: 'destination_id', label: 'Stock In' },
+  { table: 'stock_out', column: 'destination_id', label: 'Stock Out' },
+  { table: 'stock_transfer', column: 'source_id', label: 'Stock Transfer (Source)' },
+  { table: 'stock_transfer', column: 'destination_id', label: 'Stock Transfer (Destination)' },
+  { table: 'stock_validation', column: 'destination_id', label: 'Stock Validation' },
+  { table: 'purchase_orders', column: 'destination_id', label: 'Purchase Orders' },
+];
+
+async function tableExists(client, tableName) {
+  const res = await client.query('SELECT to_regclass($1) AS regclass', [tableName]);
+  return !!res.rows?.[0]?.regclass;
+}
+
+async function deleteStoreDependencies(client, storeId) {
+  const deleted = [];
+
+  for (const dep of STORE_DELETE_DEPENDENCIES) {
+    const exists = await tableExists(client, dep.table);
+    if (!exists) {
+      continue;
+    }
+
+    const res = await client.query(
+      `DELETE FROM ${dep.table} WHERE ${dep.column} = $1 RETURNING id`,
+      [storeId]
+    );
+
+    deleted.push({
+      table: dep.table,
+      column: dep.column,
+      label: dep.label,
+      count: res.rowCount || 0,
+    });
+  }
+
+  return deleted.filter((item) => item.count > 0);
+}
 
 function buildStoreMeta(body = {}) {
   return {
@@ -125,7 +164,7 @@ export async function PUT(request, { params }) {
     );
 
     if (!update.rows.length) {
-      return notFound('Store not found');
+      return notFoundError('Store not found');
     }
 
     return successResponse({ store: update.rows[0] }, 'Store updated');
@@ -135,6 +174,7 @@ export async function PUT(request, { params }) {
 }
 
 export async function DELETE(request, { params }) {
+  let client;
   try {
     await ensureStoresSchema();
     const resolvedParams = await params;
@@ -144,13 +184,39 @@ export async function DELETE(request, { params }) {
       return errorResponse('Invalid store id', 400);
     }
 
-    const del = await query('DELETE FROM stores WHERE id = $1 RETURNING id', [storeId]);
+    client = await getClient();
+    await client.query('BEGIN');
+
+    const deletedDependencies = await deleteStoreDependencies(client, storeId);
+    const del = await client.query('DELETE FROM stores WHERE id = $1 RETURNING id', [storeId]);
     if (!del.rows.length) {
-      return notFound('Store not found');
+      await client.query('ROLLBACK');
+      return notFoundError('Store not found');
     }
 
-    return successResponse({ id: storeId }, 'Store deleted');
+    await client.query('COMMIT');
+
+    return successResponse(
+      { id: storeId, deletedDependencies },
+      'Store and related records deleted'
+    );
   } catch (err) {
+    if (client) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        // Ignore rollback failures; original error is more useful for response.
+      }
+    }
+
+    if (err?.code === '23503') {
+      return errorResponse(
+        'Store cannot be deleted because it is referenced by existing records.',
+        409
+      );
+    }
     return errorResponse(err.message || 'Unable to delete store');
+  } finally {
+    client?.release();
   }
 }

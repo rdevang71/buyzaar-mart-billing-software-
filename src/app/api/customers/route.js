@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { ensureCustomersSchema } from '@/lib/customersSchema';
+import { validatePhoneNumber } from '@/lib/phoneValidator';
 import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
 import { ensureCustomerGroupsSchema } from '@/lib/customerGroupsSchema';
 import { requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
@@ -263,6 +264,11 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Enter a valid email address' }, { status: 400 });
     }
 
+    const phoneValidation = validatePhoneNumber(mobileNumber);
+    if (!phoneValidation.isValid) {
+      return NextResponse.json({ error: phoneValidation.error }, { status: 400 });
+    }
+
     const payload = {
       first_name: firstName,
       last_name: normalizeText(body.last_name ?? body.lastName),
@@ -292,6 +298,13 @@ export async function POST(request) {
       enable_crm: Boolean(body.enable_crm ?? body.enableCrm),
       notes: normalizeText(body.notes),
     };
+
+    if (payload.contact_person_phone) {
+      const contactPhoneValidation = validatePhoneNumber(payload.contact_person_phone);
+      if (!contactPhoneValidation.isValid) {
+        return NextResponse.json({ error: `Contact person phone: ${contactPhoneValidation.error}` }, { status: 400 });
+      }
+    }
 
     const customerCode = payload.customer_code || `CUST-${Date.now()}`;
     let customerGroupId = Number(payload.customer_group_id || 0) || null;

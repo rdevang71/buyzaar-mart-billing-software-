@@ -1,8 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { validatePhoneNumber } from '@/lib/phoneValidator';
 import { useRouter } from 'next/navigation';
 import MainLayout from '@/components/MainLayout';
+import { fetchAuthEndpoint } from '@/lib/auth-endpoints';
 
 // ============================================================================
 // UTILITIES
@@ -193,7 +195,7 @@ export default function POSPage() {
 
   const loadAuth = useCallback(async () => {
     try {
-      const res = await fetch('/api/auth/me');
+      const res = await fetchAuthEndpoint('/api/auth/me');
       const json = await res.json();
       if (json.success && json.data?.user) {
         setUser(json.data.user);
@@ -242,7 +244,7 @@ export default function POSPage() {
 
     setCart(draft.cart || []);
     setCustomerName(draft.customerName || '');
-    setCustomerMobile(draft.customerMobile || '');
+    setCustomerMobile(draft.customerMobile ? String(draft.customerMobile).replace(/\D/g, '').slice(0, 10) : '');
     setOrderDiscount(String(draft.orderDiscount ?? '0'));
     setRoundOff(String(draft.roundOff ?? '0'));
     setPaymentMode(draft.paymentMode || 'cash');
@@ -402,7 +404,7 @@ export default function POSPage() {
 
   const selectCustomerFromHistory = (bill) => {
     setCustomerName(bill.customerName || customerName);
-    setCustomerMobile(bill.customerMobile || customerMobile);
+    setCustomerMobile(bill.customerMobile ? String(bill.customerMobile).replace(/\D/g, '').slice(0, 10) : (customerMobile || ''));
     if (bill.paymentMode) setPaymentMode(bill.paymentMode);
     setCustomerHistoryModal(false);
     showToast('Customer details filled from history');
@@ -621,6 +623,11 @@ export default function POSPage() {
 
     if (cart.length === 0) {
       showToast('Add products to cart', 'error');
+      return;
+    }
+
+    if (customerMobile && !validatePhoneNumber(customerMobile).isValid) {
+      showToast(validatePhoneNumber(customerMobile).error, 'error');
       return;
     }
 
@@ -947,13 +954,22 @@ export default function POSPage() {
                   placeholder="Customer name"
                   className={inputClassName}
                 />
-                <input
-                  type="tel"
-                  value={customerMobile}
-                  onChange={(e) => setCustomerMobile(e.target.value)}
-                  placeholder="Mobile number"
-                  className={inputClassName}
-                />
+                <div>
+                  <input
+                    type="tel"
+                    value={customerMobile}
+                    onChange={(e) => {
+                      const digits = String(e.target.value).replace(/\D/g, '').slice(0, 10);
+                      setCustomerMobile(digits);
+                    }}
+                    placeholder="Mobile number (10 digits)"
+                    maxLength="10"
+                    className={inputClassName}
+                  />
+                  {customerMobile && !validatePhoneNumber(customerMobile).isValid && (
+                    <p className="text-xs text-red-600 mt-1">{validatePhoneNumber(customerMobile).error}</p>
+                  )}
+                </div>
                 <button
                   onClick={loadCustomerHistory}
                   className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50"

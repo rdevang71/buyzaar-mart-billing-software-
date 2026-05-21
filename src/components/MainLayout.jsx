@@ -7,7 +7,7 @@ import Sidebar from './Sidebar';
 import SubSidebar from './SubSidebar';
 import { menuItems } from './sidebarConfig';
 import { useUser } from '@/hooks/useUser';
-import { canAccessPath, filterMenuItemsForUser, getDefaultRouteForUser } from '@/lib/accessControl';
+import { canAccessPath, filterMenuItemsForUser, getFirstAccessibleHref } from '@/lib/accessControl';
 
 export default function MainLayout({ children }) {
   const pathname = usePathname();
@@ -17,6 +17,7 @@ export default function MainLayout({ children }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const accessibleMenuItems = useMemo(() => filterMenuItemsForUser(menuItems, user), [user]);
   const accessAllowed = !loading && user && canAccessPath(user, pathname);
+  const hasAccessibleMenu = accessibleMenuItems.length > 0;
 
   useEffect(() => {
     if (loading) return;
@@ -26,7 +27,10 @@ export default function MainLayout({ children }) {
     }
 
     if (!canAccessPath(user, pathname)) {
-      router.replace(getDefaultRouteForUser(user));
+      const fallbackRoute = getFirstAccessibleHref(menuItems, user);
+      if (fallbackRoute && fallbackRoute !== pathname) {
+        router.replace(fallbackRoute);
+      }
     }
   }, [loading, pathname, router, user]);
 
@@ -55,7 +59,11 @@ export default function MainLayout({ children }) {
   }, [pathname]);
 
   const subOpen = activeMenu?.subSidebar != null;
-  const content = accessAllowed ? children : (
+  const content = accessAllowed ? children : !loading && user && !hasAccessibleMenu ? (
+    <div className="flex min-h-[50vh] items-center justify-center text-sm font-medium text-gray-500">
+      You do not have access to any sections.
+    </div>
+  ) : (
     <div className="flex min-h-[50vh] items-center justify-center text-sm font-medium text-gray-500">
       Loading your workspace...
     </div>
@@ -65,16 +73,18 @@ export default function MainLayout({ children }) {
     <div className="min-h-screen bg-gray-50">
       <Topbar onMenuOpen={() => setMobileOpen(true)} />
 
-      <Sidebar
-        items={accessibleMenuItems}
-        activeMenu={activeMenu}
-        setActiveMenu={setActiveMenu}
-        mobileOpen={mobileOpen}
-        onMobileClose={() => setMobileOpen(false)}
-      />
+      {hasAccessibleMenu && (
+        <Sidebar
+          items={accessibleMenuItems}
+          activeMenu={activeMenu}
+          setActiveMenu={setActiveMenu}
+          mobileOpen={mobileOpen}
+          onMobileClose={() => setMobileOpen(false)}
+        />
+      )}
 
       {/* Desktop SubSidebar panel */}
-      {subOpen && (
+      {hasAccessibleMenu && subOpen && (
         <div className="hidden md:block fixed left-[218px] top-[52px] h-[calc(100vh-52px)] z-30 shadow-md w-[200px]">
           <SubSidebar
             subSidebar={activeMenu.subSidebar}
@@ -84,7 +94,7 @@ export default function MainLayout({ children }) {
       )}
 
       {/* Mobile SubSidebar — full-screen overlay drawer */}
-      {subOpen && mobileOpen && (
+      {hasAccessibleMenu && subOpen && mobileOpen && (
         <div className="md:hidden fixed inset-0 z-[60] bg-white flex flex-col">
           <SubSidebar
             subSidebar={activeMenu.subSidebar}
@@ -100,8 +110,8 @@ export default function MainLayout({ children }) {
         className={`
           transition-all duration-300
           mt-[52px]
-          md:ml-[218px]
-          ${subOpen ? 'md:ml-[418px]' : 'md:ml-[218px]'}
+          ${hasAccessibleMenu ? 'md:ml-[218px]' : 'md:ml-0'}
+          ${hasAccessibleMenu && subOpen ? 'md:ml-[418px]' : ''}
           min-h-[calc(100vh-52px)]
           p-4 sm:p-5 md:p-7
         `}

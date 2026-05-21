@@ -433,7 +433,22 @@ export default function ListOfCustomersPage() {
                   <TextField label="Customer Code" value={form.customerCode} onChange={(value) => setForm({ ...form, customerCode: value })} />
                   <TextField label="Email Address" value={form.emailAddress} onChange={(value) => setForm({ ...form, emailAddress: value })} type="email" />
                   <TextField label="Birthday" value={form.birthday} onChange={(value) => setForm({ ...form, birthday: value })} type="date" />
-                  <TextField label="Mobile Number" value={form.mobileNumber} onChange={(value) => setForm({ ...form, mobileNumber: value })} required />
+                  <div>
+                    <TextField 
+                      label="Mobile Number" 
+                      value={form.mobileNumber} 
+                      onChange={(value) => {
+                        const digits = String(value).replace(/\D/g, '').slice(0, 10);
+                        setForm({ ...form, mobileNumber: digits });
+                      }}
+                      placeholder="10 digits"
+                      maxLength="10"
+                      required 
+                    />
+                    {form.mobileNumber && !validatePhoneNumber(form.mobileNumber).isValid && (
+                      <p className="text-[11px] text-red-600 mt-1">{validatePhoneNumber(form.mobileNumber).error}</p>
+                    )}
+                  </div>
                   <SelectField label="Address Type" value={form.addressType} onChange={(value) => setForm({ ...form, addressType: value })} options={addressTypeOptions} required />
                   <TextField label="City" value={form.city} onChange={(value) => setForm({ ...form, city: value })} />
                   <TextField label="State" value={form.state} onChange={(value) => setForm({ ...form, state: value })} />

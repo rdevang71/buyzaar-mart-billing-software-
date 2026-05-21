@@ -9,9 +9,7 @@ import { getUserIP } from '@/lib/api-protection';
 import { ensureUsersTable } from '@/lib/userAuth';
 import { ensureRolesSchema } from '@/lib/rolesSchema';
 
-function getDefaultRouteForRole(role) {
-  if (role === 'super_admin') return '/home/master-dashboard';
-  if (role === 'user') return '/sales/pos';
+function getDefaultRoute(/* role */) {
   return '/home';
 }
 
@@ -183,32 +181,29 @@ export async function POST(request) {
     // STEP 6: GET USER'S PERMISSIONS
     // ============================================
 
-    console.log('[LOGIN] Fetching permissions for role:', user.role);
+    console.log('[LOGIN] Fetching employee permissions (roles are informational only)');
+    let permissions = [];
 
-    let permResult = { rows: [] };
-    if (user.role) {
-      try {
-        permResult = await query(
-          `SELECT permissions
-           FROM roles
-           WHERE role_name = $1
-           LIMIT 1`,
-          [user.role]
-        );
-        console.log('[LOGIN] Permissions found:', { 
-          count: permResult.rows.length,
-          roleFound: permResult.rows.length > 0
-        });
-      } catch (err) {
-        console.error('[LOGIN] Failed to fetch permissions:', err.message);
+    try {
+      const employeePermResult = await query(
+        `SELECT permissions
+         FROM employees
+         WHERE user_id = $1
+            OR LOWER(email_address) = LOWER($2)
+            OR LOWER(username) = LOWER($3)
+         ORDER BY updated_at DESC, id DESC
+         LIMIT 1`,
+        [user.id, user.email || '', user.name || '']
+      );
+
+      if (employeePermResult.rows.length > 0) {
+        permissions = Array.isArray(employeePermResult.rows[0]?.permissions)
+          ? employeePermResult.rows[0].permissions
+          : [];
       }
-    } else {
-      console.warn('[LOGIN] User has no role assigned');
+    } catch (err) {
+      console.warn('[LOGIN] Failed to fetch employee permissions:', err.message);
     }
-
-    const permissions = Array.isArray(permResult.rows[0]?.permissions)
-      ? permResult.rows[0].permissions
-      : [];
 
     // ============================================
     // STEP 7: GET USER'S ASSIGNED STORES
@@ -324,7 +319,7 @@ export async function POST(request) {
     // ============================================
 
     console.log('[LOGIN] Login successful for:', email);
-    const defaultRoute = getDefaultRouteForRole(user.role);
+    const defaultRoute = getDefaultRoute(user.role);
     console.log('[LOGIN] Redirecting to', defaultRoute);
 
     // Create redirect response

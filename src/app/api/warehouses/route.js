@@ -1,6 +1,7 @@
 import { query } from '@/lib/db';
 import { successResponse, errorResponse, validationError } from '@/lib/api-response';
 import { ensureStoresSchema } from '@/lib/storesSchema';
+import { validatePhoneNumber } from '@/lib/phoneValidator';
 
 function parseList(value) {
   if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean);
@@ -130,6 +131,11 @@ export async function PUT(request) {
     }
     if (!/^\d{10}$/.test(mobileNumber)) {
       return validationError([{ field: 'mobileNumber', message: 'Mobile number must be exactly 10 digits' }]);
+    }
+
+    const phoneValidation = validatePhoneNumber(mobileNumber);
+    if (!phoneValidation.isValid) {
+      return validationError([{ field: 'mobileNumber', message: phoneValidation.error }]);
     }
 
     if (!email) {

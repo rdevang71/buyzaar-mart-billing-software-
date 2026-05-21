@@ -174,26 +174,17 @@ export function getUserFromToken(token) {
 
 export function hasPermission(token, requiredPermission) {
   const permissions = getPermissionsFromToken(token);
-  const role = getRoleFromToken(token);
-  return role === ROLES.SUPER_ADMIN ||
-    permissions.includes('*') ||
-    permissions.includes(requiredPermission);
+  return permissions.includes('*') || permissions.includes(requiredPermission);
 }
 
 export function hasAnyPermission(token, requiredPermissions) {
   const permissions = getPermissionsFromToken(token);
-  const role = getRoleFromToken(token);
-  return role === ROLES.SUPER_ADMIN ||
-    permissions.includes('*') ||
-    requiredPermissions.some((perm) => permissions.includes(perm));
+  return permissions.includes('*') || requiredPermissions.some((perm) => permissions.includes(perm));
 }
 
 export function hasAllPermissions(token, requiredPermissions) {
   const permissions = getPermissionsFromToken(token);
-  const role = getRoleFromToken(token);
-  return role === ROLES.SUPER_ADMIN ||
-    permissions.includes('*') ||
-    requiredPermissions.every((perm) => permissions.includes(perm));
+  return permissions.includes('*') || requiredPermissions.every((perm) => permissions.includes(perm));
 }
 
 export function hasRole(token, requiredRole) {
@@ -208,10 +199,9 @@ export function hasAnyRole(token, requiredRoles) {
 
 export function canAccessStore(token, storeId) {
   const stores = getAssignedStoresFromToken(token);
-  const role = getRoleFromToken(token);
-
-  // Only super admin can access all stores. Admin/manager must be assigned.
-  if (role === 'super_admin') return true;
+  // Check global wildcard permission in token
+  const permissions = getPermissionsFromToken(token);
+  if (permissions.includes('*')) return true;
 
   // Check if store is assigned
   return stores.includes(storeId);

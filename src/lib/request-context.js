@@ -62,8 +62,8 @@ export function getCurrentUser(request) {
 export function hasPermission(user, permission) {
   if (!user) return false;
 
-  // Super admin has all permissions
-  if (user.role === 'super_admin' || user.permissions.includes('*')) {
+  // Global wildcard permission grants all access
+  if (user.permissions.includes('*')) {
     return true;
   }
 
@@ -77,7 +77,7 @@ export function hasPermission(user, permission) {
 
 export function hasAnyPermission(user, permissions) {
   if (!user) return false;
-  if (user.role === 'super_admin' || user.permissions.includes('*')) return true;
+  if (user.permissions.includes('*')) return true;
 
   return permissions.some((perm) => user.permissions.includes(perm));
 }
@@ -88,7 +88,7 @@ export function hasAnyPermission(user, permissions) {
 
 export function hasAllPermissions(user, permissions) {
   if (!user) return false;
-  if (user.role === 'super_admin' || user.permissions.includes('*')) return true;
+  if (user.permissions.includes('*')) return true;
 
   return permissions.every((perm) => user.permissions.includes(perm));
 }
@@ -117,11 +117,8 @@ export function hasAnyRole(user, roles) {
 
 export function canAccessStore(user, storeId) {
   if (!user) return false;
-
-  // Only super admin can access all stores. Admin/manager must be assigned.
-  if (user.role === 'super_admin') {
-    return true;
-  }
+  // Global wildcard permission grants access to all stores
+  if (user.permissions.includes('*')) return true;
 
   // Check if store is assigned
   return user.assigned_stores.includes(storeId);
@@ -133,14 +130,14 @@ export function canAccessStore(user, storeId) {
 
 export function canAccessAnyStore(user, storeIds) {
   if (!user) return false;
-  if (user.role === 'super_admin') return true;
+  if (user.permissions.includes('*')) return true;
 
   return storeIds.some((storeId) => user.assigned_stores.includes(storeId));
 }
 
 export function canAccessAllStores(user, storeIds) {
   if (!user) return false;
-  if (user.role === 'super_admin') return true;
+  if (user.permissions.includes('*')) return true;
 
   return storeIds.every((storeId) => user.assigned_stores.includes(storeId));
 }
@@ -151,7 +148,7 @@ export function canAccessAllStores(user, storeIds) {
 
 export function getUserStores(user) {
   if (!user) return [];
-  if (user.role === 'super_admin') return ['all']; // Indicate access to all
+  if (user.permissions.includes('*')) return ['all']; // Indicate access to all
 
   return user.assigned_stores || [];
 }
@@ -163,7 +160,7 @@ export function getUserStores(user) {
 export function getStoreFilterClause(user, tableAlias = '') {
   if (!user) return '1 = 0'; // Deny access
 
-  if (user.role === 'super_admin') {
+  if (user.permissions.includes('*')) {
     return '1 = 1'; // Allow all
   }
 

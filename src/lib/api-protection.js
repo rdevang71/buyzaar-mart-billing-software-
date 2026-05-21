@@ -8,7 +8,7 @@ import { verifyToken } from '@/lib/auth-enhanced';
 import { query } from '@/lib/db';
 import { unauthorizedError, forbiddenError } from '@/lib/api-response';
 import { ensureUsersTable } from '@/lib/userAuth';
-import { ensureRolesSchema } from '@/lib/rolesSchema';
+
 
 /**
  * Extract and verify JWT token from request
@@ -59,11 +59,31 @@ export async function extractAuthUser(request) {
     }
 
     const dbUser = userResult.rows[0];
-    let permissions = payload.permissions || [];
+    let permissions = Array.isArray(payload.permissions) ? payload.permissions : [];
+    let employeeRoleName = null;
+
     try {
-      const roleResult = await query('SELECT permissions FROM roles WHERE role_name = $1 LIMIT 1', [dbUser.role || 'user']);
-      if (Array.isArray(roleResult.rows[0]?.permissions)) {
-        permissions = roleResult.rows[0].permissions;
+      let employeePermissions = null;
+      const employeeResult = await query(
+        `SELECT role_name, permissions
+         FROM employees
+         WHERE user_id = $1
+            OR LOWER(email_address) = LOWER($2)
+            OR LOWER(username) = LOWER($3)
+         ORDER BY updated_at DESC, id DESC
+         LIMIT 1`,
+        [dbUser.id, dbUser.email || '', dbUser.name || '']
+      );
+
+      if (employeeResult.rows.length > 0) {
+        employeeRoleName = employeeResult.rows[0]?.role_name || null;
+        employeePermissions = Array.isArray(employeeResult.rows[0]?.permissions)
+          ? employeeResult.rows[0].permissions
+          : [];
+      }
+
+      if (employeePermissions !== null) {
+        permissions = employeePermissions;
       }
     } catch {}
 
@@ -81,6 +101,7 @@ export async function extractAuthUser(request) {
       email: dbUser.email,
       name: dbUser.name || dbUser.email,
       role: dbUser.role || 'user',
+      role_name: employeeRoleName || dbUser.role || 'user',
       permissions,
       assigned_stores: assignedStores,
     };
@@ -156,9 +177,10 @@ export function requirePermission(user, ...permissions) {
     return { error: unauthorizedError('Not authenticated') };
   }
 
-  const hasPermission = user.role === 'super_admin' ||
-    user.permissions.includes('*') ||
-    permissions.some(p => user.permissions.includes(p));
+  const userPerms = Array.isArray(user.permissions) ? user.permissions : [];
+  const hasPermission =
+    userPerms.includes('*') ||
+    permissions.some((p) => userPerms.includes(p));
 
   if (!hasPermission) {
     return {
@@ -182,11 +204,9 @@ export function requireStore(user, storeId) {
   if (!user) {
     return { error: unauthorizedError('Not authenticated') };
   }
-
-  // Only super admin can access all stores. Admin/manager must be assigned.
-  if (user.role === 'super_admin') {
-    return { error: null };
-  }
+  // Check if user is assigned to this store or has global access
+  const userPerms = Array.isArray(user.permissions) ? user.permissions : [];
+  if (userPerms.includes('*')) return { error: null };
 
   // Check if user is assigned to this store
   if (!user.assigned_stores.includes(Number(storeId))) {

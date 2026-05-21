@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import { getClient, query } from '@/lib/db';
 import { ensureEmployeesSchema } from '@/lib/employeesSchema';
 import { ensureUsersTable, normalizePhone } from '@/lib/userAuth';
+import { validatePhoneNumber } from '@/lib/phoneValidator';
 
 // FIXED: Properly handle date strings without timezone corruption
 function toDate(value) {
@@ -213,6 +214,13 @@ export async function POST(request) {
     });
     if (validationError) {
       return NextResponse.json({ error: validationError }, { status: 400 });
+    }
+
+    if (mobileNumber) {
+      const phoneValidation = validatePhoneNumber(mobileNumber);
+      if (!phoneValidation.isValid) {
+        return NextResponse.json({ error: phoneValidation.error }, { status: 400 });
+      }
     }
 
     await client.query('BEGIN');
