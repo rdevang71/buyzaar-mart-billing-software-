@@ -278,7 +278,6 @@ export default function InventoryOpsPage() {
       ...item,
       shortName: item.name.length > 18 ? `${item.name.slice(0, 18)}...` : item.name,
       coverageGap: Math.max(0, Number(item.reorderLevel || 0) - Number(item.currentStock || 0)),
-      daysLabel: Number.isFinite(item.daysOfCover) ? Number(item.daysOfCover.toFixed(1)) : 0,
     }));
   }, [stockoutForecast]);
 
@@ -518,26 +517,6 @@ function OverviewContent({ stats, recentMovements, stockoutForecast, stockoutGra
           </div>
           {stockoutGraphData.length > 0 ? (
             <div className="space-y-6">
-              <div className="rounded-xl border border-gray-100 p-4 bg-gray-50/40">
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <p className="text-[13px] font-semibold text-gray-900">Days of cover</p>
-                    <p className="text-[12px] text-gray-500">Lower values mean higher risk</p>
-                  </div>
-                </div>
-                <div className="h-[240px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={stockoutGraphData} layout="vertical" margin={{ top: 8, right: 20, left: 16, bottom: 8 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                      <XAxis type="number" />
-                      <YAxis type="category" dataKey="shortName" width={120} tick={{ fontSize: 12 }} />
-                      <Tooltip formatter={(value, name) => [name === 'daysLabel' ? `${value} days` : value, name]} />
-                      <Bar dataKey="daysLabel" fill="#ef4444" radius={[0, 10, 10, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
               <div className="rounded-xl border border-gray-100 p-4 bg-gray-50/40">
                 <div className="flex items-center justify-between mb-3">
                   <div>
