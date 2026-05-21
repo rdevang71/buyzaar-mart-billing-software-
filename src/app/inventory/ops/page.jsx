@@ -3,6 +3,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import MainLayout from '@/components/MainLayout';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+  Line,
+  LineChart,
+} from 'recharts';
 
 const tabs = [
   { key: 'overview', label: 'Overview', icon: 'ti-layout-grid' },
@@ -13,19 +25,11 @@ const tabs = [
   { key: 'batches', label: 'Batches - Expiry', icon: 'ti-box' },
 ];
 
-const stats = [
-  { label: 'Stock on hand', note: 'Across all stores', value: '-' },
-  { label: 'SKUs out of stock', note: 'Zero or missing stock', value: '10/10' },
-  { label: 'Stockout risk (7d)', note: 'Forecasted', value: '-', status: 'warning' },
-  { label: 'Expiring <30 days', note: 'In the next 30 days', value: '0 batches' },
-];
-
-const quickFilters = [
-  'Slowest-moving 20 items',
-  'Stock value by category',
-  'Variance by cashier this month',
-  'Items not sold in 60 days',
-  'Average days of cover per category',
+const baseStats = [
+  { key: 'stock_on_hand', label: 'Stock on hand', note: 'Across all stores' },
+  { key: 'out_of_stock', label: 'SKUs out of stock', note: 'Zero-stock items' },
+  { key: 'stockout_risk', label: 'Stockout risk (7d)', note: 'At or below reorder level', status: 'warning' },
+  { key: 'total_products', label: 'Live products', note: 'Active catalogue coverage' },
 ];
 
 const listConfig = {
@@ -145,9 +149,138 @@ export default function InventoryOpsPage() {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [askQuery, setAskQuery] = useState('');
+  const [overviewData, setOverviewData] = useState(null);
+  const [overviewLoading, setOverviewLoading] = useState(true);
+  const [storeCount, setStoreCount] = useState(0);
+  const [recentMovements, setRecentMovements] = useState([]);
 
   const activeConfig = listConfig[activeTab];
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadOverview() {
+      try {
+        const params = new URLSearchParams();
+        const dateFrom = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0];
+        const dateTo = new Date().toISOString().split('T')[0];
+        params.set('date_from', dateFrom);
+        params.set('date_to', dateTo);
+
+        const [analyticsRes, storesRes, stockInRes, stockOutRes, stockTransferRes] = await Promise.all([
+          fetch(`/api/dashboard/analytics?${params.toString()}`),
+          fetch('/api/stores'),
+          fetch('/api/inventory/stockin'),
+          fetch('/api/inventory/stockout'),
+          fetch('/api/inventory/stocktransfer'),
+        ]);
+
+        const analyticsJson = analyticsRes.ok ? await analyticsRes.json() : null;
+        const storesJson = storesRes.ok ? await storesRes.json() : null;
+        const [stockInJson, stockOutJson, stockTransferJson] = await Promise.all([
+          stockInRes.ok ? stockInRes.json() : Promise.resolve([]),
+          stockOutRes.ok ? stockOutRes.json() : Promise.resolve([]),
+          stockTransferRes.ok ? stockTransferRes.json() : Promise.resolve([]),
+        ]);
+
+        if (cancelled) return;
+
+        if (analyticsJson?.success && analyticsJson.data) {
+          setOverviewData(analyticsJson.data);
+        } else {
+          setOverviewData(null);
+        }
+
+        const count = Array.isArray(storesJson)
+          ? storesJson.length
+          : storesJson?.data?.stores?.length || storesJson?.data?.records?.length || 0;
+        setStoreCount(count);
+
+        const movements = [
+          ...mapInventoryMovements(stockInJson, 'Stock In'),
+          ...mapInventoryMovements(stockOutJson, 'Stock Out'),
+          ...mapInventoryMovements(stockTransferJson, 'Transfer'),
+        ]
+          .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+          .slice(0, 8);
+
+        setRecentMovements(movements);
+      } catch (err) {
+        if (!cancelled) {
+          setOverviewData(null);
+          setStoreCount(0);
+          setRecentMovements([]);
+        }
+      } finally {
+        if (!cancelled) setOverviewLoading(false);
+      }
+    }
+
+    loadOverview();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const overviewStats = useMemo(() => {
+    const inventory = overviewData?.inventory || {};
+    const stockAlerts = Array.isArray(overviewData?.stock_alerts) ? overviewData.stock_alerts : [];
+
+    const formatCount = (value) => Number(value || 0).toLocaleString('en-IN');
+    const outOfStockCount = stockAlerts.filter((item) => Number(item.current_stock || 0) <= 0).length;
+    const stockoutRiskCount = stockAlerts.filter((item) => Number(item.current_stock || 0) <= Number(item.reorder_level || 0)).length;
+
+    return baseStats.map((stat) => {
+      if (stat.key === 'stock_on_hand') {
+        return { label: stat.label, note: stat.note, value: formatCount(inventory.total_stock_units) };
+      }
+      if (stat.key === 'out_of_stock') {
+        return { label: stat.label, note: stat.note, value: formatCount(outOfStockCount) };
+      }
+      if (stat.key === 'stockout_risk') {
+        return { label: stat.label, note: stat.note, value: formatCount(stockoutRiskCount), status: 'warning' };
+      }
+      if (stat.key === 'total_products') {
+        return { label: stat.label, note: stat.note, value: formatCount(inventory.total_products) };
+      }
+      return { label: stat.label, note: stat.note, value: '-' };
+    });
+  }, [overviewData]);
+
+  const stockoutForecast = useMemo(() => {
+    const source = Array.isArray(overviewData?.stock_forecast) && overviewData.stock_forecast.length > 0
+      ? overviewData.stock_forecast
+      : Array.isArray(overviewData?.stock_alerts) ? overviewData.stock_alerts : [];
+
+    return source
+      .map((item) => {
+        const currentStock = Number(item.current_stock || 0);
+        const sold30 = Number(item.last_30days_sales || 0);
+        const daysOfCoverRaw = item.days_of_cover == null ? Number.POSITIVE_INFINITY : Number(item.days_of_cover);
+        const daysOfCover = Number.isFinite(daysOfCoverRaw) ? daysOfCoverRaw : Number.POSITIVE_INFINITY;
+
+        return {
+          id: item.id,
+          name: item.name || 'Unknown product',
+          sku: item.sku || '-',
+          currentStock,
+          reorderLevel: Number(item.reorder_level || 0),
+          sold30,
+          daysOfCover,
+          status: currentStock <= 0 ? 'Out of stock' : daysOfCover <= 7 ? 'High risk' : daysOfCover <= 14 ? 'Watch' : 'Healthy',
+        };
+      })
+      .slice(0, 8);
+  }, [overviewData]);
+
+  const stockoutGraphData = useMemo(() => {
+    return stockoutForecast.map((item) => ({
+      ...item,
+      shortName: item.name.length > 18 ? `${item.name.slice(0, 18)}...` : item.name,
+      coverageGap: Math.max(0, Number(item.reorderLevel || 0) - Number(item.currentStock || 0)),
+      daysLabel: Number.isFinite(item.daysOfCover) ? Number(item.daysOfCover.toFixed(1)) : 0,
+    }));
+  }, [stockoutForecast]);
 
   useEffect(() => {
     if (activeTab === 'overview') return;
@@ -221,37 +354,6 @@ export default function InventoryOpsPage() {
     downloadCsv(headers, filteredRows, filename);
   };
 
-  const handleQuickFilter = (filter) => {
-    const lowered = filter.toLowerCase();
-    if (lowered.includes('variance')) {
-      setActiveTab('audit');
-      setSearchTerm('');
-      return;
-    }
-    if (lowered.includes('not sold') || lowered.includes('slowest')) {
-      setActiveTab('stockout');
-      setSearchTerm('');
-      return;
-    }
-    if (lowered.includes('stock value')) {
-      setActiveTab('stockin');
-      setSearchTerm('');
-      return;
-    }
-    setActiveTab('transfers');
-    setSearchTerm('');
-  };
-
-  const handleAsk = () => {
-    if (!askQuery.trim()) {
-      alert('Enter a question first.');
-      return;
-    }
-    // Use stock-in tab as default searchable dataset for quick natural-language lookup.
-    setActiveTab('stockin');
-    setSearchTerm(askQuery.trim());
-  };
-
   return (
     <MainLayout>
       <div className="flex items-center gap-2 text-[12px] text-gray-500 mb-4">
@@ -263,7 +365,11 @@ export default function InventoryOpsPage() {
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
           <h1 className="text-[28px] font-semibold text-gray-900 leading-tight">Inventory</h1>
-          <p className="text-[13px] text-gray-500 mt-1">2 stores · 10 products · Last sync a few seconds ago</p>
+          <p className="text-[13px] text-gray-500 mt-1">
+            {overviewLoading
+              ? 'Loading live inventory data...'
+              : `${storeCount} stores · ${Number(overviewData?.inventory?.total_products || 0).toLocaleString('en-IN')} products · Updated live`}
+          </p>
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -323,10 +429,10 @@ export default function InventoryOpsPage() {
 
       {activeTab === 'overview' ? (
         <OverviewContent
-          askQuery={askQuery}
-          onAskQueryChange={setAskQuery}
-          onAsk={handleAsk}
-          onQuickFilterClick={handleQuickFilter}
+          stats={overviewLoading ? baseStats.map((stat) => ({ label: stat.label, note: stat.note })) : overviewStats}
+          recentMovements={recentMovements}
+          stockoutForecast={stockoutForecast}
+          stockoutGraphData={stockoutGraphData}
           onViewAll={() => setActiveTab('stockin')}
         />
       ) : (
@@ -344,7 +450,7 @@ export default function InventoryOpsPage() {
   );
 }
 
-function OverviewContent({ askQuery, onAskQueryChange, onAsk, onQuickFilterClick, onViewAll }) {
+function OverviewContent({ stats, recentMovements, stockoutForecast, stockoutGraphData, onViewAll }) {
   return (
     <>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -368,43 +474,38 @@ function OverviewContent({ askQuery, onAskQueryChange, onAsk, onQuickFilterClick
         ))}
       </div>
 
-      <div className="bg-[#fff7ef] border border-orange-200 rounded-2xl p-6 mb-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-[10px] font-bold text-orange-500 bg-orange-100 px-2 py-0.5 rounded-full">
-                QB INTELLIGENCE
-              </span>
-              <span className="text-[14px] font-semibold text-gray-900">Things to act on this week</span>
-            </div>
-            <p className="text-[12px] text-gray-600">Based on last 30 days</p>
-          </div>
-        </div>
-
-        <div className="mt-4 space-y-3">
-          <div className="flex items-start gap-3 bg-white rounded-xl p-4 border border-orange-100">
-            <i className="ti ti-alert-circle text-orange-500 text-[18px] flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="text-[13px] font-semibold text-gray-900">AI insights not enabled for this chain</p>
-              <p className="text-[12px] text-gray-500 mt-1">Contact your account manager to enable the Intelligence Reports add-on for your chain.</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-[14px] font-semibold text-gray-900">Recent stock movements</h3>
-              <p className="text-[12px] text-gray-500 mt-0.5">Last 24 hours across all stores</p>
+              <p className="text-[12px] text-gray-500 mt-0.5">Latest confirmed stock-in, stock-out and transfer activity</p>
             </div>
             <button type="button" onClick={onViewAll} className="text-[12px] font-medium text-blue-600 hover:underline">
               View all <i className="ti ti-arrow-right text-[12px] inline ml-1" />
             </button>
           </div>
-          <div className="flex items-center justify-center py-12">
-            <p className="text-[13px] text-gray-400">No stock movements in the last 30 days.</p>
+          <div className="space-y-3">
+            {recentMovements.length > 0 ? recentMovements.map((movement) => (
+              <div key={`${movement.type}-${movement.id}`} className="flex items-start justify-between gap-4 rounded-xl border border-gray-100 p-4 bg-gray-50/60">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-blue-600">{movement.type}</span>
+                    <span className="text-[12px] text-gray-400">{formatDate(movement.timestamp)}</span>
+                  </div>
+                  <p className="text-[13px] font-semibold text-gray-900 mt-1">{movement.title}</p>
+                  <p className="text-[12px] text-gray-500 mt-0.5">{movement.subtitle}</p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-[13px] font-semibold text-gray-900">{movement.value}</p>
+                  <p className="text-[11px] text-gray-400">{movement.reference}</p>
+                </div>
+              </div>
+            )) : (
+              <div className="flex items-center justify-center py-12">
+                <p className="text-[13px] text-gray-400">No confirmed stock movements found.</p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -412,61 +513,103 @@ function OverviewContent({ askQuery, onAskQueryChange, onAsk, onQuickFilterClick
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-[14px] font-semibold text-gray-900">Stockout forecast</h3>
-              <p className="text-[12px] text-gray-500 mt-0.5">AI-predicted days of cover - top 8 at-risk SKUs</p>
-            </div>
-            <span className="text-[11px] font-medium text-orange-500 bg-orange-50 px-2.5 py-1 rounded-full">
-              <i className="ti ti-sparkles text-[12px] inline mr-1" />
-              AI
-            </span>
-          </div>
-          <div className="flex items-center justify-center py-12">
-            <div className="text-center">
-              <i className="ti ti-alert-circle text-orange-500 text-[24px] mx-auto mb-2" />
-              <p className="text-[13px] font-semibold text-gray-900">AI insights not enabled for this chain</p>
-              <p className="text-[12px] text-gray-500 mt-1">Enable Intelligence Reports to see which SKUs will run out first, with recommended reorder quantities.</p>
+              <p className="text-[12px] text-gray-500 mt-0.5">Live days-of-cover projection from sales and stock alerts</p>
             </div>
           </div>
-        </div>
+          {stockoutGraphData.length > 0 ? (
+            <div className="space-y-6">
+              <div className="rounded-xl border border-gray-100 p-4 bg-gray-50/40">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-[13px] font-semibold text-gray-900">Days of cover</p>
+                    <p className="text-[12px] text-gray-500">Lower values mean higher risk</p>
+                  </div>
+                </div>
+                <div className="h-[240px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={stockoutGraphData} layout="vertical" margin={{ top: 8, right: 20, left: 16, bottom: 8 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                      <XAxis type="number" />
+                      <YAxis type="category" dataKey="shortName" width={120} tick={{ fontSize: 12 }} />
+                      <Tooltip formatter={(value, name) => [name === 'daysLabel' ? `${value} days` : value, name]} />
+                      <Bar dataKey="daysLabel" fill="#ef4444" radius={[0, 10, 10, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-gray-100 p-4 bg-gray-50/40">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-[13px] font-semibold text-gray-900">Stock vs reorder level</p>
+                    <p className="text-[12px] text-gray-500">Current stock against the configured threshold</p>
+                  </div>
+                </div>
+                <div className="h-[240px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={stockoutGraphData} margin={{ top: 8, right: 20, left: 0, bottom: 8 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                      <XAxis dataKey="shortName" tick={{ fontSize: 12 }} interval={0} height={60} angle={-15} textAnchor="end" />
+                      <YAxis />
+                      <Tooltip />
+                      <Line type="monotone" dataKey="currentStock" stroke="#2563eb" strokeWidth={2.5} dot={{ r: 3 }} name="Current stock" />
+                      <Line type="monotone" dataKey="reorderLevel" stroke="#f59e0b" strokeWidth={2.5} dot={{ r: 3 }} name="Reorder level" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center py-12">
+              <p className="text-[13px] text-gray-400">No stockout risk records found.</p>
+            </div>
+          )}
       </div>
-
-      <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-        <div className="flex items-center gap-2 mb-4">
-          <i className="ti ti-sparkles text-orange-500 text-[18px]" />
-          <h3 className="text-[14px] font-semibold text-gray-900">Ask QB about your stock</h3>
-        </div>
-        <p className="text-[12px] text-gray-500 mb-4">Natural-language questions - English or Hinglish</p>
-
-        <div className="flex items-center gap-2 mb-4">
-          <div className="flex-1 flex items-center gap-2 bg-gray-50 rounded-xl px-4 py-3 border border-gray-200 focus-within:border-blue-400 focus-within:bg-white">
-            <i className="ti ti-search text-gray-400 text-[16px]" />
-            <input
-              type="text"
-              placeholder="e.g. Which SKUs have the most shrinkage this quarter?"
-              value={askQuery}
-              onChange={(e) => onAskQueryChange(e.target.value)}
-              className="flex-1 bg-transparent text-[13px] text-gray-700 outline-none placeholder:text-gray-400"
-            />
-          </div>
-          <button type="button" onClick={onAsk} className="px-4 py-3 rounded-lg bg-gray-900 text-white text-[13px] font-semibold hover:bg-gray-800 transition-colors flex-shrink-0">
-            Ask
-          </button>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          {quickFilters.map((filter) => (
-            <button
-              key={filter}
-              type="button"
-              onClick={() => onQuickFilterClick(filter)}
-              className="px-3 py-2 rounded-lg bg-gray-100 text-[12px] font-medium text-gray-700 hover:bg-gray-200 transition-colors"
-            >
-              {filter}
-            </button>
-          ))}
-        </div>
       </div>
     </>
   );
+}
+
+function mapInventoryMovements(rows, type) {
+  return (Array.isArray(rows) ? rows : [])
+    .map((row) => {
+      if (!row) return null;
+
+      if (type === 'Stock In') {
+        return {
+          id: row.id,
+          type,
+          title: row.invoiceNumber || row.transactionId || 'Stock in',
+          subtitle: row.destination || 'Destination store',
+          value: `${Number(row.totalItems || 0)} items`,
+          reference: row.vendorName || row.referenceType || 'Confirmed',
+          timestamp: row.createdAt || row.invoiceDate || new Date().toISOString(),
+        };
+      }
+
+      if (type === 'Stock Out') {
+        return {
+          id: row.id,
+          type,
+          title: row.invoiceNumber || row.transactionId || 'Stock out',
+          subtitle: row.destination || 'Store',
+          value: `${Number(row.totalItems || 0)} items`,
+          reference: row.referenceType || row.referenceId || 'Confirmed',
+          timestamp: row.createdAt || row.invoiceDate || new Date().toISOString(),
+        };
+      }
+
+      return {
+        id: row.id,
+        type,
+        title: row.invoiceNumber || row.transactionId || 'Transfer',
+        subtitle: `${row.sourceName || '-'} → ${row.destinationName || '-'}`,
+        value: `${Number(row.totalItems || 0)} items`,
+        reference: 'Confirmed',
+        timestamp: row.createdAt || row.invoiceDate || new Date().toISOString(),
+      };
+    })
+    .filter(Boolean);
 }
 
 function InventoryListPanel({ title, headers, rows, loading, emptyMessage, searchTerm, onSearchTermChange }) {

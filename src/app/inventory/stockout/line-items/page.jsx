@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Topbar from '@/components/Topbar';
+import { fetchInventoryProducts } from '@/lib/inventoryProducts';
 
 function formatCurrency(n) {
   return Number(n || 0).toLocaleString('en-IN', {
@@ -64,15 +65,12 @@ function LineItemsContent() {
     const loadProducts = async () => {
       setLoadingProducts(true);
       try {
-        const params = new URLSearchParams({ pageSize: '20' });
-        if (searchTerm.trim()) params.set('search', searchTerm.trim());
-
-        const response = await fetch(`/api/catalog/products?${params.toString()}`, {
+        const records = await fetchInventoryProducts({
+          storeId: draft?.destination,
+          search: searchTerm,
           signal: controller.signal,
         });
-        const res = await response.json();
-        const records = res?.data?.records ?? res?.records ?? [];
-        setProducts(Array.isArray(records) ? records : []);
+        setProducts(records);
       } catch (error) {
         if (error?.name !== 'AbortError') setProducts([]);
       } finally {
@@ -85,7 +83,7 @@ function LineItemsContent() {
       controller.abort();
       clearTimeout(timer);
     };
-  }, [searchTerm]);
+  }, [draft?.destination, searchTerm]);
 
   const filteredCart = useMemo(() => {
     if (!cartFilter.trim()) return cart;
@@ -111,6 +109,7 @@ function LineItemsContent() {
 
   const addToCart = (product) => {
     const pid = product.id ?? product.product_id;
+    if (Number(product.availableStock || 0) <= 0) return;
 
     setCart((current) => {
       const existing = current.find((item) => String(item.product_id) === String(pid));
@@ -310,11 +309,13 @@ function LineItemsContent() {
                         key={product.id}
                         type="button"
                         onClick={() => addToCart(product)}
-                        className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-[#f3f7ff]"
+                        disabled={Number(product.availableStock || 0) <= 0}
+                        className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-[#f3f7ff] disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <div>
                           <div className="text-[14px] font-medium text-black">{product.name}</div>
                           <div className="text-[12px] text-[#616871]">SKU: {product.sku || '-'}</div>
+                          <div className="text-[12px] text-[#616871]">Stock: {Number(product.availableStock || 0)}</div>
                         </div>
                         <span className="text-[13px] font-medium text-[#0b5cc4]">Add</span>
                       </button>
