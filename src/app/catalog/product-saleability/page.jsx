@@ -49,7 +49,7 @@ export default function ProductSaleabilityPage() {
         setCustomerGroups(cgJson.data?.records || []);
         setStores(Array.isArray(storesJson) ? storesJson : (storesJson.data?.records || []));
         setProducts(prodJson.data?.records || []);
-        setCounters(Array.isArray(countersJson) ? countersJson : countersJson);
+        setCounters(Array.isArray(countersJson) ? countersJson : (countersJson?.data?.records || countersJson?.records || []));
       } catch (err) {
         // ignore
       }
