@@ -154,9 +154,7 @@ export const menuItems = [
       {
         label: 'Employee', icon: 'ti-users',
         items: [
-          { label: 'Roles',                href: '/employee/roles' },
           { label: 'Employee Departments', href: '/employee/staffdepartments' },
-          { label: 'Permissions',          href: '/employee/permissions' },
           { label: 'Employees',            href: '/employee/staff' },
           { label: 'User Counter Session', href: '/employee/user-counter-session' },
         ],

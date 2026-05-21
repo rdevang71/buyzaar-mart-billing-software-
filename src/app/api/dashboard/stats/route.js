@@ -34,7 +34,35 @@ export async function GET(request) {
     let customerCount = 0;
     try {
       const customersResult = await query(
-        `SELECT COUNT(*)::int as count FROM customers`
+        `WITH registered_customers AS (
+           SELECT
+             CASE
+               WHEN NULLIF(TRIM(mobile_number), '') IS NOT NULL THEN 'm:' || LOWER(TRIM(mobile_number))
+               WHEN NULLIF(TRIM(customer_code), '') IS NOT NULL THEN 'c:' || LOWER(TRIM(customer_code))
+               ELSE 'id:' || id::text
+             END AS customer_key
+           FROM customers
+         ),
+         billed_customers AS (
+           SELECT DISTINCT
+             CASE
+               WHEN NULLIF(TRIM(customer_mobile), '') IS NOT NULL THEN 'm:' || LOWER(TRIM(customer_mobile))
+               WHEN NULLIF(TRIM(customer_name), '') IS NOT NULL THEN 'n:' || LOWER(TRIM(customer_name))
+               ELSE 'bill:' || id::text
+             END AS customer_key
+           FROM sales_bills
+           WHERE status IN ('paid', 'completed')
+             AND (
+               NULLIF(TRIM(customer_mobile), '') IS NOT NULL
+               OR NULLIF(TRIM(customer_name), '') IS NOT NULL
+             )
+         )
+         SELECT COUNT(*)::int as count
+         FROM (
+           SELECT customer_key FROM registered_customers
+           UNION
+           SELECT customer_key FROM billed_customers
+         ) all_customers`
       );
       customerCount = customersResult.rows[0]?.count || 0;
     } catch (err) {
