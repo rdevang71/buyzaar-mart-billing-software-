@@ -47,6 +47,19 @@ function emptyPayment() {
 }
 
 const inputClassName = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500 focus:ring-2 focus:ring-blue-400 outline-none';
+const DEFAULT_RECEIPT_CONFIG = {
+  businessName: 'BillingPro',
+  subtitle: 'GST Invoice / POS Receipt',
+  headerText: '',
+  footerText: 'Thank you. Visit again.',
+  template: 'thermal-80',
+  copies: 1,
+  showTaxBreakup: true,
+  showDiscount: true,
+  showQr: true,
+  showCustomerMobile: true,
+  showSku: true,
+};
 
 function normalizeProduct(p) {
   return {
@@ -93,6 +106,29 @@ function writeStorage(key, value) {
   }
 }
 
+async function loadReceiptConfig() {
+  try {
+    const res = await fetch('/api/settings/customize-receipt-print?pageSize=1&isActive=true', {
+      cache: 'no-store',
+      credentials: 'include',
+    });
+    const json = await res.json();
+    const config = json.data?.records?.[0]?.config || {};
+    return { ...DEFAULT_RECEIPT_CONFIG, ...config };
+  } catch {
+    return DEFAULT_RECEIPT_CONFIG;
+  }
+}
+
+function getOrCreateLocalId(key, prefix) {
+  if (typeof window === 'undefined') return '';
+  const existing = window.localStorage.getItem(key);
+  if (existing) return existing;
+  const next = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  window.localStorage.setItem(key, next);
+  return next;
+}
+
 // ============================================================================
 // MAIN POS COMPONENT
 // ============================================================================
@@ -106,6 +142,8 @@ export default function POSPage() {
   const [session, setSession] = useState(null);
   const [stores, setStores] = useState([]);
   const [selectedStoreId, setSelectedStoreId] = useState('');
+  const [deviceUid, setDeviceUid] = useState('');
+  const [counterName, setCounterName] = useState('POS Counter');
 
   // State: Products & Search
   const [products, setProducts] = useState([]);
@@ -171,6 +209,10 @@ export default function POSPage() {
       const activeStoreId = storeIdOverride || session?.storeId || selectedStoreId;
       const params = new URLSearchParams({ pageSize: '100' });
       if (activeStoreId) params.set('store_id', String(activeStoreId));
+      if (deviceUid) {
+        params.set('device_uid', deviceUid);
+        params.set('counter_uid', deviceUid);
+      }
       const res = await fetch(`/api/sales-order/pos?${params}`, { cache: 'no-store' });
       const json = await res.json();
 
@@ -206,7 +248,7 @@ export default function POSPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedStoreId, session?.storeId]);
+  }, [selectedStoreId, session?.storeId, deviceUid]);
 
   const loadAuth = useCallback(async () => {
     try {
@@ -247,11 +289,21 @@ export default function POSPage() {
   // ========================================================================
 
   useEffect(() => {
+    const localDeviceUid = getOrCreateLocalId('pos-device-uid-v1', 'POSDEV');
+    const savedCounterName = typeof window !== 'undefined'
+      ? window.localStorage.getItem('pos-counter-name-v1')
+      : '';
+    setDeviceUid(localDeviceUid);
+    if (savedCounterName) setCounterName(savedCounterName);
     loadAuth();
-    loadPOSData();
     setHeldBills(readStorage(STORAGE_KEYS.HELD_BILLS, []));
     if (barcodeRef.current) barcodeRef.current.focus();
-  }, [loadAuth, loadPOSData]);
+  }, [loadAuth]);
+
+  useEffect(() => {
+    if (!deviceUid) return;
+    loadPOSData();
+  }, [deviceUid, loadPOSData]);
 
   // Restore draft
   useEffect(() => {
@@ -552,11 +604,12 @@ export default function POSPage() {
 
     const bill  = receipt.bill  || {};
     const items = receipt.items || [];
+    const receiptConfig = await loadReceiptConfig();
 
     // Generate QR for the print window (async, non-blocking)
     let qrBlock = '';
     const token = bill.publicToken || bill.public_token;
-    if (token) {
+    if (token && receiptConfig.showQr) {
       try {
         const url    = getInvoiceURL(token);
         const qrData = await generateQRDataURL(url, { size: 120 });
@@ -577,7 +630,7 @@ export default function POSPage() {
 
     const rows = items.map((item) => `
       <tr>
-        <td>${item.name || item.product_name || 'Product'}<br><small>${item.sku || ''}</small></td>
+        <td>${item.name || item.product_name || 'Product'}${receiptConfig.showSku && item.sku ? `<br><small>${item.sku}</small>` : ''}</td>
         <td style="text-align:center">${toNumber(item.qty, 1)}</td>
         <td style="text-align:right">${formatCurrency(item.selling_price || item.sellingPrice || 0)}</td>
         <td style="text-align:right">${formatCurrency(item.line_total || (toNumber(item.qty, 1) * toNumber(item.selling_price || item.sellingPrice)))}</td>
@@ -604,13 +657,14 @@ export default function POSPage() {
           </style>
         </head>
         <body>
-          <h1>BillingPro</h1>
-          <div class="center muted">GST Invoice / POS Receipt</div>
+          <h1>${receiptConfig.businessName || 'BillingPro'}</h1>
+          <div class="center muted">${receiptConfig.subtitle || 'GST Invoice / POS Receipt'}</div>
+          ${receiptConfig.headerText ? `<div class="center muted" style="white-space:pre-line;margin-top:6px">${receiptConfig.headerText}</div>` : ''}
           <div class="line"></div>
           <div><strong>Bill:</strong> ${bill.billNumber || bill.bill_number || bill.invoiceNumber || '-'}</div>
           <div><strong>Date & Time:</strong> ${formatReceiptDateTime(bill.createdAt || bill.created_at)}</div>
           <div><strong>Customer:</strong> ${bill.customerName || bill.customer_name || 'Walk-in Customer'}</div>
-          ${(bill.customerMobile || bill.customer_mobile) ? `<div><strong>Mobile:</strong> ${bill.customerMobile || bill.customer_mobile}</div>` : ''}
+          ${(receiptConfig.showCustomerMobile && (bill.customerMobile || bill.customer_mobile)) ? `<div><strong>Mobile:</strong> ${bill.customerMobile || bill.customer_mobile}</div>` : ''}
           <div class="line"></div>
           <table>
             <thead>
@@ -621,13 +675,13 @@ export default function POSPage() {
           <div class="line"></div>
           <div class="totals">
             <div><span>Subtotal</span><strong>${formatCurrency(bill.subtotal || receipt.subtotal || 0)}</strong></div>
-            <div><span>Discount</span><strong>${formatCurrency(bill.discount_total || bill.discountTotal || receipt.discount || 0)}</strong></div>
-            <div><span>Tax</span><strong>${formatCurrency(bill.tax_total || bill.totalTax || receipt.taxTotal || 0)}</strong></div>
+            ${receiptConfig.showDiscount ? `<div><span>Discount</span><strong>${formatCurrency(bill.discount_total || bill.discountTotal || receipt.discount || 0)}</strong></div>` : ''}
+            ${receiptConfig.showTaxBreakup ? `<div><span>Tax</span><strong>${formatCurrency(bill.tax_total || bill.totalTax || receipt.taxTotal || 0)}</strong></div>` : ''}
             <div class="grand"><span>Total</span><span>${formatCurrency(bill.grand_total || bill.grandTotal || receipt.grandTotal || 0)}</span></div>
             <div><span>Paid By</span><strong>${bill.payment_mode || bill.paymentMode || 'cash'}</strong></div>
           </div>
           <div class="line"></div>
-          <div class="center muted">Thank you. Visit again.</div>
+          <div class="center muted" style="white-space:pre-line">${receiptConfig.footerText || 'Thank you. Visit again.'}</div>
           ${qrBlock}
           <script>window.onload = () => { window.print(); window.close(); };</script>
         </body>
@@ -706,7 +760,9 @@ export default function POSPage() {
           userId: user.id,
           storeId: Number(selectedStoreId),
           openingCash: toNumber(openingCash),
-          counterName: 'POS Counter',
+          counterName: counterName || 'POS Counter',
+          deviceUid,
+          counterUid: deviceUid,
         }),
       });
 
@@ -715,6 +771,9 @@ export default function POSPage() {
         const openedSession = json.data?.session || json;
         setSession(openedSession);
         setSelectedStoreId(String(openedSession.storeId || selectedStoreId));
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem('pos-counter-name-v1', counterName || 'POS Counter');
+        }
         setOpenSessionModal(false);
         loadPOSData(openedSession.storeId || selectedStoreId);
         showToast('Session opened successfully');
@@ -791,6 +850,9 @@ export default function POSPage() {
       const payload = {
         sessionId: session.sessionId,
         storeId: session.storeId || selectedStoreId,
+        deviceUid,
+        counterUid: deviceUid,
+        counterName: session.counterName || counterName,
         customerName: customerName || 'Walk-in Customer',
         customerMobile,
         paymentMode,
@@ -1485,6 +1547,13 @@ export default function POSPage() {
                   value={openingCash}
                   onChange={(e) => setOpeningCash(e.target.value)}
                   placeholder="Opening cash"
+                  className={inputClassName}
+                />
+                <input
+                  type="text"
+                  value={counterName}
+                  onChange={(e) => setCounterName(e.target.value)}
+                  placeholder="Counter name"
                   className={inputClassName}
                 />
                 <select

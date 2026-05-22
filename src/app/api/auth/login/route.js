@@ -1,4 +1,4 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { signAccessToken, signRefreshToken, createTokenPayload } from '@/lib/auth-enhanced';
@@ -15,6 +15,12 @@ function getDefaultRoute(/* role */) {
   return '/home';
 }
 
+const debugLog = (...args) => {
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(...args);
+  }
+};
+
 export async function POST(request) {
   try {
     await ensureUsersTable();
@@ -22,7 +28,7 @@ export async function POST(request) {
     await ensureSessionsSchema();
     await ensureAuditLogsSchema();
 
-    console.log('[LOGIN] Request received');
+    debugLog('[LOGIN] Request received');
     
     // ============================================
     // STEP 0: PARSE REQUEST BODY
@@ -31,7 +37,7 @@ export async function POST(request) {
     let body;
     try {
       body = await request.json();
-      console.log('[LOGIN] Body parsed:', { 
+      debugLog('[LOGIN] Body parsed:', { 
         email: body.email, 
         password: body.password ? '***' : 'undefined',
         bodyKeys: Object.keys(body)
@@ -72,7 +78,7 @@ export async function POST(request) {
     // STEP 1: VALIDATE INPUT
     // ============================================
 
-    console.log('[LOGIN] Validating input:', { 
+    debugLog('[LOGIN] Validating input:', { 
       hasEmail: !!email, 
       hasPassword: !!password,
       emailType: typeof email,
@@ -102,7 +108,7 @@ export async function POST(request) {
     // STEP 2: FIND USER IN users TABLE
     // ============================================
 
-    console.log('[LOGIN] Searching for user:', { email: email.toLowerCase() });
+    debugLog('[LOGIN] Searching for user:', { email: email.toLowerCase() });
 
     let userResult;
     try {
@@ -112,14 +118,14 @@ export async function POST(request) {
          WHERE LOWER(email) = LOWER($1) AND is_active = TRUE`,
         [email]
       );
-      console.log('[LOGIN] User query result:', { 
+      debugLog('[LOGIN] User query result:', { 
         found: userResult.rows.length > 0,
         rowCount: userResult.rows.length
       });
     } catch (err) {
       console.error('[LOGIN] Database query error:', err.message);
       return NextResponse.json(
-        { error: 'Database error: ' + err.message },
+        { error: 'Unable to authenticate' },
         { status: 500 }
       );
     }
@@ -130,7 +136,7 @@ export async function POST(request) {
     }
 
     const user = userResult.rows[0];
-    console.log('[LOGIN] User found:', { 
+    debugLog('[LOGIN] User found:', { 
       id: user.id, 
       email: user.email,
       role: user.role,
@@ -141,19 +147,19 @@ export async function POST(request) {
     // STEP 4: VERIFY PASSWORD
     // ============================================
 
-    console.log('[LOGIN] Verifying password');
+    debugLog('[LOGIN] Verifying password');
 
     let isPasswordValid;
     try {
       isPasswordValid = await bcrypt.compare(password, user.password_hash);
-      console.log('[LOGIN] Password verification result:', { 
+      debugLog('[LOGIN] Password verification result:', { 
         isValid: isPasswordValid,
         hashExists: !!user.password_hash
       });
     } catch (err) {
       console.error('[LOGIN] Bcrypt comparison error:', err.message);
       return NextResponse.json(
-        { error: 'Password verification failed: ' + err.message },
+        { error: 'Unable to authenticate' },
         { status: 500 }
       );
     }
@@ -168,7 +174,7 @@ export async function POST(request) {
     // STEP 5: RESET FAILED ATTEMPTS & UPDATE LOGIN TIME
     // ============================================
 
-    console.log('[LOGIN] Updating last login timestamp');
+    debugLog('[LOGIN] Updating last login timestamp');
 
     try {
       await query(
@@ -185,7 +191,7 @@ export async function POST(request) {
     // STEP 6: GET USER'S PERMISSIONS
     // ============================================
 
-    console.log('[LOGIN] Fetching employee permissions (roles are informational only)');
+    debugLog('[LOGIN] Fetching employee permissions (roles are informational only)');
     let permissions = [];
 
     try {
@@ -218,7 +224,7 @@ export async function POST(request) {
     // STEP 7: GET USER'S ASSIGNED STORES
     // ============================================
 
-    console.log('[LOGIN] Fetching assigned stores');
+    debugLog('[LOGIN] Fetching assigned stores');
 
     let storesResult = { rows: [] };
     try {
@@ -228,7 +234,7 @@ export async function POST(request) {
          ORDER BY store_id`,
         [user.id]
       );
-      console.log('[LOGIN] Stores found:', { 
+      debugLog('[LOGIN] Stores found:', { 
         count: storesResult.rows.length,
         stores: storesResult.rows.map(s => s.store_id)
       });
@@ -243,7 +249,7 @@ export async function POST(request) {
     // STEP 8: CREATE TOKEN PAYLOAD
     // ============================================
 
-    console.log('[LOGIN] Creating token payload');
+    debugLog('[LOGIN] Creating token payload');
 
     const tokenPayload = createTokenPayload({
       id: user.id,
@@ -254,7 +260,7 @@ export async function POST(request) {
       assigned_stores: assignedStores,
     });
 
-    console.log('[LOGIN] Token payload created:', { 
+    debugLog('[LOGIN] Token payload created:', { 
       sub: tokenPayload.sub,
       role: tokenPayload.role,
       permissionCount: tokenPayload.permissions.length
@@ -264,12 +270,12 @@ export async function POST(request) {
     // STEP 9: SIGN ACCESS & REFRESH TOKENS
     // ============================================
 
-    console.log('[LOGIN] Signing tokens');
+    debugLog('[LOGIN] Signing tokens');
 
     const accessToken = signAccessToken(tokenPayload);
     const refreshToken = signRefreshToken(tokenPayload);
 
-    console.log('[LOGIN] Tokens signed successfully');
+    debugLog('[LOGIN] Tokens signed successfully');
 
     // ============================================
     // STEP 10: HASH TOKENS FOR SESSION STORAGE
@@ -289,7 +295,7 @@ export async function POST(request) {
     // STEP 11: STORE SESSION IN DATABASE
     // ============================================
 
-    console.log('[LOGIN] Storing session');
+    debugLog('[LOGIN] Storing session');
 
     const ipAddress = request.headers.get('x-forwarded-for') || request.headers.get('cf-connecting-ip') || 'unknown';
     const userAgent = request.headers.get('user-agent') || 'unknown';
@@ -301,7 +307,7 @@ export async function POST(request) {
          VALUES ($1, $2, $3, $4, $5, NOW() + INTERVAL '7 days', NOW() + INTERVAL '30 days')`,
         [user.id, accessTokenHash, refreshTokenHash, ipAddress, userAgent]
       );
-      console.log('[LOGIN] Session stored successfully');
+      debugLog('[LOGIN] Session stored successfully');
     } catch (err) {
       console.error('[LOGIN] Failed to store session:', err.message);
     }
@@ -310,7 +316,7 @@ export async function POST(request) {
     // STEP 12: LOG LOGIN ATTEMPT IN AUDIT
     // ============================================
 
-    console.log('[LOGIN] Logging audit entry');
+    debugLog('[LOGIN] Logging audit entry');
 
     try {
       await query(
@@ -327,9 +333,9 @@ export async function POST(request) {
     // STEP 13: REDIRECT TO HOME
     // ============================================
 
-    console.log('[LOGIN] Login successful for:', email);
+    debugLog('[LOGIN] Login successful for:', email);
     const defaultRoute = getDefaultRoute(user.role);
-    console.log('[LOGIN] Redirecting to', defaultRoute);
+    debugLog('[LOGIN] Redirecting to', defaultRoute);
 
     // Create redirect response
     const redirectUrl = new URL(defaultRoute, request.url);
@@ -355,7 +361,7 @@ export async function POST(request) {
       path: '/',
     });
 
-    console.log('[LOGIN] Cookies set, redirecting');
+    debugLog('[LOGIN] Cookies set, redirecting');
     
     // Reset rate limit on successful login
     rateLimiters.login.reset(userIP);
@@ -406,3 +412,4 @@ export async function POST(request) {
  * 
  * Expected: 302 Redirect to /home with access_token & refresh_token cookies
  */
+

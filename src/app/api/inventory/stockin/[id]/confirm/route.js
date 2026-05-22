@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server';
 import { getClient, query } from '@/lib/db';
 import { ensureStockInSchema } from '@/lib/stockInSchema';
+import { ensureInventoryBatchSchema, receiveBatchStock } from '@/lib/inventoryBatching';
 
 export async function POST(request, { params }) {
   const { id } = await params;
-  try {
-    await ensureStockInSchema();
-    const body = await request.json();
+    try {
+      await ensureStockInSchema();
+      await ensureInventoryBatchSchema();
+      const body = await request.json();
     const form  = body.form  || {};
     const items = body.items || [];
 
@@ -73,12 +75,36 @@ export async function POST(request, { params }) {
         const costPrice    = Number(item.cost_price || 0);
         const taxValue     = Number(item.tax_value  || 0);
 
-        await client.query(
+        const stockInItemRes = await client.query(
           `INSERT INTO stock_in_items
-             (stock_in_id, product_id, product_name, qty, cost_price, tax_value, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-          [id, pid, productName, qty, costPrice, taxValue]
+             (stock_in_id, product_id, product_name, qty, cost_price, tax_value, batch_no, mfg_date, expiry_date, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+           RETURNING id`,
+          [
+            id,
+            pid,
+            productName,
+            qty,
+            costPrice,
+            taxValue,
+            item.batch_no || item.batchNo || null,
+            item.mfg_date || item.mfgDate || null,
+            item.expiry_date || item.expiryDate || null,
+          ]
         );
+
+        await receiveBatchStock(client, {
+          stockInId: id,
+          stockInItemId: stockInItemRes.rows[0]?.id,
+          productId: pid,
+          storeId: destinationId,
+          qty,
+          costPrice,
+          batchNo: item.batch_no || item.batchNo,
+          mfgDate: item.mfg_date || item.mfgDate,
+          expiryDate: item.expiry_date || item.expiryDate,
+          meta: { productName, invoiceNumber: form.invoice_number || null },
+        });
 
         // ── 5. Update products.cost_price if the GRN cost differs ─────────────
         //    Only update when the incoming cost is > 0 so zeroed-out entries

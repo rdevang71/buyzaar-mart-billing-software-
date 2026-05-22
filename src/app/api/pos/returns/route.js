@@ -2,6 +2,7 @@ import { query } from '@/lib/db';
 import { successResponse, errorResponse } from '@/lib/api-response';
 import { extractAuthUser } from '@/lib/api-protection';
 import { ensureSalesReturnsSchema } from '@/lib/salesReturnsSchema';
+import { ensureInventoryBatchSchema, receiveBatchStock } from '@/lib/inventoryBatching';
 
 function toNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -24,6 +25,7 @@ function canReviewReturn(user, storeId) {
 export async function POST(req) {
   try {
     await ensureSalesReturnsSchema();
+    await ensureInventoryBatchSchema();
 
     const auth = await extractAuthUser(req);
     if (auth.error || !auth.user) return errorResponse(auth.error || 'Unauthorized', 401);
@@ -109,6 +111,7 @@ export async function GET(req) {
     const bill_id = searchParams.get('bill_id');
     const store_id = searchParams.get('store_id');
     const status = searchParams.get('status');
+    const scope = searchParams.get('scope');
     const limit = Math.min(Math.max(parseInt(searchParams.get('pageSize') || '100', 10), 1), 200);
 
     let query_str = `
@@ -130,7 +133,10 @@ export async function GET(req) {
     const params = [];
     const user = auth.user;
 
-    if (!isSuperAdmin(user)) {
+    if (scope === 'mine') {
+      query_str += ` AND sr.created_by = $${params.length + 1}`;
+      params.push(user.id);
+    } else if (!isSuperAdmin(user)) {
       const assignedStores = (user.assigned_stores || []).map(Number).filter(Number.isFinite);
       if (assignedStores.length === 0) return successResponse([]);
       params.push(assignedStores);
@@ -147,7 +153,9 @@ export async function GET(req) {
       params.push(store_id);
     }
 
-    if (status) {
+    if (status === 'reviewed') {
+      query_str += ` AND sr.status IN ('approved', 'declined')`;
+    } else if (status) {
       query_str += ` AND sr.status = $${params.length + 1}`;
       params.push(status);
     }
@@ -236,11 +244,24 @@ export async function PATCH(req) {
 
     const stockInId = stockInRes.rows[0]?.id;
     for (const item of itemsRes.rows) {
-      await query(
+      const stockInItemRes = await query(
         `INSERT INTO stock_in_items (stock_in_id, product_id, product_name, qty, cost_price, tax_value, created_at)
-         VALUES ($1, $2, $3, $4, $5, 0, NOW())`,
+         VALUES ($1, $2, $3, $4, $5, 0, NOW())
+         RETURNING id`,
         [stockInId, item.product_id, item.product_name || 'Product', item.qty, item.original_price]
       );
+      await receiveBatchStock({
+        query,
+      }, {
+        stockInId,
+        stockInItemId: stockInItemRes.rows[0]?.id,
+        productId: item.product_id,
+        storeId: returnRow.store_id,
+        qty: item.qty,
+        costPrice: item.original_price,
+        batchNo: `RETURN-${returnId}-${item.product_id}`,
+        meta: { source: 'return-approval', returnId },
+      });
     }
 
     const approved = await query(

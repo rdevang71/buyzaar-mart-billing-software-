@@ -3,12 +3,10 @@ import { successResponse, errorResponse } from '@/lib/api-response';
 import { verifyToken } from '@/lib/auth-enhanced';
 import { query } from '@/lib/db';
 import { ensureUsersTable } from '@/lib/userAuth';
-import { ensureRolesSchema } from '@/lib/rolesSchema';
 
 export async function GET() {
   try {
     await ensureUsersTable();
-    await ensureRolesSchema();
 
     const cookieStore = await cookies();
     

@@ -12,9 +12,26 @@
 import jwt from 'jsonwebtoken';
 
 // Use secure secret - should be in .env.local
-const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production-please';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 const REFRESH_TOKEN_EXPIRES_IN = process.env.REFRESH_TOKEN_EXPIRES_IN || '30d';
+const INSECURE_JWT_SECRETS = new Set([
+  'change-me-in-production-please',
+  'dev-secret-change-me',
+  'your-secret-key',
+]);
+
+function getJwtSecret() {
+  const secret = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? '' : 'change-me-in-production-please');
+
+  if (
+    process.env.NODE_ENV === 'production' &&
+    (!secret || secret.length < 32 || INSECURE_JWT_SECRETS.has(secret))
+  ) {
+    throw new Error('JWT_SECRET must be set to a strong unique value in production');
+  }
+
+  return secret;
+}
 
 /**
  * Enhanced Token Payload Structure
@@ -41,7 +58,7 @@ export function signAccessToken(payload) {
       ...payload,
       type: 'access',
     },
-    JWT_SECRET,
+    getJwtSecret(),
     {
       expiresIn: JWT_EXPIRES_IN,
       issuer: 'billing-software',
@@ -58,7 +75,7 @@ export function signRefreshToken(payload) {
       sub: payload.sub,
       type: 'refresh',
     },
-    JWT_SECRET,
+    getJwtSecret(),
     {
       expiresIn: REFRESH_TOKEN_EXPIRES_IN,
       issuer: 'billing-software',
@@ -71,7 +88,7 @@ export function signRefreshToken(payload) {
 // ============================================
 export function verifyToken(token) {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET, {
+    const decoded = jwt.verify(token, getJwtSecret(), {
       issuer: 'billing-software',
     });
     return decoded;

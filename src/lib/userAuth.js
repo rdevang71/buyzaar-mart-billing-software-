@@ -49,15 +49,35 @@ export async function ensureUsersTable() {
         );
       `);
 
+      const superAdminEmail = normalizeEmail(SUPER_ADMIN_EMAIL);
+      const superAdminPhone = String(SUPER_ADMIN_PHONE).trim();
+      const existingSuperAdmin = await query(
+        `SELECT id FROM users WHERE email = $1 LIMIT 1`,
+        [superAdminEmail]
+      );
+
+      if (existingSuperAdmin.rows.length > 0 && process.env.SUPER_ADMIN_RESET_ON_START !== 'true') {
+        await query(
+          `UPDATE users
+           SET role = 'super_admin',
+               is_active = TRUE,
+               updated_at = NOW()
+           WHERE email = $1`,
+          [superAdminEmail]
+        );
+        return;
+      }
+
       const passwordHash = await bcrypt.hash(SUPER_ADMIN_PASSWORD, 10);
       await query(
         `INSERT INTO users (name, email, phone, password_hash, role, is_active, created_at, updated_at)
          VALUES ($1, $2, $3, $4, 'super_admin', TRUE, NOW(), NOW())
          ON CONFLICT (email) DO UPDATE
          SET role = 'super_admin',
+             password_hash = EXCLUDED.password_hash,
              is_active = TRUE,
              updated_at = NOW()`,
-        [SUPER_ADMIN_NAME, normalizeEmail(SUPER_ADMIN_EMAIL), String(SUPER_ADMIN_PHONE).trim(), passwordHash]
+        [SUPER_ADMIN_NAME, superAdminEmail, superAdminPhone, passwordHash]
       );
     })().catch((err) => {
       globalForUsers._usersTableReadyPromise = null;

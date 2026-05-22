@@ -14,7 +14,7 @@ export class ApiError extends Error {
 
 class ApiClient {
   constructor(baseUrl) {
-    this.baseUrl = baseUrl || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
+    this.baseUrl = baseUrl || process.env.NEXT_PUBLIC_BACKEND_URL || (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3001');
     this.timeout = 30000; // 30 seconds default
   }
 

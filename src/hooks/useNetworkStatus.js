@@ -25,12 +25,10 @@ export function useNetworkStatus() {
     window.addEventListener('offline', markOffline);
 
     // Optional: real connectivity check every 20 s.
-    // Hits the prefetch route with no storeId — tiny response, no side-effects.
     const probe = setInterval(async () => {
       try {
-        await fetch('/api/sync/prefetch', {
+        await fetch('/api/health', {
           method: 'HEAD',
-          credentials: 'include',
           cache: 'no-store',
           signal: AbortSignal.timeout(5_000),
         });

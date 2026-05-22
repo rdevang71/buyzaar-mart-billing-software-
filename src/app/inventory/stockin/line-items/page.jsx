@@ -104,23 +104,21 @@ function LineItemsContent() {
   const addToCart = (p) => {
     const pid = p.id ?? p.product_id;
     setCart((c) => {
-      const existing = c.find((it) => String(it.product_id) === String(pid));
-      if (existing) {
-        return c.map((it) =>
-          String(it.product_id) === String(pid) ? { ...it, qty: Number(it.qty) + 1 } : it
-        );
-      }
       const taxRate = Number(p.tax_rate || 0);
       const cost = Number(p.cost_price || 0);
       return [
         ...c,
         {
+          line_id: `${pid}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
           product_id: pid,
           name: p.name,
           sku: p.sku,
           cost_price: cost,
           tax_value: draft?.applyTaxes ? (cost * taxRate) / 100 : 0,
           qty: 1,
+          batch_no: '',
+          mfg_date: '',
+          expiry_date: '',
         },
       ];
     });
@@ -128,16 +126,20 @@ function LineItemsContent() {
     setProducts([]);
   };
 
-  const updateQty = (product_id, qty) => {
+  const updateCartItem = (lineId, updates) => {
+    setCart((c) => c.map((it) => (it.line_id === lineId ? { ...it, ...updates } : it)));
+  };
+
+  const updateQty = (lineId, qty) => {
     setCart((c) =>
       c.map((it) =>
-        String(it.product_id) === String(product_id) ? { ...it, qty: Math.max(1, Number(qty) || 1) } : it
+        it.line_id === lineId ? { ...it, qty: Math.max(1, Number(qty) || 1) } : it
       )
     );
   };
 
-  const removeItem = (product_id) => {
-    setCart((c) => c.filter((it) => String(it.product_id) !== String(product_id)));
+  const removeItem = (lineId) => {
+    setCart((c) => c.filter((it) => it.line_id !== lineId));
   };
 
   const confirm = async () => {
@@ -310,14 +312,15 @@ function LineItemsContent() {
                     <tr className="border-b border-gray-100">
                       <th className="text-left text-[11px] font-bold text-gray-500 uppercase tracking-wide py-2 px-2">Product</th>
                       <th className="text-left text-[11px] font-bold text-gray-500 uppercase tracking-wide py-2 px-2">Qty</th>
+                      <th className="text-left text-[11px] font-bold text-gray-500 uppercase tracking-wide py-2 px-2">Batch</th>
+                      <th className="text-left text-[11px] font-bold text-gray-500 uppercase tracking-wide py-2 px-2">Expiry</th>
                       <th className="text-left text-[11px] font-bold text-gray-500 uppercase tracking-wide py-2 px-2">Cost</th>
-                      <th className="text-left text-[11px] font-bold text-gray-500 uppercase tracking-wide py-2 px-2">Tax</th>
                       <th className="w-10" />
                     </tr>
                   </thead>
                   <tbody>
                     {filteredCart.map((it) => (
-                      <tr key={it.product_id} className="border-b border-gray-50 hover:bg-gray-50/50">
+                      <tr key={it.line_id} className="border-b border-gray-50 hover:bg-gray-50/50">
                         <td className="py-3 px-2">
                           <div className="text-[13px] font-medium text-gray-900">{it.name}</div>
                           <div className="text-[11px] text-gray-500">{it.sku}</div>
@@ -327,16 +330,38 @@ function LineItemsContent() {
                             type="number"
                             min={1}
                             value={it.qty}
-                            onChange={(e) => updateQty(it.product_id, e.target.value)}
+                            onChange={(e) => updateQty(it.line_id, e.target.value)}
                             className="w-20 border border-gray-200 rounded px-2 py-1 text-[13px] text-gray-700"
                           />
                         </td>
+                        <td className="py-3 px-2">
+                          <input
+                            value={it.batch_no}
+                            onChange={(e) => updateCartItem(it.line_id, { batch_no: e.target.value })}
+                            placeholder="Batch no"
+                            className="w-28 border border-gray-200 rounded px-2 py-1 text-[13px] text-gray-700"
+                          />
+                          <input
+                            type="date"
+                            value={it.mfg_date}
+                            onChange={(e) => updateCartItem(it.line_id, { mfg_date: e.target.value })}
+                            className="mt-1 w-28 border border-gray-200 rounded px-2 py-1 text-[12px] text-gray-700"
+                            title="Manufacturing date"
+                          />
+                        </td>
+                        <td className="py-3 px-2">
+                          <input
+                            type="date"
+                            value={it.expiry_date}
+                            onChange={(e) => updateCartItem(it.line_id, { expiry_date: e.target.value })}
+                            className="w-32 border border-gray-200 rounded px-2 py-1 text-[13px] text-gray-700"
+                          />
+                        </td>
                         <td className="py-3 px-2 text-[13px] text-gray-700">{formatCurrency(it.cost_price)}</td>
-                        <td className="py-3 px-2 text-[13px] text-gray-700">{formatCurrency(it.tax_value)}</td>
                         <td className="py-3 px-2">
                           <button
                             type="button"
-                            onClick={() => removeItem(it.product_id)}
+                            onClick={() => removeItem(it.line_id)}
                             className="p-1.5 text-red-500 hover:bg-red-50 rounded"
                           >
                             <i className="ti ti-trash text-[16px]" />

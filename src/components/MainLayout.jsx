@@ -113,7 +113,8 @@ export default function MainLayout({ children }) {
           ${hasAccessibleMenu ? 'md:ml-[218px]' : 'md:ml-0'}
           ${hasAccessibleMenu && subOpen ? 'md:ml-[418px]' : ''}
           min-h-[calc(100vh-52px)]
-          p-4 sm:p-5 md:p-7
+          p-3 sm:p-5 md:p-7
+          max-w-full overflow-x-hidden
         `}
       >
         {content}

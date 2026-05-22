@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
 import { getClient } from '@/lib/db';
 import { ensureStockOutSchema } from '@/lib/stockOutSchema';
+import { allocateBatchStock, ensureInventoryBatchSchema, getInventoryIssueStrategy } from '@/lib/inventoryBatching';
 
 export async function POST(request, { params }) {
   const { id } = await params;
-  try {
-    await ensureStockOutSchema();
+    try {
+      await ensureStockOutSchema();
+      await ensureInventoryBatchSchema();
     const body = await request.json();
     const form = body.form || {};
     const items = body.items || [];
@@ -34,7 +36,7 @@ export async function POST(request, { params }) {
     try {
       await client.query('BEGIN');
 
-      const draft = await client.query('SELECT id, status, method FROM stock_out WHERE id = $1', [id]);
+      const draft = await client.query('SELECT id, status, method, destination_id, transaction_id FROM stock_out WHERE id = $1', [id]);
       if (draft.rows.length === 0) {
         await client.query('ROLLBACK');
         return NextResponse.json({ error: 'Stock out not found' }, { status: 404 });
@@ -47,11 +49,35 @@ export async function POST(request, { params }) {
       await client.query('DELETE FROM stock_out_items WHERE stock_out_id = $1', [id]);
 
       for (const item of items) {
-        await client.query(
-          `INSERT INTO stock_out_items (stock_out_id, product_id, product_name, qty, cost_price, tax_value, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-          [id, item.product_id, item.name || null, item.qty, item.cost_price || 0, item.tax_value || 0]
-        );
+        const allocations = await allocateBatchStock(client, {
+          productId: item.product_id,
+          storeId: draft.rows[0].destination_id,
+          qty: item.qty,
+          strategy: getInventoryIssueStrategy(form.issue_strategy),
+          referenceType: 'stock_out',
+          referenceId: id,
+          meta: { transactionId: draft.rows[0].transaction_id || null },
+        });
+
+        for (const allocation of allocations) {
+          await client.query(
+            `INSERT INTO stock_out_items (
+               stock_out_id, product_id, product_name, qty, cost_price, tax_value,
+               batch_id, batch_no, expiry_date, created_at
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())`,
+            [
+              id,
+              item.product_id,
+              item.name || null,
+              allocation.qty,
+              allocation.costPrice || item.cost_price || 0,
+              item.tax_value || 0,
+              allocation.batchId,
+              allocation.batchNo,
+              allocation.expiryDate,
+            ]
+          );
+        }
       }
 
       await client.query(

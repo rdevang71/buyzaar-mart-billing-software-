@@ -21,6 +21,7 @@ import { cookies }            from 'next/headers';
 import { verifyToken }        from '@/lib/auth-enhanced';
 import { query }              from '@/lib/db';
 import { sendBillOnWhatsApp } from '@/lib/whatsappService';
+import { allocateBatchStock, ensureInventoryBatchSchema, getInventoryIssueStrategy } from '@/lib/inventoryBatching';
 
 export async function POST(request) {
   // ── Auth ────────────────────────────────────────────────────────────────
@@ -32,6 +33,7 @@ export async function POST(request) {
 
   const payload = verifyToken(token);
   if (!payload?.sub) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  await ensureInventoryBatchSchema();
 
   let body;
   try {
@@ -179,19 +181,37 @@ export async function POST(request) {
         );
 
         const stockOutId = soResult.rows[0].id;
+        const issueStrategy = getInventoryIssueStrategy(bill.issueStrategy);
 
         for (const item of items) {
-          await query(
-            `INSERT INTO stock_out_items (stock_out_id, product_id, product_name, qty, cost_price)
-             VALUES ($1, $2, $3, $4, $5)`,
-            [
-              stockOutId,
-              item.productId   || null,
-              item.productName || item.name || 'Unknown',
-              item.qty,
-              item.costPrice   || 0,
-            ]
-          );
+          const allocations = await allocateBatchStock({ query }, {
+            productId: item.productId,
+            storeId: bill.storeId,
+            qty: item.qty,
+            strategy: issueStrategy,
+            referenceType: 'offline_sales_bill',
+            referenceId: salesBillId,
+            meta: { syncId, billNumber },
+          });
+
+          for (const allocation of allocations) {
+            await query(
+              `INSERT INTO stock_out_items (
+                 stock_out_id, product_id, product_name, qty, cost_price,
+                 batch_id, batch_no, expiry_date
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+              [
+                stockOutId,
+                item.productId || null,
+                item.productName || item.name || 'Unknown',
+                allocation.qty,
+                allocation.costPrice || item.costPrice || 0,
+                allocation.batchId,
+                allocation.batchNo,
+                allocation.expiryDate,
+              ]
+            );
+          }
         }
 
         // Check for inventory conflicts (stock went negative) — log only, don't block
@@ -270,14 +290,14 @@ export async function POST(request) {
       // ── WhatsApp receipt for offline-synced bills ───────────────────────
       if (bill.customerMobile) {
         query('SELECT name FROM stores WHERE id = $1', [bill.storeId || null])
-          .then(({ rows }) => {
+          .then(async ({ rows }) => {
             const storeName = rows[0]?.name || 'Our Store';
             // Fetch the public_token that was just inserted
-          const tokenRow = await query(
-            'SELECT public_token FROM sales_bills WHERE sync_id = $1',
-            [syncId]
-          );
-          return sendBillOnWhatsApp({
+            const tokenRow = await query(
+              'SELECT public_token FROM sales_bills WHERE sync_id = $1',
+              [syncId]
+            );
+            return sendBillOnWhatsApp({
               customerMobile: bill.customerMobile,
               storeName,
               billNumber:     bill.billNumber || billNumber,

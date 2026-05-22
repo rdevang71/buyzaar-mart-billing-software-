@@ -9,7 +9,7 @@ import { filterMenuItemsForUser, getPageTitleForMenu } from '@/lib/accessControl
 export default function Topbar({ onMenuOpen }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, loading: loadingUser, refetch } = useUser();
+  const { user, loading: loadingUser } = useUser();
   const accessibleMenuItems = useMemo(() => filterMenuItemsForUser(menuItems, user), [user]);
   const title = getPageTitleForMenu(accessibleMenuItems, pathname);
   const [openProfile, setOpenProfile] = useState(false);
@@ -59,26 +59,27 @@ export default function Topbar({ onMenuOpen }) {
     return 'No Store Assigned';
   }, [user]);
 
-  useEffect(() => {
-    refetch();
-  }, [pathname, refetch]);
-
   const canReviewReturns = user?.role === 'super_admin' || user?.role === 'admin' || user?.permissions?.includes('*');
+  const returnNotificationTitle = canReviewReturns ? 'Return Requests' : 'My Return Updates';
+  const emptyReturnNotificationText = canReviewReturns ? 'No pending return requests.' : 'No return updates yet.';
 
   const loadReturnNotifications = useCallback(async () => {
-    if (!canReviewReturns) {
+    if (!user) {
       setReturnRequests([]);
       return;
     }
 
     try {
-      const response = await fetch('/api/pos/returns?status=pending&pageSize=10', { cache: 'no-store' });
+      const endpoint = canReviewReturns
+        ? '/api/pos/returns?status=pending&pageSize=10'
+        : '/api/pos/returns?scope=mine&status=reviewed&pageSize=10';
+      const response = await fetch(endpoint, { cache: 'no-store' });
       const json = await response.json();
       setReturnRequests(json.success && Array.isArray(json.data) ? json.data : []);
     } catch {
       setReturnRequests([]);
     }
-  }, [canReviewReturns]);
+  }, [canReviewReturns, user]);
 
   useEffect(() => {
     loadReturnNotifications();
@@ -199,7 +200,7 @@ export default function Topbar({ onMenuOpen }) {
           {openNotifications && (
             <div className="absolute right-0 top-[40px] w-[340px] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_16px_50px_rgba(15,23,42,0.16)]">
               <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
-                <p className="text-sm font-bold text-gray-900">Return Requests</p>
+                <p className="text-sm font-bold text-gray-900">{returnNotificationTitle}</p>
                 <button
                   type="button"
                   onClick={loadReturnNotifications}
@@ -209,7 +210,7 @@ export default function Topbar({ onMenuOpen }) {
                 </button>
               </div>
               {returnRequests.length === 0 ? (
-                <p className="px-4 py-5 text-sm text-gray-500">No pending return requests.</p>
+                <p className="px-4 py-5 text-sm text-gray-500">{emptyReturnNotificationText}</p>
               ) : (
                 <div className="max-h-80 overflow-auto py-1">
                   {returnRequests.map((request) => (
@@ -225,13 +226,15 @@ export default function Topbar({ onMenuOpen }) {
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="truncate text-sm font-semibold text-gray-900">
-                            {request.return_type === 'exchange' ? 'Exchange' : 'Return'} request #{request.id}
+                            {canReviewReturns
+                              ? `${request.return_type === 'exchange' ? 'Exchange' : 'Return'} request #${request.id}`
+                              : `Return request #${request.id} ${request.status}`}
                           </p>
                           <p className="mt-0.5 truncate text-xs text-gray-500">
                             {request.store_name || `Store ${request.store_id || '-'}`} - Bill {request.bill_number || request.original_bill_id}
                           </p>
                         </div>
-                        <span className="shrink-0 text-xs font-bold text-green-700">
+                        <span className={`shrink-0 text-xs font-bold ${request.status === 'declined' ? 'text-red-700' : 'text-green-700'}`}>
                           ₹{Number(request.refund_amount || 0).toFixed(0)}
                         </span>
                       </div>
