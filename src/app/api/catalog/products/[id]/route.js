@@ -1,11 +1,18 @@
 import { query } from '@/lib/db';
 import { successResponse, errorResponse, notFoundError, validationError } from '@/lib/api-response';
 
+async function ensureProductDiscountSchema() {
+  await query(`
+    ALTER TABLE products
+      ADD COLUMN IF NOT EXISTS allow_discount_on_pos BOOLEAN NOT NULL DEFAULT FALSE;
+  `);
+}
+
 const SELECT_PRODUCT = `
   SELECT
     p.id, p.product_id, p.name, p.description, p.barcode, p.sku,
     p.mrp, p.selling_price, p.cost_price, p.unit,
-    p.is_active, p.is_service, p.image_url,
+    p.is_active, p.is_service, p.image_url, p.allow_discount_on_pos,
     p.category_id, p.sub_category_id, p.brand_id,
     p.manufacturer_id, p.department_id, p.income_head_id, p.tax_id,
     p.created_at, p.updated_at,
@@ -30,6 +37,7 @@ const SELECT_PRODUCT = `
 // ─── GET /api/catalog/products/[id] ──────────────────────────
 export async function GET(request, { params }) {
   try {
+    await ensureProductDiscountSchema();
     const resolvedParams = await params;
     const productId = Number(resolvedParams?.id);
     if (!Number.isFinite(productId)) {
@@ -50,6 +58,7 @@ export async function GET(request, { params }) {
 // ─── PUT /api/catalog/products/[id] ──────────────────────────
 export async function PUT(request, { params }) {
   try {
+    await ensureProductDiscountSchema();
     const resolvedParams = await params;
     const productId = Number(resolvedParams?.id);
     if (!Number.isFinite(productId)) {
@@ -83,8 +92,9 @@ export async function PUT(request, { params }) {
         is_active       = $17,
         is_service      = $18,
         image_url       = $19,
+        allow_discount_on_pos = $20,
         updated_at      = NOW()
-       WHERE id = $20
+       WHERE id = $21
        RETURNING *`,
       [
         body.product_id    || null,
@@ -106,6 +116,7 @@ export async function PUT(request, { params }) {
         body.is_active     ?? true,
         body.is_service    ?? false,
         body.image_url     || null,
+        body.allow_discount_on_pos ?? false,
         productId,
       ]
     );

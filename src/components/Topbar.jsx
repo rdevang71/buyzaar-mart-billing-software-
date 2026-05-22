@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { menuItems } from './sidebarConfig';
 import { useUser } from '@/hooks/useUser';
@@ -22,7 +22,10 @@ export default function Topbar({ onMenuOpen }) {
   const [passwordError, setPasswordError] = useState('');
   const [passwordSuccess, setPasswordSuccess] = useState('');
   const [passwordLoading, setPasswordLoading] = useState(false);
+  const [openNotifications, setOpenNotifications] = useState(false);
+  const [returnRequests, setReturnRequests] = useState([]);
   const profileRef = useRef(null);
+  const notificationRef = useRef(null);
 
   const initials = useMemo(() => {
     const name = user?.name?.trim();
@@ -60,11 +63,35 @@ export default function Topbar({ onMenuOpen }) {
     refetch();
   }, [pathname, refetch]);
 
+  const canReviewReturns = user?.role === 'super_admin' || user?.role === 'admin' || user?.permissions?.includes('*');
+
+  const loadReturnNotifications = useCallback(async () => {
+    if (!canReviewReturns) {
+      setReturnRequests([]);
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/pos/returns?status=pending&pageSize=10', { cache: 'no-store' });
+      const json = await response.json();
+      setReturnRequests(json.success && Array.isArray(json.data) ? json.data : []);
+    } catch {
+      setReturnRequests([]);
+    }
+  }, [canReviewReturns]);
+
+  useEffect(() => {
+    loadReturnNotifications();
+  }, [loadReturnNotifications, pathname]);
+
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (!profileRef.current) return;
       if (!profileRef.current.contains(event.target)) {
         setOpenProfile(false);
+      }
+      if (notificationRef.current && !notificationRef.current.contains(event.target)) {
+        setOpenNotifications(false);
       }
     };
 
@@ -151,10 +178,70 @@ export default function Topbar({ onMenuOpen }) {
 
       {/* Right Actions */}
       <div className="flex items-center gap-2 md:gap-3 flex-shrink-0">
-        <button className="relative p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
-          <i className="ti ti-bell text-gray-500 text-[20px]" />
-          <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
-        </button>
+        <div ref={notificationRef} className="relative">
+          <button
+            type="button"
+            onClick={() => {
+              setOpenNotifications((prev) => !prev);
+              loadReturnNotifications();
+            }}
+            className="relative p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+            aria-label="Notifications"
+          >
+            <i className="ti ti-bell text-gray-500 text-[20px]" />
+            {returnRequests.length > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-red-500 px-1 text-center text-[10px] font-bold leading-4 text-white">
+                {returnRequests.length}
+              </span>
+            )}
+          </button>
+
+          {openNotifications && (
+            <div className="absolute right-0 top-[40px] w-[340px] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_16px_50px_rgba(15,23,42,0.16)]">
+              <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+                <p className="text-sm font-bold text-gray-900">Return Requests</p>
+                <button
+                  type="button"
+                  onClick={loadReturnNotifications}
+                  className="rounded-lg px-2 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50"
+                >
+                  Refresh
+                </button>
+              </div>
+              {returnRequests.length === 0 ? (
+                <p className="px-4 py-5 text-sm text-gray-500">No pending return requests.</p>
+              ) : (
+                <div className="max-h-80 overflow-auto py-1">
+                  {returnRequests.map((request) => (
+                    <button
+                      key={request.id}
+                      type="button"
+                      onClick={() => {
+                        setOpenNotifications(false);
+                        router.push('/sales/returns');
+                      }}
+                      className="block w-full border-b border-gray-100 px-4 py-3 text-left hover:bg-gray-50"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-gray-900">
+                            {request.return_type === 'exchange' ? 'Exchange' : 'Return'} request #{request.id}
+                          </p>
+                          <p className="mt-0.5 truncate text-xs text-gray-500">
+                            {request.store_name || `Store ${request.store_id || '-'}`} - Bill {request.bill_number || request.original_bill_id}
+                          </p>
+                        </div>
+                        <span className="shrink-0 text-xs font-bold text-green-700">
+                          ₹{Number(request.refund_amount || 0).toFixed(0)}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         <button className="hidden sm:block p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
           <i className="ti ti-help-circle text-gray-500 text-[20px]" />

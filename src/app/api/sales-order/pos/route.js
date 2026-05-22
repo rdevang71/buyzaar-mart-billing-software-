@@ -42,6 +42,22 @@ function isStoreAllowed(user, storeId) {
   return (user?.assigned_stores || []).map(Number).includes(Number(storeId));
 }
 
+function canManageDiscounts(user) {
+  return user?.role === 'super_admin' ||
+    user?.role === 'admin' ||
+    (Array.isArray(user?.permissions) && (
+      user.permissions.includes('*') ||
+      user.permissions.includes('MANAGE_BILLING')
+    ));
+}
+
+async function ensureProductDiscountSchema() {
+  await query(`
+    ALTER TABLE products
+      ADD COLUMN IF NOT EXISTS allow_discount_on_pos BOOLEAN NOT NULL DEFAULT FALSE;
+  `);
+}
+
 function getAvailableStockSql(storeParam = '$1') {
   return `
     COALESCE(stock_in_totals.qty, 0)
@@ -55,6 +71,7 @@ export async function POST(req) {
   try {
     await ensureSalesBillingSchema();
     await ensureCatalogExtrasSchema();
+    await ensureProductDiscountSchema();
 
     const token = getToken(req);
     if (!token) return errorResponse('Unauthorized', 401);
@@ -95,6 +112,7 @@ export async function POST(req) {
 
     const storeCheck = requireStore(auth.user, storeId);
     if (storeCheck.error) return storeCheck.error;
+    const allowDiscounts = canManageDiscounts(auth.user);
 
     client = await getClient();
     await client.query('BEGIN');
@@ -116,6 +134,7 @@ export async function POST(req) {
            p.barcode,
            p.mrp,
            p.cost_price,
+           p.allow_discount_on_pos,
            COALESCE(NULLIF(ps.selling_price, 0), p.selling_price, 0) AS selling_price,
            COALESCE(t.rate, 0) AS tax_rate,
            ${getAvailableStockSql('$2')} AS available_stock
@@ -171,17 +190,19 @@ export async function POST(req) {
     let subtotal = 0;
     let totalTax = 0;
 
-    for (const item of items) {
+    for (const item of normalizedItems) {
       const qty = toNumber(item.qty);
-      const sellingPrice = toNumber(item.sellingPrice);
-      const discountAmount = toNumber(item.discountAmount);
-      const taxRate = toNumber(item.taxRate);
+      const sellingPrice = toNumber(item.sellingPrice, toNumber(item.dbProduct.selling_price));
+      const discountAmount = allowDiscounts && item.dbProduct?.allow_discount_on_pos ? toNumber(item.discountAmount) : 0;
+      const taxRate = toNumber(item.taxRate, toNumber(item.dbProduct.tax_rate));
       const lineAmount = qty * sellingPrice;
       subtotal += lineAmount;
       totalTax += (Math.max(0, lineAmount - discountAmount) * taxRate) / 100;
     }
 
-    const totalDiscount = toNumber(orderDiscount) + items.reduce((sum, item) => sum + toNumber(item.discountAmount), 0);
+    const allowOrderDiscount = allowDiscounts && normalizedItems.length > 0 && normalizedItems.every((item) => item.dbProduct?.allow_discount_on_pos);
+    const totalDiscount = (allowOrderDiscount ? toNumber(orderDiscount) : 0) +
+      normalizedItems.reduce((sum, item) => sum + (allowDiscounts && item.dbProduct?.allow_discount_on_pos ? toNumber(item.discountAmount) : 0), 0);
     const grandTotal = Math.max(0, subtotal - totalDiscount + totalTax + toNumber(roundOff));
     const paidAmount = payments.reduce((sum, p) => sum + toNumber(p.amount), 0) || grandTotal;
     const billNumber = invoiceNumber || `POS-${Date.now()}`;
@@ -225,7 +246,7 @@ export async function POST(req) {
     for (const item of normalizedItems) {
       const qty = toNumber(item.qty);
       const sellingPrice = toNumber(item.sellingPrice, toNumber(item.dbProduct.selling_price));
-      const discountAmount = toNumber(item.discountAmount);
+      const discountAmount = allowDiscounts && item.dbProduct?.allow_discount_on_pos ? toNumber(item.discountAmount) : 0;
       const taxRate = toNumber(item.taxRate, toNumber(item.dbProduct.tax_rate));
       const lineTax = (Math.max(0, qty * sellingPrice - discountAmount) * taxRate) / 100;
       const lineTotal = Math.max(0, qty * sellingPrice - discountAmount + lineTax);
@@ -369,6 +390,7 @@ export async function GET(req) {
   try {
     await ensureSalesBillingSchema();
     await ensureCatalogExtrasSchema();
+    await ensureProductDiscountSchema();
 
     const auth = await extractAuthUser(req);
     if (auth.error || !auth.user) return errorResponse(auth.error || 'Unauthorized', 401);
@@ -415,7 +437,7 @@ export async function GET(req) {
     const params = [];
     let productsSql = `
       SELECT
-        p.id, p.name, p.sku, p.barcode, p.mrp, p.selling_price, p.cost_price,
+        p.id, p.name, p.sku, p.barcode, p.mrp, p.selling_price, p.cost_price, p.allow_discount_on_pos,
         c.name AS "categoryName",
         b.name AS "brandName",
         ${getAvailableStockSql('$1')} AS "availableStock",

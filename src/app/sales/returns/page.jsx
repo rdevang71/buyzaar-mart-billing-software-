@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import MainLayout from '@/components/MainLayout';
+import { fetchAuthEndpoint } from '@/lib/auth-endpoints';
 
 export default function ReturnsPage() {
   const [formData, setFormData] = useState({
@@ -15,11 +16,40 @@ export default function ReturnsPage() {
   const [searchedBill, setSearchedBill] = useState(null);
   const [selectedItems, setSelectedItems] = useState([]);
   const [toast, setToast] = useState(null);
+  const [user, setUser] = useState(null);
+  const [requests, setRequests] = useState([]);
+
+  const canReviewRequests = useMemo(() => user?.role === 'super_admin' || user?.role === 'admin' || user?.permissions?.includes('*'), [user]);
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
   };
+
+  async function loadUser() {
+    try {
+      const res = await fetchAuthEndpoint('/api/auth/me');
+      const json = await res.json();
+      setUser(json.data?.user || null);
+    } catch {
+      setUser(null);
+    }
+  }
+
+  async function loadRequests() {
+    try {
+      const res = await fetch('/api/pos/returns?status=pending&pageSize=50', { cache: 'no-store' });
+      const json = await res.json();
+      if (json.success) setRequests(Array.isArray(json.data) ? json.data : []);
+    } catch {
+      setRequests([]);
+    }
+  }
+
+  useEffect(() => {
+    loadUser();
+    loadRequests();
+  }, []);
 
   async function searchBill() {
     if (!formData.bill_number.trim()) {
@@ -68,12 +98,10 @@ export default function ReturnsPage() {
 
     setLoading(true);
     try {
-      const token = localStorage.getItem('auth_token');
       const res = await fetch('/api/pos/returns', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           original_bill_id: formData.bill_number,
@@ -92,10 +120,11 @@ export default function ReturnsPage() {
       const json = await res.json();
 
       if (json.success) {
-        showToast('Return processed successfully');
+        showToast('Return request sent for approval');
         setFormData({ bill_number: '', return_type: 'return', reason: '', items: [], refund_amount: 0 });
         setSearchedBill(null);
         setSelectedItems([]);
+        loadRequests();
       } else {
         showToast(json.message || 'Error processing return', 'error');
       }
@@ -110,6 +139,28 @@ export default function ReturnsPage() {
     return selectedItems.reduce((sum, item) => sum + (item.return_qty * item.selling_price), 0);
   }
 
+  async function reviewRequest(returnId, action) {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/pos/returns', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ return_id: returnId, action }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        showToast(action === 'approve' ? 'Return approved and stock updated' : 'Return request declined');
+        loadRequests();
+      } else {
+        showToast(json.message || 'Unable to review request', 'error');
+      }
+    } catch {
+      showToast('Unable to review request', 'error');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <MainLayout>
       <div className="p-6 max-w-6xl mx-auto">
@@ -118,6 +169,70 @@ export default function ReturnsPage() {
         {toast && (
           <div className={`mb-4 p-4 rounded ${toast.type === 'error' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
             {toast.msg}
+          </div>
+        )}
+
+        {canReviewRequests && (
+          <div className="mb-6 rounded-lg bg-white p-6 shadow">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Pending Return Requests</h2>
+                <p className="text-sm text-gray-500">Store admins see their store requests. Super admin sees all stores.</p>
+              </div>
+              <button
+                onClick={loadRequests}
+                className="rounded border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Refresh
+              </button>
+            </div>
+            {requests.length === 0 ? (
+              <p className="rounded bg-gray-50 p-4 text-sm text-gray-500">No pending return requests.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 text-sm">
+                  <thead className="bg-gray-50 text-left text-xs uppercase text-gray-500">
+                    <tr>
+                      <th className="px-3 py-2">Request</th>
+                      <th className="px-3 py-2">Store</th>
+                      <th className="px-3 py-2">Bill</th>
+                      <th className="px-3 py-2">Type</th>
+                      <th className="px-3 py-2">Refund</th>
+                      <th className="px-3 py-2">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {requests.map((request) => (
+                      <tr key={request.id}>
+                        <td className="px-3 py-3 font-medium text-gray-900">#{request.id}</td>
+                        <td className="px-3 py-3 text-gray-700">{request.store_name || `Store ${request.store_id || '-'}`}</td>
+                        <td className="px-3 py-3 text-gray-700">{request.bill_number || request.original_bill_id}</td>
+                        <td className="px-3 py-3 capitalize text-gray-700">{request.return_type}</td>
+                        <td className="px-3 py-3 font-semibold text-gray-900">₹{parseFloat(request.refund_amount || 0).toFixed(2)}</td>
+                        <td className="px-3 py-3">
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => reviewRequest(request.id, 'approve')}
+                              disabled={loading}
+                              className="rounded bg-green-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-green-700 disabled:bg-gray-400"
+                            >
+                              Accept
+                            </button>
+                            <button
+                              onClick={() => reviewRequest(request.id, 'decline')}
+                              disabled={loading}
+                              className="rounded bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700 disabled:bg-gray-400"
+                            >
+                              Decline
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 
@@ -201,7 +316,7 @@ export default function ReturnsPage() {
                     disabled={loading || selectedItems.length === 0}
                     className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-bold py-3 rounded"
                   >
-                    {loading ? 'Processing...' : 'Submit Return'}
+                    {loading ? 'Submitting...' : 'Submit Return Request'}
                   </button>
                 </div>
               </div>

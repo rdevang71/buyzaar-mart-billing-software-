@@ -59,6 +59,7 @@ function normalizeProduct(p) {
     availableStock: toNumber(p.availableStock ?? p.available_stock ?? p.stock, 0),
     categoryName: p.categoryName || p.category_name || 'N/A',
     taxRate: toNumber(p.taxRate ?? p.tax_rate, 0),
+    allowDiscountOnPos: Boolean(p.allow_discount_on_pos ?? p.allowDiscountOnPos),
   };
 }
 
@@ -153,6 +154,12 @@ export default function POSPage() {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
   };
+
+  const canManageDiscounts = user?.role === 'super_admin' ||
+    user?.role === 'admin' ||
+    user?.permissions?.includes('*') ||
+    user?.permissions?.includes('MANAGE_BILLING');
+  const canApplyOrderDiscount = canManageDiscounts && cart.length > 0 && cart.every((item) => item.allowDiscountOnPos);
 
   // ========================================================================
   // DATA LOADING
@@ -335,7 +342,7 @@ export default function POSPage() {
 
     const sellingPrice = product.sellingPrice || product.mrp || 0;
     const mrp = product.mrp || 0;
-    const discountAmount = Math.max(0, mrp - sellingPrice);
+    const discountAmount = canManageDiscounts && product.allowDiscountOnPos ? Math.max(0, mrp - sellingPrice) : 0;
 
     setCart((current) => {
       const existing = current.find((item) => item.id === product.id);
@@ -488,17 +495,18 @@ export default function POSPage() {
 
   const cartTotals = useMemo(() => {
     const subtotal = cart.reduce((sum, item) => sum + item.qty * item.sellingPrice, 0);
-    const lineDiscount = cart.reduce((sum, item) => sum + toNumber(item.discountAmount), 0);
+    const lineDiscount = canManageDiscounts ? cart.reduce((sum, item) => sum + (item.allowDiscountOnPos ? toNumber(item.discountAmount) : 0), 0) : 0;
     const taxTotal = cart.reduce((sum, item) => {
-      const taxable = Math.max(0, item.qty * item.sellingPrice - toNumber(item.discountAmount));
+      const itemDiscount = canManageDiscounts && item.allowDiscountOnPos ? toNumber(item.discountAmount) : 0;
+      const taxable = Math.max(0, item.qty * item.sellingPrice - itemDiscount);
       return sum + (taxable * toNumber(item.taxRate || 0)) / 100;
     }, 0);
-    const discount = toNumber(orderDiscount) + lineDiscount;
+    const discount = (canApplyOrderDiscount ? toNumber(orderDiscount) : 0) + lineDiscount;
     const roundValue = toNumber(roundOff);
     const grandTotal = Math.max(0, subtotal - discount + taxTotal + roundValue);
 
     return { subtotal, lineDiscount, taxTotal, discount, roundValue, grandTotal };
-  }, [cart, orderDiscount, roundOff]);
+  }, [cart, canApplyOrderDiscount, canManageDiscounts, orderDiscount, roundOff]);
 
   const canGenerateBill = !!session?.sessionId && cart.length > 0 && !isProcessing;
 
@@ -793,9 +801,9 @@ export default function POSPage() {
           sellingPrice: item.sellingPrice,
           mrp: item.mrp,
           taxRate: item.taxRate || 0,
-          discountAmount: toNumber(item.discountAmount),
+          discountAmount: canManageDiscounts && item.allowDiscountOnPos ? toNumber(item.discountAmount) : 0,
         })),
-        orderDiscount: toNumber(orderDiscount),
+        orderDiscount: canApplyOrderDiscount ? toNumber(orderDiscount) : 0,
         roundOff: toNumber(roundOff),
         invoiceNumber: generateInvoiceNumber(),
       };
@@ -1057,7 +1065,7 @@ export default function POSPage() {
                               ✕
                             </button>
                           </div>
-                          <div className="grid grid-cols-3 gap-1 text-xs">
+                          <div className={`grid ${canManageDiscounts && item.allowDiscountOnPos ? 'grid-cols-3' : 'grid-cols-2'} gap-1 text-xs`}>
                             <input
                               type="number"
                               min="1"
@@ -1065,15 +1073,17 @@ export default function POSPage() {
                               onChange={(e) => updateCartItem(item.id, 'qty', toNumber(e.target.value, 1))}
                               className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-900"
                             />
-                            <input
-                              type="number"
-                              min="0"
-                              value={item.discountAmount}
-                              onChange={(e) => updateCartItem(item.id, 'discountAmount', toNumber(e.target.value, 0))}
-                              className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-900"
-                            />
+                            {canManageDiscounts && item.allowDiscountOnPos && (
+                              <input
+                                type="number"
+                                min="0"
+                                value={item.discountAmount}
+                                onChange={(e) => updateCartItem(item.id, 'discountAmount', toNumber(e.target.value, 0))}
+                                className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-900"
+                              />
+                            )}
                             <div className="rounded border border-slate-300 bg-white px-2 py-1 text-center text-slate-900 font-semibold">
-                              {formatCurrency((item.qty * item.sellingPrice) - toNumber(item.discountAmount))}
+                              {formatCurrency((item.qty * item.sellingPrice) - (canManageDiscounts && item.allowDiscountOnPos ? toNumber(item.discountAmount) : 0))}
                             </div>
                           </div>
                         </div>
@@ -1153,13 +1163,15 @@ export default function POSPage() {
                   <option value="credit">📋 Credit</option>
                 </select>
 
-                <input
-                  type="number"
-                  value={orderDiscount}
-                  onChange={(e) => setOrderDiscount(e.target.value)}
-                  placeholder="Order discount"
-                  className={inputClassName}
-                />
+                {canApplyOrderDiscount && (
+                  <input
+                    type="number"
+                    value={orderDiscount}
+                    onChange={(e) => setOrderDiscount(e.target.value)}
+                    placeholder="Order discount"
+                    className={inputClassName}
+                  />
+                )}
                 <input
                   type="number"
                   value={roundOff}

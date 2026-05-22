@@ -34,6 +34,7 @@ const initialForm = {
   is_service: false,
   is_sellable_on_pos: true,
   allow_variable_pricing: false,
+  allow_discount_on_pos: false,
   include_tax: false,
   image_url: '',
 };
@@ -246,6 +247,7 @@ export default function EditProductPage() {
           include_tax: form.include_tax,
           is_sellable_on_pos: form.is_sellable_on_pos,
           allow_variable_pricing: form.allow_variable_pricing,
+          allow_discount_on_pos: form.allow_discount_on_pos,
         }),
       });
       const json = await response.json();
@@ -467,11 +469,12 @@ export default function EditProductPage() {
               {[
                 ['is_sellable_on_pos', 'Is Sellable on POS'],
                 ['allow_variable_pricing', 'Allow Variable Pricing'],
+                ['allow_discount_on_pos', 'Allow Discount on POS'],
                 ['include_tax', 'Include Tax'],
               ].map(([key, label]) => (
                 <label key={key} className="flex items-start gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
                   <input type="checkbox" checked={form[key]} onChange={(event) => set(key, event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-                  <span><span className="block font-medium text-gray-800">{label}</span><span className="mt-0.5 block text-xs text-gray-500">{label === 'Is Sellable on POS' ? 'Allow product to be sellable on POS' : label === 'Allow Variable Pricing' ? 'Allow product for variable pricing' : 'Capture tax inclusive price'}</span></span>
+                  <span><span className="block font-medium text-gray-800">{label}</span><span className="mt-0.5 block text-xs text-gray-500">{label === 'Is Sellable on POS' ? 'Allow product to be sellable on POS' : label === 'Allow Variable Pricing' ? 'Allow product for variable pricing' : label === 'Allow Discount on POS' ? 'Permit admin discount while billing this product' : 'Capture tax inclusive price'}</span></span>
                 </label>
               ))}
             </div>

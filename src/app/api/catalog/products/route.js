@@ -4,6 +4,13 @@ import { ensureStockInSchema } from '@/lib/stockInSchema';
 import { ensureStockOutSchema } from '@/lib/stockOutSchema';
 import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
 
+async function ensureProductDiscountSchema() {
+  await query(`
+    ALTER TABLE products
+      ADD COLUMN IF NOT EXISTS allow_discount_on_pos BOOLEAN NOT NULL DEFAULT FALSE;
+  `);
+}
+
 // ─── GET /api/catalog/products ───────────────────────────────
 export async function GET(request) {
   try {
@@ -12,6 +19,8 @@ export async function GET(request) {
       ensureStockOutSchema(),
       ensureSalesBillingSchema(),
     ]);
+
+    await ensureProductDiscountSchema();
 
     const { searchParams } = new URL(request.url);
     const search      = searchParams.get('search')   || '';
@@ -65,7 +74,7 @@ export async function GET(request) {
       `SELECT
         p.id, p.product_id, p.name, p.barcode, p.sku,
         p.mrp, p.selling_price, p.cost_price, p.unit,
-        p.is_active, p.is_service, p.image_url,
+        p.is_active, p.is_service, p.image_url, p.allow_discount_on_pos,
         p.created_at, p.updated_at,
         c.name  AS category_name,
         sc.name AS sub_category_name,
@@ -130,6 +139,7 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     await ensureStockInSchema();
+    await ensureProductDiscountSchema();
     const body = await request.json();
     const { name } = body;
 
@@ -147,13 +157,13 @@ export async function POST(request) {
           category_id, sub_category_id, brand_id, manufacturer_id,
           department_id, income_head_id, tax_id,
           mrp, selling_price, cost_price, unit,
-          is_active, is_service, image_url
+          is_active, is_service, image_url, allow_discount_on_pos
         ) VALUES (
           $1, $2, $3, $4, $5,
           $6, $7, $8, $9,
           $10, $11, $12,
           $13, $14, $15, COALESCE($16, 'PCS'),
-          COALESCE($17, true), COALESCE($18, false), $19
+          COALESCE($17, true), COALESCE($18, false), $19, COALESCE($20, false)
         ) RETURNING *`,
         [
           body.product_id || null,
@@ -175,6 +185,7 @@ export async function POST(request) {
           body.is_active ?? true,
           body.is_service ?? false,
           body.image_url || null,
+          body.allow_discount_on_pos ?? false,
         ]
       );
 
