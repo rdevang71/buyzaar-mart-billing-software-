@@ -5,6 +5,7 @@ import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
 import { extractAuthUser, requirePermission, requireStore } from '@/lib/api-protection';
 import { ensureCatalogExtrasSchema } from '@/lib/catalogExtrasSchema';
 import { validatePhoneNumber } from '@/lib/phoneValidator';
+import { sendBillOnWhatsApp } from '@/lib/whatsappService';
 
 function toNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -80,6 +81,7 @@ export async function POST(req) {
       items = [],
       orderDiscount = 0,
       roundOff = 0,
+      sendWhatsapp = true,   // POS sends true by default; pass false to suppress
     } = body;
 
     if (customerMobile) {
@@ -195,7 +197,7 @@ export async function POST(req) {
         $6, $7, $8, $9, $10,
         $11, $12, $13, $14, $15,
         $16::jsonb, 'paid', $17::jsonb, NOW(), NOW()
-      ) RETURNING id, bill_number`,
+      ) RETURNING id, bill_number, public_token`,
       [
         billNumber,
         sessionId || null,
@@ -299,19 +301,58 @@ export async function POST(req) {
 
     await client.query('COMMIT');
 
+    // ── WhatsApp receipt (fire-and-forget, never blocks the response) ──────
+    if (sendWhatsapp && customerMobile) {
+      // Fetch store name outside the now-released transaction
+      query('SELECT name FROM stores WHERE id = $1', [Number(storeId)])
+        .then(({ rows }) => {
+          const storeName = rows[0]?.name || 'Our Store';
+          const waItems   = normalizedItems.map((item) => ({
+            productName: item.name || item.dbProduct?.name || 'Product',
+            qty:         toNumber(item.qty),
+            lineTotal:   toNumber(item.qty) * toNumber(item.sellingPrice, toNumber(item.dbProduct?.selling_price)),
+          }));
+
+          return sendBillOnWhatsApp({
+            customerMobile,
+            storeName,
+            billNumber,
+            customerName,
+            items:         waItems,
+            subtotal,
+            discountTotal: totalDiscount,
+            taxTotal:      totalTax,
+            grandTotal,
+            paymentMode,
+            publicToken:   billRes.rows[0].public_token ?? null,
+            createdAt:     new Date().toISOString(),
+          });
+        })
+        .then(({ to }) =>
+          query(
+            'UPDATE sales_bills SET whatsapp_sent = TRUE, whatsapp_sent_at = NOW(), whatsapp_number = $1 WHERE id = $2',
+            [to, billId]
+          )
+        )
+        .catch((err) =>
+          console.warn('[WhatsApp] Send failed for bill', billNumber, '—', err.message)
+        );
+    }
+
     return successResponse({
       bill: {
-        id: billId,
+        id:            billId,
         invoiceNumber: billRes.rows[0].bill_number,
-        billNumber: billRes.rows[0].bill_number,
+        billNumber:    billRes.rows[0].bill_number,
+        publicToken:   billRes.rows[0].public_token ?? null,
         customerName,
         customerMobile,
         grandTotal,
         totalTax,
         paymentMode,
-        itemCount: items.length,
-        createdAt: new Date().toISOString(),
-        status: 'paid',
+        itemCount:  items.length,
+        createdAt:  new Date().toISOString(),
+        status:     'paid',
       },
       message: `Bill ${billRes.rows[0].bill_number} created successfully`,
     }, 'Bill created successfully', 201);

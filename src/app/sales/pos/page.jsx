@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { generateQRDataURL, getInvoiceURL } from '@/lib/qrService';
 import { validatePhoneNumber } from '@/lib/phoneValidator';
 import { useRouter } from 'next/navigation';
 import MainLayout from '@/components/MainLayout';
@@ -138,6 +139,11 @@ export default function POSPage() {
   const [heldBills, setHeldBills] = useState([]);
   const [receiptModal, setReceiptModal] = useState(false);
   const [receiptData, setReceiptData] = useState(null);
+  const [receiptQR, setReceiptQR] = useState(''); // base-64 QR for the in-app receipt modal
+
+  // Hold-detect: auto-popup when a held bill is found for the typed mobile
+  const [holdDetectModal, setHoldDetectModal] = useState(false);
+  const [detectedHeldBills, setDetectedHeldBills] = useState([]);
 
   // ========================================================================
   // TOAST
@@ -253,6 +259,15 @@ export default function POSPage() {
     setPaymentMode(draft.paymentMode || 'cash');
     setPayments(Array.isArray(draft.payments) && draft.payments.length ? draft.payments : [emptyPayment()]);
   }, []);
+
+  // Generate QR whenever a receipt with a public token is shown
+  useEffect(() => {
+    const token = receiptData?.bill?.publicToken || receiptData?.bill?.public_token;
+    if (!token || !receiptModal) { setReceiptQR(''); return; }
+    generateQRDataURL(getInvoiceURL(token), { size: 160 })
+      .then(setReceiptQR)
+      .catch(() => setReceiptQR(''));
+  }, [receiptData, receiptModal]);
 
   // Save draft
   useEffect(() => {
@@ -401,6 +416,8 @@ export default function POSPage() {
     setPaymentMode(heldBill.paymentMode || 'cash');
     setPayments(Array.isArray(heldBill.payments) && heldBill.payments.length ? heldBill.payments : [emptyPayment()]);
     saveHeldBills(heldBills.filter((bill) => bill.id !== heldBill.id));
+    setHoldDetectModal(false);
+    setDetectedHeldBills([]);
     showToast('Held bill resumed');
     if (barcodeRef.current) barcodeRef.current.focus();
   };
@@ -408,6 +425,61 @@ export default function POSPage() {
   const removeHeldBill = (heldBillId) => {
     saveHeldBills(heldBills.filter((bill) => bill.id !== heldBillId));
     showToast('Held bill removed', 'info');
+  };
+
+  // ── Auto-detect held bills by mobile number ─────────────────────────────
+  // Called every time the mobile input reaches 10 digits.
+  const checkForHeldBills = (mobile) => {
+    if (!mobile || mobile.length < 10) return;
+    const normalized = mobile.replace(/\D/g, '').slice(0, 10);
+    const matches = heldBills
+      .filter((b) => b.customerMobile && b.customerMobile.replace(/\D/g, '').slice(0, 10) === normalized)
+      .sort((a, b) => new Date(b.heldAt || 0) - new Date(a.heldAt || 0));
+    if (matches.length > 0) {
+      setDetectedHeldBills(matches);
+      setHoldDetectModal(true);
+    }
+  };
+
+  // ── One-click resume from the detection modal ────────────────────────────
+  // If the operator already has items in the cart, the current cart is
+  // auto-held first so no work is lost, then the selected held bill is restored.
+  const holdCurrentAndResume = (heldBill) => {
+    // Build the new held-bills list: hold current (if any), remove the target
+    const withoutTarget = heldBills.filter((b) => b.id !== heldBill.id);
+    let nextHeldBills = withoutTarget;
+
+    if (cart.length > 0) {
+      const currentHeld = buildHeldBill();
+      nextHeldBills = [currentHeld, ...withoutTarget].slice(0, 25);
+    }
+
+    // Restore the held bill into the cart
+    setCart(heldBill.cart || []);
+    setCustomerName(heldBill.customerName || '');
+    setCustomerMobile(
+      heldBill.customerMobile
+        ? String(heldBill.customerMobile).replace(/\D/g, '').slice(0, 10)
+        : ''
+    );
+    setOrderDiscount(String(heldBill.orderDiscount ?? '0'));
+    setRoundOff(String(heldBill.roundOff ?? '0'));
+    setPaymentMode(heldBill.paymentMode || 'cash');
+    setPayments(
+      Array.isArray(heldBill.payments) && heldBill.payments.length
+        ? heldBill.payments
+        : [emptyPayment()]
+    );
+
+    saveHeldBills(nextHeldBills);
+    setHoldDetectModal(false);
+    setDetectedHeldBills([]);
+    showToast(
+      cart.length > 0
+        ? `Current cart held · Resumed ${heldBill.customerName || 'held bill'}`
+        : `Resumed ${heldBill.customerName || 'held bill'}`
+    );
+    if (barcodeRef.current) barcodeRef.current.focus();
   };
 
   // ========================================================================
@@ -467,11 +539,28 @@ export default function POSPage() {
     showToast('Customer details filled from history');
   };
 
-  const printReceipt = (receipt = receiptData) => {
+  const printReceipt = async (receipt = receiptData) => {
     if (!receipt || typeof window === 'undefined') return;
 
-    const bill = receipt.bill || {};
+    const bill  = receipt.bill  || {};
     const items = receipt.items || [];
+
+    // Generate QR for the print window (async, non-blocking)
+    let qrBlock = '';
+    const token = bill.publicToken || bill.public_token;
+    if (token) {
+      try {
+        const url    = getInvoiceURL(token);
+        const qrData = await generateQRDataURL(url, { size: 120 });
+        qrBlock = `
+          <div style="margin-top:12px;padding-top:12px;border-top:1px dashed #94a3b8;text-align:center">
+            <img src="${qrData}" alt="QR" style="width:96px;height:96px" />
+            <p style="font-size:9px;color:#64748b;margin:4px 0 2px;font-weight:700">SCAN TO VIEW DIGITAL INVOICE</p>
+            <p style="font-size:8px;color:#94a3b8;word-break:break-all">${url}</p>
+          </div>`;
+      } catch { /* QR failed — skip silently */ }
+    }
+
     const printWindow = window.open('', '_blank', 'width=380,height=720');
     if (!printWindow) {
       showToast('Popup blocked. Please allow popups to print receipt.', 'error');
@@ -531,6 +620,7 @@ export default function POSPage() {
           </div>
           <div class="line"></div>
           <div class="center muted">Thank you. Visit again.</div>
+          ${qrBlock}
           <script>window.onload = () => { window.print(); window.close(); };</script>
         </body>
       </html>
@@ -745,12 +835,13 @@ export default function POSPage() {
         setReceiptData({
           bill: {
             ...savedBill,
-            customerName: payload.customerName,
+            customerName:  payload.customerName,
             customerMobile,
-            subtotal: cartTotals.subtotal,
+            publicToken:   savedBill?.publicToken ?? savedBill?.public_token ?? null,
+            subtotal:      cartTotals.subtotal,
             discountTotal: cartTotals.discount,
-            taxTotal: cartTotals.taxTotal,
-            grandTotal: cartTotals.grandTotal,
+            taxTotal:      cartTotals.taxTotal,
+            grandTotal:    cartTotals.grandTotal,
             paymentMode,
             createdAt: savedBill?.createdAt || new Date().toISOString(),
           },
@@ -1033,6 +1124,8 @@ export default function POSPage() {
                     onChange={(e) => {
                       const digits = String(e.target.value).replace(/\D/g, '').slice(0, 10);
                       setCustomerMobile(digits);
+                      // Auto-detect held bills the moment a complete mobile is typed
+                      if (digits.length === 10) checkForHeldBills(digits);
                     }}
                     placeholder="Mobile number (10 digits)"
                     maxLength="10"
@@ -1336,11 +1429,34 @@ export default function POSPage() {
                 </div>
               </div>
 
+              {/* QR code — scan to open digital invoice */}
+              {receiptQR && (
+                <div className="flex items-center gap-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 mb-3">
+                  <img src={receiptQR} alt="Invoice QR" className="w-20 h-20 rounded-lg border border-slate-200 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="font-bold text-slate-800 text-[13px]">Digital Invoice</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Customer can scan to view, download or print this invoice anytime.
+                    </p>
+                    {(receiptData?.bill?.publicToken || receiptData?.bill?.public_token) && (
+                      <a
+                        href={getInvoiceURL(receiptData.bill.publicToken || receiptData.bill.public_token)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[11px] text-blue-600 font-semibold hover:underline mt-1 inline-block"
+                      >
+                        Open invoice →
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <button
                 onClick={() => printReceipt()}
                 className="w-full rounded-lg bg-slate-900 px-4 py-3 font-bold text-white hover:bg-slate-800"
               >
-                Print Receipt
+                Print Receipt (with QR)
               </button>
             </div>
           </div>
@@ -1445,6 +1561,86 @@ export default function POSPage() {
                     {isProcessing ? 'Closing...' : 'Close'}
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Hold Bill Detection Modal ───────────────────────────────────── */}
+        {holdDetectModal && detectedHeldBills.length > 0 && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl overflow-hidden">
+
+              {/* Header */}
+              <div className="flex items-center gap-3 bg-amber-50 border-b border-amber-100 px-5 py-4">
+                <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center text-xl shrink-0">
+                  ⏸
+                </div>
+                <div className="min-w-0">
+                  <p className="font-bold text-slate-900 text-[15px]">Held Bill Found</p>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {detectedHeldBills.length === 1
+                      ? `1 held bill for ${detectedHeldBills[0].customerMobile}`
+                      : `${detectedHeldBills.length} held bills for ${detectedHeldBills[0].customerMobile}`}
+                  </p>
+                </div>
+              </div>
+
+              {/* Bill list — sorted latest first */}
+              <div className="p-4 space-y-2 max-h-72 overflow-auto">
+                {detectedHeldBills.map((heldBill) => (
+                  <button
+                    key={heldBill.id}
+                    type="button"
+                    onClick={() => holdCurrentAndResume(heldBill)}
+                    className="w-full text-left rounded-xl border border-amber-200 bg-amber-50/40 px-4 py-3 hover:bg-amber-100 hover:border-amber-400 transition-all group"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-slate-900 text-sm truncate">
+                          {heldBill.customerName || 'Walk-in Customer'}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {(heldBill.cart || []).length} item{(heldBill.cart || []).length !== 1 ? 's' : ''}
+                          {heldBill.heldAt
+                            ? ` · ${new Date(heldBill.heldAt).toLocaleTimeString('en-IN', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                hour12: true,
+                              })}`
+                            : ''}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="font-bold text-amber-700 text-sm">
+                          {formatCurrency(heldBill.totals?.grandTotal || 0)}
+                        </p>
+                        <p className="text-[10px] text-blue-600 font-semibold group-hover:underline mt-0.5">
+                          Resume →
+                        </p>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              {/* Auto-hold notice when current cart has items */}
+              {cart.length > 0 && (
+                <div className="mx-4 mb-3 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-blue-700 font-medium">
+                  Your current cart ({cart.length} item{cart.length !== 1 ? 's' : ''}) will be
+                  auto-held when you resume.
+                </div>
+              )}
+
+              {/* Dismiss */}
+              <div className="px-4 pb-4">
+                <button
+                  type="button"
+                  onClick={() => { setHoldDetectModal(false); setDetectedHeldBills([]); }}
+                  className="w-full rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
+                >
+                  Start Fresh Billing
+                </button>
               </div>
             </div>
           </div>

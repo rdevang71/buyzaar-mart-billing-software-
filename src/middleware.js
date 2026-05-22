@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 
 // Routes that don't require authentication
 const publicRoutes = ['/login', '/', '/sales-order/pos'];
+// Path prefixes that are always public (no token needed)
+const publicPrefixes = ['/invoice/'];
 
 export function middleware(request) {
   const pathname = request.nextUrl.pathname;
@@ -10,7 +12,7 @@ export function middleware(request) {
                 request.cookies.get('token')?.value;
 
   // Allow public routes without token
-  if (publicRoutes.includes(pathname)) {
+  if (publicRoutes.includes(pathname) || publicPrefixes.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
   }
 
