@@ -62,9 +62,9 @@ export async function extractAuthUser(request) {
     const dbUser = userResult.rows[0];
     let permissions = Array.isArray(payload.permissions) ? payload.permissions : [];
     let employeeRoleName = null;
+    let employeePermissions = null;
 
     try {
-      let employeePermissions = null;
       const employeeResult = await query(
         `SELECT role_name, permissions
          FROM employees
@@ -87,6 +87,10 @@ export async function extractAuthUser(request) {
         permissions = employeePermissions;
       }
     } catch {}
+
+    if (dbUser.role === 'super_admin' && permissions.length === 0) {
+      permissions = ['*'];
+    }
 
     let assignedStores = payload.assigned_stores || [];
     try {
@@ -180,6 +184,7 @@ export function requirePermission(user, ...permissions) {
 
   const userPerms = Array.isArray(user.permissions) ? user.permissions : [];
   const hasPermission =
+    user.role === 'super_admin' ||
     userPerms.includes('*') ||
     permissions.some((p) => userPerms.includes(p));
 
