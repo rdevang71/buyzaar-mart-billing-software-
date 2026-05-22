@@ -68,6 +68,7 @@ function normalizeProduct(p) {
 const STORAGE_KEYS = {
   CACHE: 'pos-cache-v3',
   DRAFT: 'pos-draft-v3',
+  HELD_BILLS: 'pos-held-bills-v3',
   QUEUE: 'pos-queue-v3',
 };
 
@@ -134,6 +135,7 @@ export default function POSPage() {
   const [closingRemarks, setClosingRemarks] = useState('');
   const [openingCash, setOpeningCash] = useState('0');
   const [recentBills, setRecentBills] = useState([]);
+  const [heldBills, setHeldBills] = useState([]);
   const [receiptModal, setReceiptModal] = useState(false);
   const [receiptData, setReceiptData] = useState(null);
 
@@ -234,6 +236,7 @@ export default function POSPage() {
   useEffect(() => {
     loadAuth();
     loadPOSData();
+    setHeldBills(readStorage(STORAGE_KEYS.HELD_BILLS, []));
     if (barcodeRef.current) barcodeRef.current.focus();
   }, [loadAuth, loadPOSData]);
 
@@ -351,6 +354,60 @@ export default function POSPage() {
     setRoundOff('0');
     setPayments([emptyPayment()]);
     setPaymentMode('cash');
+  };
+
+  const saveHeldBills = (nextHeldBills) => {
+    setHeldBills(nextHeldBills);
+    writeStorage(STORAGE_KEYS.HELD_BILLS, nextHeldBills);
+  };
+
+  const buildHeldBill = () => ({
+    id: `HOLD-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`,
+    heldAt: new Date().toISOString(),
+    cart,
+    customerName,
+    customerMobile,
+    orderDiscount,
+    roundOff,
+    paymentMode,
+    payments,
+    totals: cartTotals,
+  });
+
+  const holdCurrentBill = () => {
+    if (cart.length === 0) {
+      showToast('Add products before holding bill', 'error');
+      return;
+    }
+
+    const heldBill = buildHeldBill();
+    const nextHeldBills = [heldBill, ...heldBills].slice(0, 25);
+    saveHeldBills(nextHeldBills);
+    clearCart();
+    showToast(`Bill held for ${heldBill.customerName || 'Walk-in Customer'}`);
+  };
+
+  const resumeHeldBill = (heldBill) => {
+    if (cart.length > 0) {
+      showToast('Hold or clear current bill before resuming', 'error');
+      return;
+    }
+
+    setCart(heldBill.cart || []);
+    setCustomerName(heldBill.customerName || '');
+    setCustomerMobile(heldBill.customerMobile ? String(heldBill.customerMobile).replace(/\D/g, '').slice(0, 10) : '');
+    setOrderDiscount(String(heldBill.orderDiscount ?? '0'));
+    setRoundOff(String(heldBill.roundOff ?? '0'));
+    setPaymentMode(heldBill.paymentMode || 'cash');
+    setPayments(Array.isArray(heldBill.payments) && heldBill.payments.length ? heldBill.payments : [emptyPayment()]);
+    saveHeldBills(heldBills.filter((bill) => bill.id !== heldBill.id));
+    showToast('Held bill resumed');
+    if (barcodeRef.current) barcodeRef.current.focus();
+  };
+
+  const removeHeldBill = (heldBillId) => {
+    saveHeldBills(heldBills.filter((bill) => bill.id !== heldBillId));
+    showToast('Held bill removed', 'info');
   };
 
   // ========================================================================
@@ -773,6 +830,13 @@ export default function POSPage() {
                     Close Session
                   </button>
                   <button
+                    onClick={holdCurrentBill}
+                    disabled={cart.length === 0}
+                    className="px-4 py-2 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 font-semibold hover:bg-amber-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                  >
+                    Hold Bill
+                  </button>
+                  <button
                     onClick={createBill}
                     disabled={!canGenerateBill}
                     style={{
@@ -856,21 +920,29 @@ export default function POSPage() {
                   <h2 className="font-bold text-slate-900">Cart</h2>
                   <div className="flex items-center gap-2">
                     {cart.length > 0 && (
-                      <button
-                        onClick={createBill}
-                        disabled={!canGenerateBill}
-                        style={{
-                          padding: '0.625rem 1rem',
-                          borderRadius: '0.5rem',
-                          border: '1px solid transparent',
-                          background: canGenerateBill ? '#16a34a' : '#94a3b8',
-                          color: '#ffffff',
-                          fontWeight: 800,
-                          cursor: canGenerateBill ? 'pointer' : 'not-allowed',
-                        }}
-                      >
-                        Generate Bill
-                      </button>
+                      <>
+                        <button
+                          onClick={holdCurrentBill}
+                          className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800 hover:bg-amber-100"
+                        >
+                          Hold
+                        </button>
+                        <button
+                          onClick={createBill}
+                          disabled={!canGenerateBill}
+                          style={{
+                            padding: '0.625rem 1rem',
+                            borderRadius: '0.5rem',
+                            border: '1px solid transparent',
+                            background: canGenerateBill ? '#16a34a' : '#94a3b8',
+                            color: '#ffffff',
+                            fontWeight: 800,
+                            cursor: canGenerateBill ? 'pointer' : 'not-allowed',
+                          }}
+                        >
+                          Generate Bill
+                        </button>
+                      </>
                     )}
                     <span className="text-xs bg-slate-100 text-slate-700 px-2 py-1 rounded-full">{cart.length}</span>
                   </div>
@@ -1026,11 +1098,75 @@ export default function POSPage() {
                 </button>
 
                 <button
+                  onClick={holdCurrentBill}
+                  disabled={cart.length === 0}
+                  className="w-full px-3 py-2 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 font-semibold hover:bg-amber-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                >
+                  Hold Bill
+                </button>
+
+                <button
                   onClick={clearCart}
                   className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 font-semibold hover:bg-slate-50"
                 >
                   Clear Cart
                 </button>
+              </section>
+
+              {/* Held Bills */}
+              <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-bold text-slate-900">Held Bills</h3>
+                  <span className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded-full">
+                    {heldBills.length}
+                  </span>
+                </div>
+
+                {heldBills.length === 0 ? (
+                  <p className="text-sm text-slate-500">No bills on hold</p>
+                ) : (
+                  <div className="space-y-2 max-h-64 overflow-auto">
+                    {heldBills.map((heldBill, idx) => (
+                      <div
+                        key={heldBill.id || idx}
+                        className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-sm"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="font-semibold text-slate-900 truncate">
+                              {heldBill.customerName || 'Walk-in Customer'}
+                            </p>
+                            <p className="text-xs text-slate-600 truncate">
+                              {heldBill.customerMobile || 'No mobile'} - {(heldBill.cart || []).length} items
+                            </p>
+                            <p className="text-xs text-slate-500 mt-1">
+                              {heldBill.heldAt ? new Date(heldBill.heldAt).toLocaleString('en-IN') : ''}
+                            </p>
+                          </div>
+                          <span className="shrink-0 font-bold text-amber-800">
+                            {formatCurrency(heldBill.totals?.grandTotal || 0)}
+                          </span>
+                        </div>
+                        <div className="mt-2 flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => resumeHeldBill(heldBill)}
+                            className="flex-1 rounded-md border border-blue-200 bg-white px-3 py-1 text-xs font-bold text-blue-700 hover:bg-blue-50"
+                          >
+                            Resume
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeHeldBill(heldBill.id)}
+                            className="rounded-md border border-rose-200 bg-white px-3 py-1 text-xs font-bold text-rose-700 hover:bg-rose-50"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </section>
 
               {/* Recent Bills */}
