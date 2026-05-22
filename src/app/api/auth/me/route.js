@@ -79,6 +79,14 @@ export async function GET() {
       [dbUser.id]
     );
 
+    // Super admins without an employee record get full wildcard access
+    const isSuperAdmin = (dbUser.role === 'super_admin');
+    const resolvedPermissions = isSuperAdmin && (employeePermissions === null || employeePermissions.length === 0)
+      ? ['*']
+      : employeePermissions !== null
+        ? employeePermissions
+        : (Array.isArray(payload.permissions) ? payload.permissions : []);
+
     // Construct user object from token + latest database access rules
     const user = {
       id: dbUser.id,
@@ -86,9 +94,7 @@ export async function GET() {
       name: dbUser.name || dbUser.email,
       role: dbUser.role || 'user',
       role_name: employeeRoleName || dbUser.role || 'user',
-      permissions: employeePermissions !== null
-        ? employeePermissions
-        : (Array.isArray(payload.permissions) ? payload.permissions : []),
+      permissions: resolvedPermissions,
       assigned_stores: storesResult.rows.map((row) => Number(row.store_id)),
       assigned_store_names: storesResult.rows
         .map((row) => row.store_name)

@@ -8,6 +8,8 @@ import { rateLimiters, rateLimitHeaders } from '@/lib/rate-limiter';
 import { getUserIP } from '@/lib/api-protection';
 import { ensureUsersTable } from '@/lib/userAuth';
 import { ensureRolesSchema } from '@/lib/rolesSchema';
+import { ensureSessionsSchema } from '@/lib/sessionsSchema';
+import { ensureAuditLogsSchema } from '@/lib/auditLogsSchema';
 
 function getDefaultRoute(/* role */) {
   return '/home';
@@ -17,6 +19,8 @@ export async function POST(request) {
   try {
     await ensureUsersTable();
     await ensureRolesSchema();
+    await ensureSessionsSchema();
+    await ensureAuditLogsSchema();
 
     console.log('[LOGIN] Request received');
     
@@ -203,6 +207,11 @@ export async function POST(request) {
       }
     } catch (err) {
       console.warn('[LOGIN] Failed to fetch employee permissions:', err.message);
+    }
+
+    // Super admins without an employee record get full wildcard access
+    if (user.role === 'super_admin' && permissions.length === 0) {
+      permissions = ['*'];
     }
 
     // ============================================

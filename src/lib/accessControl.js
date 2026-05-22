@@ -53,7 +53,6 @@ const ITEM_PERMISSION_RULES = {
   '/settings/inventory/custom-attributes': ['MANAGE_STORES', 'MANAGE_INVENTORY'],
   '/settings/inventory/measurement-unit': ['MANAGE_STORES', 'MANAGE_INVENTORY'],
   '/settings/payment/chain-payment-settings': ['MANAGE_PAYMENTS'],
-  '/settings/billing/chain-attributes': ['MANAGE_BILLING'],
   '/settings/payment/store-payment-settings': ['MANAGE_PAYMENTS'],
   '/settings/credit-note/redemption-configuration': ['MANAGE_BILLING'],
   '/settings/credit-note/refund-configuration': ['MANAGE_BILLING'],
@@ -107,22 +106,43 @@ function getPermissionList(user) {
 }
 
 function isSuperAdmin(user) {
-  return getPermissionList(user).includes(SUPER_ADMIN_PERMISSION);
+  if (!user) return false;
+  
+  // Check by role first
+  if (user.role === 'super_admin') return true;
+  
+  // Check by permission array
+  const permissions = getPermissionList(user);
+  return permissions.includes(SUPER_ADMIN_PERMISSION);
 }
 
 function hasAnyPermission(user, permissions = []) {
+  if (!user) return false;
+  
+  // Super admin check - should come first
   if (isSuperAdmin(user)) return true;
+  
+  // If no permissions required, grant access
+  if (permissions.length === 0) return true;
+  
+  // Check user permissions
   const userPermissions = getPermissionList(user);
-  if (permissions.length === 0) return false;
   return permissions.some((permission) => userPermissions.includes(permission));
 }
 
 function permissionAllowed(user, permissions = []) {
   if (!permissions.length) return true;
   if (!user) return false;
+  
+  // Check if super admin by role
   if (user.role === 'super_admin') return true;
+  
+  // Check if super admin by permissions
   const userPermissions = Array.isArray(user.permissions) ? user.permissions : [];
-  return userPermissions.includes('*') || permissions.some((permission) => userPermissions.includes(permission));
+  if (userPermissions.includes('*')) return true;
+  
+  // Check specific permissions
+  return permissions.some((permission) => userPermissions.includes(permission));
 }
 
 function accessEntryAllowed(user, roles = [], permissions = []) {
@@ -144,7 +164,10 @@ function getItemPermissions(item, sectionLabel) {
   return ITEM_PERMISSION_RULES[item?.href] || SECTION_PERMISSION_RULES[sectionLabel] || [];
 }
 
-export function getDefaultRouteForUser(/* user */) {
+export function getDefaultRouteForUser(user) {
+  // Return based on role
+  const rolePath = ROLE_HOME_PATHS[user?.role];
+  if (rolePath) return rolePath;
   return '/home';
 }
 
@@ -159,7 +182,16 @@ export function canAccessPath(user, pathname) {
 }
 
 export function filterMenuItemsForUser(menuItems, user) {
-  if (isSuperAdmin(user)) return menuItems;
+  // Super admin sees everything
+  if (isSuperAdmin(user)) {
+    return menuItems;
+  }
+
+  // If no user, return empty
+  if (!user) {
+    return [];
+  }
+
   return menuItems
     .map((item) => {
       if (!item.subSidebar?.groups) {

@@ -3,8 +3,8 @@ import { query } from '@/lib/db';
 let ensured = false;
 
 /**
- * Ensure sessions table exists
- * Tracks active user sessions
+ * Ensure sessions table exists and FK references users(id) correctly.
+ * Must be called AFTER ensureUsersTable().
  */
 export async function ensureSessionsSchema() {
   if (ensured) return;
@@ -13,7 +13,7 @@ export async function ensureSessionsSchema() {
     await query(`
       CREATE TABLE IF NOT EXISTS sessions (
         id BIGSERIAL PRIMARY KEY,
-        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        user_id BIGINT NOT NULL,
         access_token_hash VARCHAR(64) NOT NULL,
         refresh_token_hash VARCHAR(64),
         ip_address VARCHAR(45),
@@ -26,6 +26,17 @@ export async function ensureSessionsSchema() {
         updated_at TIMESTAMP NOT NULL DEFAULT NOW()
       );
     `);
+
+    // Drop any existing (possibly broken) FK and re-add it pointing to users(id)
+    try {
+      await query(`ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_user_id_fkey;`);
+      await query(`
+        ALTER TABLE sessions ADD CONSTRAINT sessions_user_id_fkey
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE NOT VALID;
+      `);
+    } catch (fkErr) {
+      console.warn('[SESSIONS_SCHEMA] Could not fix FK constraint:', fkErr.message);
+    }
 
     // Indexes for performance
     await query(`CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);`);
