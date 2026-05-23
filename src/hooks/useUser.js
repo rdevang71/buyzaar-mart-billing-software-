@@ -30,9 +30,9 @@ export function UserProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const fetchUser = useCallback(async () => {
+  const fetchUser = useCallback(async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const res = await fetchAuthEndpoint('/api/auth/me');
 
       const json = await parseJsonResponse(res, 'Failed to fetch user');
@@ -68,8 +68,8 @@ export function UserProvider({ children }) {
     }
   }, []);
 
-  const refetch = useCallback(() => {
-    fetchUser();
+  const refetch = useCallback((silent = true) => {
+    fetchUser(silent);
   }, [fetchUser]);
 
   return (

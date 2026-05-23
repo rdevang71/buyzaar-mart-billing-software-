@@ -6,6 +6,12 @@ import { rateLimiters } from '@/lib/rate-limiter';
 import { getUserIP } from '@/lib/api-protection';
 import { ensureUsersTable } from '@/lib/userAuth';
 
+const debugLog = (...args) => {
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(...args);
+  }
+};
+
 /**
  * POST /api/auth/forgot-password
  * Request a password reset token
@@ -53,7 +59,7 @@ export async function POST(request) {
 
     if (userResult.rows.length === 0) {
       // Don't reveal if email exists (security best practice)
-      console.log('[FORGOT_PASSWORD] User not found:', email);
+      debugLog('[FORGOT_PASSWORD] User not found:', email);
       return successResponse(
         null,
         'If an account exists with this email, a reset link will be sent.'
@@ -79,8 +85,7 @@ export async function POST(request) {
     // resetLink = `${process.env.NEXT_PUBLIC_APP_URL}/reset-password?token=${resetToken}`
     // await sendEmail(user.email, 'Password Reset Request', { name: user.name, resetLink })
 
-    console.log('[FORGOT_PASSWORD] Reset token created for:', user.email);
-    console.log('[FORGOT_PASSWORD] Reset token (dev only):', resetToken); // Only for development
+    debugLog('[FORGOT_PASSWORD] Reset token created for:', user.email);
 
     return successResponse(
       null,

@@ -18,6 +18,7 @@ export default function ReturnsPage() {
   const [toast, setToast] = useState(null);
   const [user, setUser] = useState(null);
   const [requests, setRequests] = useState([]);
+  const [myRequests, setMyRequests] = useState([]);
 
   const canReviewRequests = useMemo(() => user?.role === 'super_admin' || user?.role === 'admin' || user?.permissions?.includes('*'), [user]);
 
@@ -46,9 +47,20 @@ export default function ReturnsPage() {
     }
   }
 
+  async function loadMyRequests() {
+    try {
+      const res = await fetch('/api/pos/returns?scope=mine&pageSize=20', { cache: 'no-store' });
+      const json = await res.json();
+      if (json.success) setMyRequests(Array.isArray(json.data) ? json.data : []);
+    } catch {
+      setMyRequests([]);
+    }
+  }
+
   useEffect(() => {
     loadUser();
     loadRequests();
+    loadMyRequests();
   }, []);
 
   async function searchBill() {
@@ -125,6 +137,7 @@ export default function ReturnsPage() {
         setSearchedBill(null);
         setSelectedItems([]);
         loadRequests();
+        loadMyRequests();
       } else {
         showToast(json.message || 'Error processing return', 'error');
       }
@@ -151,6 +164,7 @@ export default function ReturnsPage() {
       if (json.success) {
         showToast(action === 'approve' ? 'Return approved and stock updated' : 'Return request declined');
         loadRequests();
+        loadMyRequests();
       } else {
         showToast(json.message || 'Unable to review request', 'error');
       }
@@ -171,6 +185,67 @@ export default function ReturnsPage() {
             {toast.msg}
           </div>
         )}
+
+        <div className="mb-6 rounded-lg bg-white p-6 shadow">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">My Return Requests</h2>
+              <p className="text-sm text-gray-500">Your submitted return requests and approval status.</p>
+            </div>
+            <button
+              onClick={loadMyRequests}
+              className="rounded border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Refresh
+            </button>
+          </div>
+          {myRequests.length === 0 ? (
+            <p className="rounded bg-gray-50 p-4 text-sm text-gray-500">No return requests submitted yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <thead className="bg-gray-50 text-left text-xs uppercase text-gray-500">
+                  <tr>
+                    <th className="px-3 py-2">Request</th>
+                    <th className="px-3 py-2">Bill</th>
+                    <th className="px-3 py-2">Type</th>
+                    <th className="px-3 py-2">Refund</th>
+                    <th className="px-3 py-2">Status</th>
+                    <th className="px-3 py-2">Updated</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {myRequests.map((request) => (
+                    <tr key={request.id}>
+                      <td className="px-3 py-3 font-medium text-gray-900">#{request.id}</td>
+                      <td className="px-3 py-3 text-gray-700">{request.bill_number || request.original_bill_id}</td>
+                      <td className="px-3 py-3 capitalize text-gray-700">{request.return_type}</td>
+                      <td className="px-3 py-3 font-semibold text-gray-900">Rs.{parseFloat(request.refund_amount || 0).toFixed(2)}</td>
+                      <td className="px-3 py-3">
+                        <span className={`rounded-full px-2 py-1 text-xs font-bold capitalize ${
+                          request.status === 'approved'
+                            ? 'bg-green-100 text-green-700'
+                            : request.status === 'declined'
+                            ? 'bg-red-100 text-red-700'
+                            : 'bg-amber-100 text-amber-700'
+                        }`}>
+                          {request.status}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 text-gray-600">
+                        {request.approved_at
+                          ? new Date(request.approved_at).toLocaleString()
+                          : request.rejected_at
+                          ? new Date(request.rejected_at).toLocaleString()
+                          : new Date(request.created_at).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
 
         {canReviewRequests && (
           <div className="mb-6 rounded-lg bg-white p-6 shadow">

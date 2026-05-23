@@ -45,6 +45,21 @@ function emptyPayment() {
   return { method: 'cash', amount: '', referenceNo: '' };
 }
 
+const inputClassName = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500 focus:ring-2 focus:ring-blue-400 outline-none';
+const DEFAULT_RECEIPT_CONFIG = {
+  businessName: 'BillingPro',
+  subtitle: 'GST Invoice / POS Receipt',
+  headerText: '',
+  footerText: 'Thank you. Visit again.',
+  template: 'thermal-80',
+  copies: 1,
+  showTaxBreakup: true,
+  showDiscount: true,
+  showQr: true,
+  showCustomerMobile: true,
+  showSku: true,
+};
+
 function normalizeProduct(p) {
   return {
     id: p.id,
@@ -88,6 +103,29 @@ function writeStorage(key, value) {
   } catch {}
 }
 
+async function loadReceiptConfig() {
+  try {
+    const res = await fetch('/api/settings/customize-receipt-print?pageSize=1&isActive=true', {
+      cache: 'no-store',
+      credentials: 'include',
+    });
+    const json = await res.json();
+    const config = json.data?.records?.[0]?.config || {};
+    return { ...DEFAULT_RECEIPT_CONFIG, ...config };
+  } catch {
+    return DEFAULT_RECEIPT_CONFIG;
+  }
+}
+
+function getOrCreateLocalId(key, prefix) {
+  if (typeof window === 'undefined') return '';
+  const existing = window.localStorage.getItem(key);
+  if (existing) return existing;
+  const next = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  window.localStorage.setItem(key, next);
+  return next;
+}
+
 // ============================================================================
 // MAIN POS COMPONENT
 // ============================================================================
@@ -100,9 +138,13 @@ export default function POSPage() {
   const [session, setSession] = useState(null);
   const [stores, setStores] = useState([]);
   const [selectedStoreId, setSelectedStoreId] = useState('');
+<<<<<<< HEAD
+=======
+  const [deviceUid, setDeviceUid] = useState('');
+  // State: Products & Search
+>>>>>>> df4bd7e04a38573c71794487e8005cb9d6d9377e
   const [products, setProducts] = useState([]);
   const [search, setSearch] = useState('');
-  const [barcode, setBarcode] = useState('');
   const [loading, setLoading] = useState(false);
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [cart, setCart] = useState([]);
@@ -153,6 +195,10 @@ export default function POSPage() {
       const activeStoreId = storeIdOverride || session?.storeId || selectedStoreId;
       const params = new URLSearchParams({ pageSize: '100' });
       if (activeStoreId) params.set('store_id', String(activeStoreId));
+      if (deviceUid) {
+        params.set('device_uid', deviceUid);
+        params.set('counter_uid', deviceUid);
+      }
       const res = await fetch(`/api/sales-order/pos?${params}`, { cache: 'no-store' });
       const json = await res.json();
       if (json.success && json.data) {
@@ -187,7 +233,7 @@ export default function POSPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedStoreId, session?.storeId]);
+  }, [selectedStoreId, session?.storeId, deviceUid]);
 
   const loadAuth = useCallback(async () => {
     try {
@@ -210,11 +256,21 @@ export default function POSPage() {
 
   // ── INIT ──
   useEffect(() => {
+    const localDeviceUid = getOrCreateLocalId('pos-device-uid-v1', 'POSDEV');
+    const savedCounterName = typeof window !== 'undefined'
+      ? window.localStorage.getItem('pos-counter-name-v1')
+      : '';
+    setDeviceUid(localDeviceUid);
+    if (savedCounterName) setCounterName(savedCounterName);
     loadAuth();
-    loadPOSData();
     setHeldBills(readStorage(STORAGE_KEYS.HELD_BILLS, []));
     if (barcodeRef.current) barcodeRef.current.focus();
-  }, [loadAuth, loadPOSData]);
+  }, [loadAuth]);
+
+  useEffect(() => {
+    if (!deviceUid) return;
+    loadPOSData();
+  }, [deviceUid, loadPOSData]);
 
   useEffect(() => {
     const draft = readStorage(STORAGE_KEYS.DRAFT, null);
@@ -386,19 +442,80 @@ export default function POSPage() {
     if (!receipt || typeof window === 'undefined') return;
     const bill = receipt.bill || {};
     const items = receipt.items || [];
-    let qrBlock = '';
-    const token = bill.publicToken || bill.public_token;
-    if (token) {
+    const receiptConfig = await loadReceiptConfig();
+
+    // Generate QR for the print window (async, non-blocking)
+    if (token && receiptConfig.showQr) {
       try {
         const url = getInvoiceURL(token);
-        const qrData = await generateQRDataURL(url, { size: 120 });
         qrBlock = `<div style="margin-top:12px;padding-top:12px;border-top:1px dashed #94a3b8;text-align:center"><img src="${qrData}" alt="QR" style="width:96px;height:96px" /><p style="font-size:9px;color:#64748b;margin:4px 0 2px;font-weight:700">SCAN TO VIEW DIGITAL INVOICE</p><p style="font-size:8px;color:#94a3b8;word-break:break-all">${url}</p></div>`;
       } catch {}
     }
     const printWindow = window.open('', '_blank', 'width=380,height=720');
-    if (!printWindow) { showToast('Popup blocked. Please allow popups to print receipt.', 'error'); return; }
-    const rows = items.map((item) => `<tr><td>${item.name || item.product_name || 'Product'}<br><small>${item.sku || ''}</small></td><td style="text-align:center">${toNumber(item.qty, 1)}</td><td style="text-align:right">${formatCurrency(item.selling_price || item.sellingPrice || 0)}</td><td style="text-align:right">${formatCurrency(item.line_total || (toNumber(item.qty, 1) * toNumber(item.selling_price || item.sellingPrice)))}</td></tr>`).join('');
-    printWindow.document.write(`<!doctype html><html><head><title>Receipt ${bill.billNumber || bill.bill_number || ''}</title><style>body{font-family:Arial,sans-serif;color:#111827;margin:0;padding:16px;font-size:12px}h1{font-size:18px;margin:0 0 4px;text-align:center}.muted{color:#475569}.center{text-align:center}.line{border-top:1px dashed #94a3b8;margin:10px 0}table{width:100%;border-collapse:collapse}th,td{padding:5px 0;vertical-align:top}th{border-bottom:1px solid #cbd5e1;font-size:11px}.totals div{display:flex;justify-content:space-between;margin:3px 0}.grand{font-size:16px;font-weight:800}@media print{body{padding:0}}</style></head><body><h1>BillingPro</h1><div class="center muted">GST Invoice / POS Receipt</div><div class="line"></div><div><strong>Bill:</strong> ${bill.billNumber || bill.bill_number || bill.invoiceNumber || '-'}</div><div><strong>Date & Time:</strong> ${formatReceiptDateTime(bill.createdAt || bill.created_at)}</div><div><strong>Customer:</strong> ${bill.customerName || bill.customer_name || 'Walk-in Customer'}</div>${(bill.customerMobile || bill.customer_mobile) ? `<div><strong>Mobile:</strong> ${bill.customerMobile || bill.customer_mobile}</div>` : ''}<div class="line"></div><table><thead><tr><th style="text-align:left">Item</th><th>Qty</th><th style="text-align:right">Rate</th><th style="text-align:right">Amt</th></tr></thead><tbody>${rows}</tbody></table><div class="line"></div><div class="totals"><div><span>Subtotal</span><strong>${formatCurrency(bill.subtotal || receipt.subtotal || 0)}</strong></div><div><span>Discount</span><strong>${formatCurrency(bill.discount_total || bill.discountTotal || receipt.discount || 0)}</strong></div><div><span>Tax</span><strong>${formatCurrency(bill.tax_total || bill.totalTax || receipt.taxTotal || 0)}</strong></div><div class="grand"><span>Total</span><span>${formatCurrency(bill.grand_total || bill.grandTotal || receipt.grandTotal || 0)}</span></div><div><span>Paid By</span><strong>${bill.payment_mode || bill.paymentMode || 'cash'}</strong></div></div><div class="line"></div><div class="center muted">Thank you. Visit again.</div>${qrBlock}<script>window.onload=()=>{window.print();window.close()};<\/script></body></html>`);
+    if (!printWindow) {
+      showToast('Popup blocked. Please allow popups to print receipt.', 'error');
+      return;
+    }
+
+    const rows = items.map((item) => `
+      <tr>
+        <td>${item.name || item.product_name || 'Product'}${receiptConfig.showSku && item.sku ? `<br><small>${item.sku}</small>` : ''}</td>
+        <td style="text-align:center">${toNumber(item.qty, 1)}</td>
+        <td style="text-align:right">${formatCurrency(item.selling_price || item.sellingPrice || 0)}</td>
+        <td style="text-align:right">${formatCurrency(item.line_total || (toNumber(item.qty, 1) * toNumber(item.selling_price || item.sellingPrice)))}</td>
+      </tr>
+    `).join('');
+
+    printWindow.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <title>Receipt ${bill.billNumber || bill.bill_number || ''}</title>
+          <style>
+            body { font-family: Arial, sans-serif; color: #111827; margin: 0; padding: 16px; font-size: 12px; }
+            h1 { font-size: 18px; margin: 0 0 4px; text-align: center; }
+            .muted { color: #475569; }
+            .center { text-align: center; }
+            .line { border-top: 1px dashed #94a3b8; margin: 10px 0; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { padding: 5px 0; vertical-align: top; }
+            th { border-bottom: 1px solid #cbd5e1; font-size: 11px; }
+            .totals div { display: flex; justify-content: space-between; margin: 3px 0; }
+            .grand { font-size: 16px; font-weight: 800; }
+            @media print { body { padding: 0; } }
+          </style>
+        </head>
+        <body>
+          <h1>${receiptConfig.businessName || 'BillingPro'}</h1>
+          <div class="center muted">${receiptConfig.subtitle || 'GST Invoice / POS Receipt'}</div>
+          ${receiptConfig.headerText ? `<div class="center muted" style="white-space:pre-line;margin-top:6px">${receiptConfig.headerText}</div>` : ''}
+          <div class="line"></div>
+          <div><strong>Bill:</strong> ${bill.billNumber || bill.bill_number || bill.invoiceNumber || '-'}</div>
+          <div><strong>Date & Time:</strong> ${formatReceiptDateTime(bill.createdAt || bill.created_at)}</div>
+          <div><strong>Customer:</strong> ${bill.customerName || bill.customer_name || 'Walk-in Customer'}</div>
+          ${(receiptConfig.showCustomerMobile && (bill.customerMobile || bill.customer_mobile)) ? `<div><strong>Mobile:</strong> ${bill.customerMobile || bill.customer_mobile}</div>` : ''}
+          <div class="line"></div>
+          <table>
+            <thead>
+              <tr><th style="text-align:left">Item</th><th>Qty</th><th style="text-align:right">Rate</th><th style="text-align:right">Amt</th></tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+          <div class="line"></div>
+          <div class="totals">
+            <div><span>Subtotal</span><strong>${formatCurrency(bill.subtotal || receipt.subtotal || 0)}</strong></div>
+            ${receiptConfig.showDiscount ? `<div><span>Discount</span><strong>${formatCurrency(bill.discount_total || bill.discountTotal || receipt.discount || 0)}</strong></div>` : ''}
+            ${receiptConfig.showTaxBreakup ? `<div><span>Tax</span><strong>${formatCurrency(bill.tax_total || bill.totalTax || receipt.taxTotal || 0)}</strong></div>` : ''}
+            <div class="grand"><span>Total</span><span>${formatCurrency(bill.grand_total || bill.grandTotal || receipt.grandTotal || 0)}</span></div>
+            <div><span>Paid By</span><strong>${bill.payment_mode || bill.paymentMode || 'cash'}</strong></div>
+          </div>
+          <div class="line"></div>
+          <div class="center muted" style="white-space:pre-line">${receiptConfig.footerText || 'Thank you. Visit again.'}</div>
+          ${qrBlock}
+          <script>window.onload = () => { window.print(); window.close(); };</script>
+        </body>
+      </html>
+    `);
     printWindow.document.close();
   };
 
@@ -436,14 +553,27 @@ export default function POSPage() {
     setIsProcessing(true);
     try {
       const res = await fetch('/api/employee/user-counter-session', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, storeId: Number(selectedStoreId), openingCash: toNumber(openingCash), counterName: 'POS Counter' }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          storeId: Number(selectedStoreId),
+          openingCash: toNumber(openingCash),
+          counterName: counterName || 'POS Counter',
+          deviceUid,
+          counterUid: deviceUid,
+        }),
       });
       const json = await res.json();
       if (res.ok && (json.success || json.id)) {
         const openedSession = json.data?.session || json;
-        setSession(openedSession); setSelectedStoreId(String(openedSession.storeId || selectedStoreId));
-        setOpenSessionModal(false); loadPOSData(openedSession.storeId || selectedStoreId);
+        setSession(openedSession);
+        setSelectedStoreId(String(openedSession.storeId || selectedStoreId));
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem('pos-counter-name-v1', counterName || 'POS Counter');
+        }
+        setOpenSessionModal(false);
+        loadPOSData(openedSession.storeId || selectedStoreId);
         showToast('Session opened successfully');
       } else showToast(json.error || 'Failed to open session', 'error');
     } catch { showToast('Failed to open session', 'error'); }
@@ -476,8 +606,14 @@ export default function POSPage() {
     setIsProcessing(true);
     try {
       const payload = {
-        sessionId: session.sessionId, storeId: session.storeId || selectedStoreId,
-        customerName: customerName || 'Walk-in Customer', customerMobile, paymentMode,
+        sessionId: session.sessionId,
+        storeId: session.storeId || selectedStoreId,
+        deviceUid,
+        counterUid: deviceUid,
+        counterName: session.counterName || counterName,
+        customerName: customerName || 'Walk-in Customer',
+        customerMobile,
+        paymentMode,
         items: cart.map((item) => ({
           productId: item.id, name: item.name, qty: item.qty, sellingPrice: item.sellingPrice,
           mrp: item.mrp, taxRate: item.taxRate || 0,
@@ -1097,31 +1233,39 @@ export default function POSPage() {
 
         {/* ── Open Session Modal ── */}
         {openSessionModal && (
-          <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-            <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl overflow-hidden">
-              <div className="px-6 py-5 border-b border-slate-100">
-                <h3 className="text-base font-black text-slate-900">Open POS Session</h3>
-                <p className="text-xs text-slate-500 mt-1">Enter opening cash and select a store to begin billing.</p>
-              </div>
-              <div className="px-6 py-5 space-y-3">
-                <div>
-                  <label className="text-[10px] font-black text-slate-400 tracking-widest uppercase block mb-1.5">Opening Cash (₹)</label>
-                  <input type="number" value={openingCash} onChange={(e) => setOpeningCash(e.target.value)}
-                    placeholder="0.00" className={inputCls} />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black text-slate-400 tracking-widest uppercase block mb-1.5">Store</label>
-                  <select value={selectedStoreId} onChange={(e) => setSelectedStoreId(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all">
-                    <option value="">Select store…</option>
-                    {stores.map((store) => (
-                      <option key={store.id} value={store.id}>{store.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex gap-2 pt-1">
-                  <button onClick={() => setOpenSessionModal(false)}
-                    className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 font-semibold text-sm hover:bg-slate-50 transition-colors">
+          <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/50 p-4">
+            <div className="w-full max-w-md rounded-2xl bg-white p-6">
+              <h3 className="text-lg font-bold text-slate-900 mb-4">Open Session</h3>
+              <div className="space-y-3">
+                <input
+                  type="number"
+                  value={openingCash}
+                  onChange={(e) => setOpeningCash(e.target.value)}
+                  placeholder="Opening cash"
+                  className={inputClassName}
+                />
+                <input
+                  type="text"
+                  value={counterName}
+                  onChange={(e) => setCounterName(e.target.value)}
+                  placeholder="Counter name"
+                  className={inputClassName}
+                />
+                <select
+                  value={selectedStoreId}
+                  onChange={(e) => setSelectedStoreId(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white text-slate-900"
+                >
+                  <option value="">Select store</option>
+                  {stores.map((store) => (
+                    <option key={store.id} value={store.id}>{store.name}</option>
+                  ))}
+                </select>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setOpenSessionModal(false)}
+                    className="flex-1 px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 font-semibold"
+                  >
                     Cancel
                   </button>
                   <button onClick={openSession} disabled={isProcessing}

@@ -6,6 +6,7 @@ import { extractAuthUser, requirePermission, requireStore } from '@/lib/api-prot
 import { ensureCatalogExtrasSchema } from '@/lib/catalogExtrasSchema';
 import { validatePhoneNumber } from '@/lib/phoneValidator';
 import { sendBillOnWhatsApp } from '@/lib/whatsappService';
+import { allocateBatchStock, ensureInventoryBatchSchema, getInventoryIssueStrategy } from '@/lib/inventoryBatching';
 
 function toNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -26,6 +27,8 @@ function mapSession(row) {
     userId: row.user_id,
     counterId: row.counter_id,
     deviceId: row.device_id,
+    deviceUid: row.device_uid || '',
+    counterUid: row.counter_uid || '',
     storeId: row.store_id,
     userName: row.user_name || '',
     storeName: row.store_name || '',
@@ -60,9 +63,12 @@ async function ensureProductDiscountSchema() {
 
 function getAvailableStockSql(storeParam = '$1') {
   return `
-    COALESCE(stock_in_totals.qty, 0)
-    - COALESCE(sales_totals.qty, 0)
-    - COALESCE(stock_out_totals.qty, 0)
+    COALESCE(
+      batch_totals.qty,
+      COALESCE(stock_in_totals.qty, 0)
+      - COALESCE(sales_totals.qty, 0)
+      - COALESCE(stock_out_totals.qty, 0)
+    )
   `.trim();
 }
 
@@ -72,6 +78,7 @@ export async function POST(req) {
     await ensureSalesBillingSchema();
     await ensureCatalogExtrasSchema();
     await ensureProductDiscountSchema();
+    await ensureInventoryBatchSchema();
 
     const token = getToken(req);
     if (!token) return errorResponse('Unauthorized', 401);
@@ -91,6 +98,9 @@ export async function POST(req) {
       sessionId,
       storeId,
       counterId,
+      deviceUid = '',
+      counterUid = '',
+      counterName = '',
       customerName = 'Walk-in Customer',
       customerMobile = '',
       paymentMode,
@@ -144,6 +154,15 @@ export async function POST(req) {
           AND ps.store_id = $2
           AND ps.is_active = TRUE
          LEFT JOIN taxes t ON p.tax_id = t.id
+         LEFT JOIN (
+           SELECT product_id, SUM(available_qty) AS qty
+           FROM inventory_batches
+           WHERE store_id = $2
+             AND status = 'active'
+             AND available_qty > 0
+             AND (expiry_date IS NULL OR expiry_date >= CURRENT_DATE)
+           GROUP BY product_id
+         ) batch_totals ON batch_totals.product_id = p.id
          LEFT JOIN (
            SELECT sii.product_id, SUM(sii.qty) AS qty
            FROM stock_in_items sii
@@ -236,42 +255,12 @@ export async function POST(req) {
         Math.max(0, grandTotal - paidAmount),
         paymentMode,
         JSON.stringify(payments),
-        JSON.stringify({ clientBillId, source: 'pos' }),
+        JSON.stringify({ clientBillId, source: 'pos', deviceUid, counterUid, counterName }),
       ]
     );
 
     const billId = billRes.rows[0]?.id;
     if (!billId) return errorResponse('Failed to create bill', 500);
-
-    for (const item of normalizedItems) {
-      const qty = toNumber(item.qty);
-      const sellingPrice = toNumber(item.sellingPrice, toNumber(item.dbProduct.selling_price));
-      const discountAmount = allowDiscounts && item.dbProduct?.allow_discount_on_pos ? toNumber(item.discountAmount) : 0;
-      const taxRate = toNumber(item.taxRate, toNumber(item.dbProduct.tax_rate));
-      const lineTax = (Math.max(0, qty * sellingPrice - discountAmount) * taxRate) / 100;
-      const lineTotal = Math.max(0, qty * sellingPrice - discountAmount + lineTax);
-
-      await client.query(
-        `INSERT INTO sales_bill_items (
-          sales_bill_id, product_id, product_name, barcode, sku, qty,
-          selling_price, mrp, tax_rate, discount_amount, tax_amount, line_total
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-        [
-          billId,
-          item.productId,
-          item.name || item.dbProduct.name || 'Product',
-          item.barcode || item.dbProduct.barcode || null,
-          item.sku || item.dbProduct.sku || null,
-          qty,
-          sellingPrice,
-          toNumber(item.mrp),
-          taxRate,
-          discountAmount,
-          lineTax,
-          lineTotal,
-        ]
-      );
-    }
 
     const stockOutRes = await client.query(
       `INSERT INTO stock_out (
@@ -290,24 +279,71 @@ export async function POST(req) {
         normalizedItems.reduce((sum, item) => sum + toNumber(item.qty), 0),
         totalTax,
         String(billId),
-        JSON.stringify({ source: 'pos', billId, billNumber }),
+        JSON.stringify({ source: 'pos', billId, billNumber, deviceUid, counterUid, counterName }),
       ]
     );
 
     const stockOutId = stockOutRes.rows[0]?.id;
+    const issueStrategy = getInventoryIssueStrategy();
+
     for (const item of normalizedItems) {
+      const qty = toNumber(item.qty);
+      const sellingPrice = toNumber(item.sellingPrice, toNumber(item.dbProduct.selling_price));
+      const discountAmount = allowDiscounts && item.dbProduct?.allow_discount_on_pos ? toNumber(item.discountAmount) : 0;
+      const taxRate = toNumber(item.taxRate, toNumber(item.dbProduct.tax_rate));
+      const lineTax = (Math.max(0, qty * sellingPrice - discountAmount) * taxRate) / 100;
+      const lineTotal = Math.max(0, qty * sellingPrice - discountAmount + lineTax);
+      const allocations = await allocateBatchStock(client, {
+        productId: item.productId,
+        storeId: Number(storeId),
+        qty,
+        strategy: issueStrategy,
+        referenceType: 'sales_bill',
+        referenceId: billId,
+        meta: { billNumber, stockOutId },
+      });
+
       await client.query(
-        `INSERT INTO stock_out_items (stock_out_id, product_id, product_name, qty, cost_price, tax_value, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        `INSERT INTO sales_bill_items (
+          sales_bill_id, product_id, product_name, barcode, sku, qty,
+          selling_price, mrp, tax_rate, discount_amount, tax_amount, line_total, batch_allocations
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)`,
         [
-          stockOutId,
+          billId,
           item.productId,
           item.name || item.dbProduct.name || 'Product',
-          toNumber(item.qty),
-          toNumber(item.dbProduct.cost_price),
-          toNumber(item.taxRate, toNumber(item.dbProduct.tax_rate)),
+          item.barcode || item.dbProduct.barcode || null,
+          item.sku || item.dbProduct.sku || null,
+          qty,
+          sellingPrice,
+          toNumber(item.mrp),
+          taxRate,
+          discountAmount,
+          lineTax,
+          lineTotal,
+          JSON.stringify(allocations),
         ]
       );
+
+      for (const allocation of allocations) {
+        await client.query(
+          `INSERT INTO stock_out_items (
+             stock_out_id, product_id, product_name, qty, cost_price, tax_value,
+             batch_id, batch_no, expiry_date, created_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())`,
+          [
+            stockOutId,
+            item.productId,
+            item.name || item.dbProduct.name || 'Product',
+            allocation.qty,
+            allocation.costPrice || toNumber(item.dbProduct.cost_price),
+            toNumber(item.taxRate, toNumber(item.dbProduct.tax_rate)),
+            allocation.batchId,
+            allocation.batchNo,
+            allocation.expiryDate,
+          ]
+        );
+      }
     }
 
     const normalizedPayments = payments.length ? payments : [{ method: paymentMode, amount: grandTotal, referenceNo: '' }];
@@ -400,21 +436,33 @@ export async function GET(req) {
     const pageSize = parseInt(searchParams.get('pageSize') || '48', 10);
     const search = searchParams.get('search') || '';
     const requestedStoreId = Number(searchParams.get('store_id') || 0) || null;
+    const requestedDeviceUid = String(searchParams.get('device_uid') || '').trim();
+    const requestedCounterUid = String(searchParams.get('counter_uid') || '').trim();
     const offset = (page - 1) * pageSize;
+
+    const sessionParams = [auth.user.id];
+    let sessionFilter = `ucs.is_active = TRUE AND ucs.user_id = $1`;
+    if (requestedDeviceUid) {
+      sessionParams.push(requestedDeviceUid);
+      sessionFilter += ` AND COALESCE(ucs.device_uid, '') = $${sessionParams.length}`;
+    }
+    if (requestedCounterUid) {
+      sessionParams.push(requestedCounterUid);
+      sessionFilter += ` AND COALESCE(ucs.counter_uid, '') = $${sessionParams.length}`;
+    }
 
     const sessionRes = await query(
       `SELECT ucs.id, ucs.user_id, ucs.counter_id, ucs.device_id, ucs.store_id,
               ucs.session_id, ucs.session_start_at, ucs.session_end_at, ucs.is_active,
-              ucs.serial_number, ucs.counter_name, ucs.meta,
+              ucs.serial_number, ucs.counter_name, ucs.device_uid, ucs.counter_uid, ucs.meta,
               u.name AS user_name, s.name AS store_name
        FROM user_counter_sessions ucs
        LEFT JOIN users u ON u.id = ucs.user_id
        LEFT JOIN stores s ON s.id = ucs.store_id
-       WHERE ucs.is_active = TRUE
-         AND ucs.user_id = $1
+       WHERE ${sessionFilter}
        ORDER BY ucs.session_start_at DESC, ucs.id DESC
        LIMIT 1`,
-      [auth.user.id]
+      sessionParams
     );
 
     const isGlobalStoreAccess = Array.isArray(auth.user.permissions) && auth.user.permissions.includes('*');
@@ -450,6 +498,15 @@ export async function GET(req) {
       LEFT JOIN categories c ON p.category_id = c.id
       LEFT JOIN brands b ON p.brand_id = b.id
       LEFT JOIN taxes t ON p.tax_id = t.id
+      LEFT JOIN (
+        SELECT product_id, SUM(available_qty) AS qty
+        FROM inventory_batches
+        WHERE store_id = $1
+          AND status = 'active'
+          AND available_qty > 0
+          AND (expiry_date IS NULL OR expiry_date >= CURRENT_DATE)
+        GROUP BY product_id
+      ) batch_totals ON batch_totals.product_id = p.id
       LEFT JOIN (
         SELECT sii.product_id, SUM(sii.qty) AS qty
         FROM stock_in_items sii

@@ -16,6 +16,8 @@ function normalizeSessionRow(row) {
     userId: row.user_id,
     counterId: row.counter_id,
     deviceId: row.device_id,
+    deviceUid: row.device_uid || '',
+    counterUid: row.counter_uid || '',
     storeId: row.store_id,
     sessionId: row.session_id,
     sessionStartAt: row.session_start_at,
@@ -89,6 +91,8 @@ export async function GET(request) {
               ucs.user_id,
               ucs.counter_id,
               ucs.device_id,
+              ucs.device_uid,
+              ucs.counter_uid,
               ucs.store_id,
               ucs.session_id,
               ucs.session_start_at,
@@ -142,6 +146,8 @@ export async function POST(request) {
     const deviceId = body.deviceId || body.device_id ? Number(body.deviceId || body.device_id) : null;
     const serialNumber = String(body.serialNumber || body.serial_number || '').trim();
     const counterName = String(body.counterName || body.counter_name || '').trim();
+    const deviceUid = String(body.deviceUid || body.device_uid || '').trim();
+    const counterUid = String(body.counterUid || body.counter_uid || counterName || '').trim();
     const openingCash = Number(body.openingCash || body.opening_cash || 0);
 
     if (!Number.isFinite(userId) || userId <= 0) {
@@ -154,20 +160,56 @@ export async function POST(request) {
     }
 
     const sessionId = `SESSION-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    if (deviceUid || counterUid) {
+      const activeSession = await query(
+        `SELECT ucs.id, ucs.user_id, ucs.counter_id, ucs.device_id, ucs.store_id,
+                ucs.session_id, ucs.session_start_at, ucs.session_end_at, ucs.is_active,
+                ucs.serial_number, ucs.counter_name, ucs.device_uid, ucs.counter_uid, ucs.meta,
+                s.name AS store_name, u.name AS user_name
+         FROM user_counter_sessions ucs
+         LEFT JOIN stores s ON s.id = ucs.store_id
+         LEFT JOIN users u ON u.id = ucs.user_id
+         WHERE ucs.user_id = $1
+           AND ucs.store_id = $2
+           AND ucs.is_active = TRUE
+           AND COALESCE(ucs.device_uid, '') = COALESCE($3, '')
+           AND COALESCE(ucs.counter_uid, '') = COALESCE($4, '')
+         ORDER BY ucs.session_start_at DESC
+         LIMIT 1`,
+        [userId, storeId, deviceUid || null, counterUid || null]
+      );
+      if (activeSession.rows.length > 0) {
+        return NextResponse.json(normalizeSessionRow(activeSession.rows[0]), { status: 200 });
+      }
+    }
+
     const meta = {
       opening_cash: openingCash,
       source: 'pos',
       opened_at: new Date().toISOString(),
+      device_uid: deviceUid || null,
+      counter_uid: counterUid || null,
       ...(body.meta || {}),
     };
 
     const result = await query(
       `INSERT INTO user_counter_sessions (
         user_id, counter_id, device_id, store_id, session_id,
-        session_start_at, is_active, serial_number, counter_name, meta
-       ) VALUES ($1, $2, $3, $4, $5, NOW(), TRUE, $6, $7, $8::jsonb)
-       RETURNING id, user_id, counter_id, device_id, store_id, session_id, session_start_at, session_end_at, is_active, serial_number, counter_name, meta`,
-      [userId, counterId, deviceId, storeId, sessionId, serialNumber || null, counterName || null, JSON.stringify(meta)]
+        session_start_at, is_active, serial_number, counter_name, device_uid, counter_uid, meta
+       ) VALUES ($1, $2, $3, $4, $5, NOW(), TRUE, $6, $7, $8, $9, $10::jsonb)
+       RETURNING id, user_id, counter_id, device_id, store_id, session_id, session_start_at, session_end_at, is_active, serial_number, counter_name, device_uid, counter_uid, meta`,
+      [
+        userId,
+        counterId,
+        deviceId,
+        storeId,
+        sessionId,
+        serialNumber || null,
+        counterName || null,
+        deviceUid || null,
+        counterUid || null,
+        JSON.stringify(meta),
+      ]
     );
 
     return NextResponse.json(normalizeSessionRow(result.rows[0]), { status: 201 });

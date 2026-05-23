@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { unstable_cache } from 'next/cache';
 import MainLayout from '@/components/MainLayout';
 import { query } from '@/lib/db';
 
@@ -24,68 +25,43 @@ function formatCurrency(value) {
   return `₹${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 }
 
-async function fetchHomeStats() {
-  const today = new Date();
-  const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
-  const lastDay = today.toISOString().split('T')[0];
+const fetchHomeStats = unstable_cache(
+  async () => {
+    const today = new Date();
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+    const lastDay = today.toISOString().split('T')[0];
 
-  const [salesResult, productsResult, customersResult] = await Promise.all([
-    query(
-      `SELECT
-         COALESCE(SUM(grand_total), 0)::numeric AS total_sales,
-         COALESCE(SUM(tax_total), 0)::numeric AS total_tax,
-         COUNT(DISTINCT id)::int AS total_transactions,
-         COUNT(DISTINCT NULLIF(customer_mobile, ''))::int AS unique_customers
-       FROM sales_bills
-       WHERE DATE(created_at) >= $1
-         AND DATE(created_at) <= $2
-         AND status != 'cancelled'`,
-      [firstDay, lastDay]
-    ),
-    query(`SELECT COUNT(*)::int AS count FROM products WHERE is_active = TRUE`),
-    query(`WITH registered_customers AS (
-         SELECT
-           CASE
-             WHEN NULLIF(TRIM(mobile_number), '') IS NOT NULL THEN 'm:' || LOWER(TRIM(mobile_number))
-             WHEN NULLIF(TRIM(customer_code), '') IS NOT NULL THEN 'c:' || LOWER(TRIM(customer_code))
-             ELSE 'id:' || id::text
-           END AS customer_key
-         FROM customers
-       ),
-       billed_customers AS (
-         SELECT DISTINCT
-           CASE
-             WHEN NULLIF(TRIM(customer_mobile), '') IS NOT NULL THEN 'm:' || LOWER(TRIM(customer_mobile))
-             WHEN NULLIF(TRIM(customer_name), '') IS NOT NULL THEN 'n:' || LOWER(TRIM(customer_name))
-             ELSE 'bill:' || id::text
-           END AS customer_key
+    const [salesResult, productsResult, customersResult] = await Promise.all([
+      query(
+        `SELECT
+           COALESCE(SUM(grand_total), 0)::numeric AS total_sales,
+           COALESCE(SUM(tax_total), 0)::numeric AS total_tax,
+           COUNT(DISTINCT id)::int AS total_transactions
          FROM sales_bills
-         WHERE status IN ('paid', 'completed')
-           AND (
-             NULLIF(TRIM(customer_mobile), '') IS NOT NULL
-             OR NULLIF(TRIM(customer_name), '') IS NOT NULL
-           )
-       )
-       SELECT COUNT(*)::int AS count
-       FROM (
-         SELECT customer_key FROM registered_customers
-         UNION
-         SELECT customer_key FROM billed_customers
-       ) all_customers`),
-  ]);
+         WHERE created_at >= $1::date
+           AND created_at <  $2::date + interval '1 day'
+           AND status != 'cancelled'`,
+        [firstDay, lastDay]
+      ),
+      query(`SELECT COUNT(*)::int AS count FROM products WHERE is_active = TRUE`),
+      query(`SELECT COUNT(*)::int AS count FROM customers`),
+    ]);
 
-  const summary = salesResult.rows[0] || {};
+    const summary = salesResult.rows[0] || {};
 
-  return {
-    summary: {
-      total_sales: summary.total_sales || 0,
-      total_tax: summary.total_tax || 0,
-      total_transactions: summary.total_transactions || 0,
-      total_customers: customersResult.rows[0]?.count || 0,
-    },
-    catalog: productsResult.rows[0]?.count || 0,
-  };
-}
+    return {
+      summary: {
+        total_sales:       summary.total_sales       || 0,
+        total_tax:         summary.total_tax         || 0,
+        total_transactions: summary.total_transactions || 0,
+        total_customers:   customersResult.rows[0]?.count || 0,
+      },
+      catalog: productsResult.rows[0]?.count || 0,
+    };
+  },
+  ['home-stats'],
+  { revalidate: 60 }
+);
 
 export default async function HomePage() {
   let stats = {

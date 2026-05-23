@@ -51,6 +51,7 @@ export default function CustomerLedgerPage() {
   const [rows, setRows] = useState([]);
   const [regionOptions, setRegionOptions] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [summary, setSummary] = useState({ totalTransactions: 0, totalDebit: '0.00', totalCredit: '0.00' });
 
   useEffect(() => {
     let cancelled = false;
@@ -99,9 +100,15 @@ export default function CustomerLedgerPage() {
   const fetchLedger = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/customer-ledger', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dateRange, regions, customerId }) });
+      const res = await fetch('/api/customer-ledger', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dateFrom, dateTo, regions, customerId, customer }),
+      });
       const data = await res.json();
-      setRows(data.rows || []);
+      const payload = data.success ? data.data : data;
+      setRows(payload.rows || []);
+      setSummary(payload.summary || { totalTransactions: 0, totalDebit: '0.00', totalCredit: '0.00' });
     } catch (err) {
       console.error(err);
       setRows([]);
@@ -128,12 +135,27 @@ export default function CustomerLedgerPage() {
           </div>
         </div>
 
+        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-semibold text-gray-500">Transactions</p>
+            <p className="mt-1 text-2xl font-black text-gray-950">{summary.totalTransactions || 0}</p>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-semibold text-gray-500">Debit</p>
+            <p className="mt-1 text-2xl font-black text-rose-700">Rs.{summary.totalDebit || '0.00'}</p>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-semibold text-gray-500">Credit</p>
+            <p className="mt-1 text-2xl font-black text-emerald-700">Rs.{summary.totalCredit || '0.00'}</p>
+          </div>
+        </div>
+
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
 
           {/* Filters row */}
           <div className="px-5 py-4 border-b border-gray-100">
-            <div className="flex flex-col md:flex-row md:items-center gap-3">
-              <div className="flex items-center gap-3 flex-1">
+            <div className="flex flex-col lg:flex-row lg:items-end gap-3">
+              <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-[260px_220px_minmax(240px,1fr)_auto]">
                 <div className="w-full md:w-[260px]" ref={datePickerRef}>
                   <label className="text-[12px] text-gray-700 mb-1 block">Date Range</label>
                   <div className="relative">
@@ -208,7 +230,7 @@ export default function CustomerLedgerPage() {
                   </select>
                 </div>
 
-                <div className="flex items-center gap-2 flex-1">
+                <div className="flex items-end gap-2">
                   <div className="w-full">
                     <label className="text-[12px] text-gray-700 mb-1 block">Customer</label>
                     <div className="relative">
@@ -218,10 +240,10 @@ export default function CustomerLedgerPage() {
                       </button>
                     </div>
                   </div>
-                  <div className="mt-6 md:mt-6">
-                    <button onClick={fetchLedger} className="px-4 py-2 bg-blue-700 text-white rounded-lg text-[13px]">{loading ? 'Loading...' : 'Fetch'}</button>
-                  </div>
                 </div>
+                <button onClick={fetchLedger} className="h-10 rounded-lg bg-blue-700 px-5 text-[13px] font-bold text-white hover:bg-blue-800 disabled:opacity-60" disabled={loading}>
+                  {loading ? 'Loading...' : 'Fetch'}
+                </button>
               </div>
 
               <div className="flex items-center gap-2 justify-end">
@@ -233,7 +255,38 @@ export default function CustomerLedgerPage() {
           </div>
 
           {/* Table */}
-          <div className="overflow-x-auto">
+          <div className="block md:hidden">
+            {loading ? (
+              <p className="px-4 py-6 text-sm text-gray-500">Loading...</p>
+            ) : rows.length === 0 ? (
+              <div className="py-14 text-center text-gray-400">
+                <i className="ti ti-database-off text-[32px] mb-2 block" />
+                <p className="text-[13px]">No Records Found</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {rows.map((row) => (
+                  <div key={row.transactionId} className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-bold text-gray-950">{row.customerName}</p>
+                        <p className="text-xs text-gray-500">{row.transactionId} - {row.date}</p>
+                      </div>
+                      <span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700">{row.transactionType}</span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                      <div><span className="text-gray-500">Amount</span><p className="font-bold text-gray-900">Rs.{row.transactionAmount}</p></div>
+                      <div><span className="text-gray-500">Closing</span><p className="font-bold text-gray-900">Rs.{row.closingBalance}</p></div>
+                      <div><span className="text-gray-500">Payment</span><p className="font-semibold text-gray-800">{row.paymentType || '-'}</p></div>
+                      <div><span className="text-gray-500">Status</span><p className="font-semibold text-gray-800">{row.settlementStatus || '-'}</p></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[900px]">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50/50">
@@ -264,7 +317,7 @@ export default function CustomerLedgerPage() {
           </div>
 
           <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
-            <div className="text-[12.5px] text-gray-500">Showing 0 to 0 of 0 Results</div>
+            <div className="text-[12.5px] text-gray-500">Showing {rows.length ? 1 : 0} to {rows.length} of {rows.length} Results</div>
             <div />
           </div>
 

@@ -3,7 +3,7 @@ import { ensureUsersTable } from '@/lib/userAuth';
 import { ensureStockInSchema } from '@/lib/stockInSchema';
 
 const CREATE_USER_COUNTER_SESSIONS_SQL = `
-  CREATE TABLE IF NOT EXISTS user_counter_sessions (
+    CREATE TABLE IF NOT EXISTS user_counter_sessions (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
     counter_id BIGINT,
@@ -14,11 +14,21 @@ const CREATE_USER_COUNTER_SESSIONS_SQL = `
     session_end_at TIMESTAMP,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     serial_number VARCHAR(120),
-    counter_name VARCHAR(190),
-    meta JSONB NOT NULL DEFAULT '{}'::jsonb,
+      counter_name VARCHAR(190),
+      device_uid VARCHAR(120),
+      counter_uid VARCHAR(120),
+      meta JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-  );
+    );
+
+    ALTER TABLE user_counter_sessions
+      ADD COLUMN IF NOT EXISTS device_uid VARCHAR(120),
+      ADD COLUMN IF NOT EXISTS counter_uid VARCHAR(120);
+
+    CREATE INDEX IF NOT EXISTS idx_user_counter_sessions_active_counter
+      ON user_counter_sessions(user_id, store_id, device_uid, counter_uid)
+      WHERE is_active = TRUE;
 `;
 
 const globalForUserCounterSessions = globalThis;

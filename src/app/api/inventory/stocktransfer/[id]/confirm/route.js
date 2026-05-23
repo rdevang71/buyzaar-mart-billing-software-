@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
 import { getClient } from '@/lib/db';
 import { ensureStockTransferSchema } from '@/lib/stockTransferSchema';
+import { allocateBatchStock, ensureInventoryBatchSchema, getInventoryIssueStrategy, receiveBatchStock } from '@/lib/inventoryBatching';
 
 export async function POST(request, { params }) {
   const { id } = await params;
-  try {
-    await ensureStockTransferSchema();
+    try {
+      await ensureStockTransferSchema();
+      await ensureInventoryBatchSchema();
     const body = await request.json();
     const form = body.form || {};
     const items = body.items || [];
@@ -34,7 +36,7 @@ export async function POST(request, { params }) {
     try {
       await client.query('BEGIN');
 
-      const draft = await client.query('SELECT id, status FROM stock_transfer WHERE id = $1', [id]);
+      const draft = await client.query('SELECT id, status, source_id, destination_id, transaction_id FROM stock_transfer WHERE id = $1', [id]);
       if (draft.rows.length === 0) {
         await client.query('ROLLBACK');
         return NextResponse.json({ error: 'Stock transfer not found' }, { status: 404 });
@@ -46,12 +48,43 @@ export async function POST(request, { params }) {
 
       await client.query('DELETE FROM stock_transfer_items WHERE stock_transfer_id = $1', [id]);
       for (const item of items) {
-        await client.query(
+        const transferItemRes = await client.query(
           `INSERT INTO stock_transfer_items (
             stock_transfer_id, product_id, product_name, qty, cost_price, tax_value, created_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+          ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
+          RETURNING id`,
           [id, item.product_id, item.name || null, item.qty, item.cost_price || 0, item.tax_value || 0]
         );
+        const transferItemId = transferItemRes.rows[0]?.id;
+        const allocations = await allocateBatchStock(client, {
+          productId: item.product_id,
+          storeId: draft.rows[0].source_id,
+          qty: item.qty,
+          strategy: getInventoryIssueStrategy(form.issue_strategy),
+          referenceType: 'stock_transfer',
+          referenceId: id,
+          sourceItemId: transferItemId,
+          meta: { direction: 'source', transactionId: draft.rows[0].transaction_id || null },
+        });
+
+        for (const allocation of allocations) {
+          await receiveBatchStock(client, {
+            stockInId: id,
+            stockInItemId: transferItemId,
+            productId: item.product_id,
+            storeId: draft.rows[0].destination_id,
+            qty: allocation.qty,
+            costPrice: allocation.costPrice || item.cost_price || 0,
+            batchNo: allocation.batchNo,
+            expiryDate: allocation.expiryDate,
+            meta: {
+              source: 'stock_transfer',
+              sourceStoreId: draft.rows[0].source_id,
+              transferId: id,
+              sourceBatchId: allocation.batchId,
+            },
+          });
+        }
       }
 
       await client.query(

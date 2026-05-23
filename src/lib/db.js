@@ -21,6 +21,7 @@ if (!globalForPg._pgPool) {
 }
 
 const pool = globalForPg._pgPool;
+const shouldLogQueries = process.env.NODE_ENV !== 'production' || process.env.DEBUG_SQL === 'true';
 
 /**
  * Run a query
@@ -32,7 +33,9 @@ export async function query(text, params = []) {
   try {
     const res = await pool.query(text, params);
     const duration = Date.now() - start;
-    console.log(`[DB] ${duration}ms — ${text.substring(0, 80)}`);
+    if (shouldLogQueries) {
+      console.log(`[DB] ${duration}ms — ${text.substring(0, 80)}`);
+    }
     return res;
   } catch (err) {
     console.error('[DB ERROR]', err.message, '\nQuery:', text);

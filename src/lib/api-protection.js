@@ -8,7 +8,6 @@ import { verifyToken } from '@/lib/auth-enhanced';
 import { query } from '@/lib/db';
 import { unauthorizedError, forbiddenError } from '@/lib/api-response';
 import { ensureUsersTable } from '@/lib/userAuth';
-import { ensureRolesSchema } from '@/lib/rolesSchema';
 
 
 /**
@@ -18,7 +17,6 @@ import { ensureRolesSchema } from '@/lib/rolesSchema';
 export async function extractAuthUser(request) {
   try {
     await ensureUsersTable();
-    await ensureRolesSchema();
 
     // Get token from cookies or Authorization header
     const cookieToken = request.cookies.get('access_token')?.value || 
