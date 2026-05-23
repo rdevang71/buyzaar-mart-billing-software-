@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import MainLayout from '@/components/MainLayout';
+import { extractStores } from '@/lib/clientResponse';
 
 function formatDate(value) {
   if (!value) return '—';
@@ -100,9 +101,7 @@ export default function MessageLogsPage({
       try {
         const res = await fetch('/api/stores');
         const data = await res.json();
-        if (Array.isArray(data)) {
-          setStores(data);
-        }
+        setStores(extractStores(data));
       } catch (err) {
         console.error(err);
       }

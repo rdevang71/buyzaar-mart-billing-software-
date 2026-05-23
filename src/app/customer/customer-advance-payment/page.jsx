@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import MainLayout from '@/components/MainLayout';
 import CustomerSearchModal from '@/components/CustomerSearchModal';
+import { extractStores } from '@/lib/clientResponse';
 
 const columns = [
   { key: 'customerId', label: 'Customer ID' },
@@ -155,7 +156,7 @@ export default function CustomerAdvancePaymentPage() {
     try {
       const res = await fetch('/api/stores');
       const data = await res.json();
-      setStores(Array.isArray(data) ? data : []);
+      setStores(extractStores(data));
     } catch (err) {
       console.error(err);
       setStores([]);

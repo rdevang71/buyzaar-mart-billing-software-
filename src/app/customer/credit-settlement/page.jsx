@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import MainLayout from '@/components/MainLayout';
+import { extractStores } from '@/lib/clientResponse';
 
 const columns = [
   { key: 'sNo', label: 'S. No.' },
@@ -79,7 +80,7 @@ export default function CreditSettlementPage() {
       const res = await fetch('/api/stores');
       if (!res.ok) throw new Error('Failed to fetch stores');
       const data = await res.json();
-      setStores(Array.isArray(data) ? data : []);
+      setStores(extractStores(data));
     } catch (err) {
       console.error(err);
       setStores([]);
