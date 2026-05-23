@@ -70,6 +70,36 @@ export async function POST(req) {
       return errorResponse('You do not have access to this store', 403);
     }
 
+    const productIds = items.map((item) => Number(item.product_id)).filter(Number.isFinite);
+    if (!productIds.length) return errorResponse('Select valid products to return', 400);
+
+    const duplicateRes = await query(
+      `SELECT
+         sri.product_id,
+         COALESCE(p.name, 'Product') AS product_name,
+         sr.id AS return_id,
+         sr.status
+       FROM sales_return_items sri
+       INNER JOIN sales_returns sr ON sr.id = sri.sales_return_id
+       LEFT JOIN products p ON p.id = sri.product_id
+       WHERE sr.original_bill_id = $1
+         AND sri.product_id = ANY($2::bigint[])
+         AND sr.status <> 'declined'
+       ORDER BY sr.updated_at DESC, sr.id DESC
+       LIMIT 1`,
+      [bill.id, productIds]
+    );
+
+    if (duplicateRes.rows.length) {
+      const duplicate = duplicateRes.rows[0];
+      const label = duplicate.status === 'completed'
+        ? 'already completed'
+        : duplicate.status === 'approved'
+          ? 'approved and waiting for proceed'
+          : 'already pending for approval';
+      return errorResponse(`${duplicate.product_name} return is ${label} on this invoice (request #${duplicate.return_id})`, 409);
+    }
+
     // Create approval request. Stock is updated only after admin/super admin approval.
     const returnRes = await query(`
       INSERT INTO sales_returns (
@@ -128,6 +158,7 @@ export async function GET(req) {
         sb.payment_mode AS original_payment_mode,
         sb.payment_meta AS original_payment_meta,
         sb.created_at AS original_bill_date,
+        sb.public_token AS original_public_token,
         s.name as store_name,
         u.name as requested_by_name,
         approver.name as approved_by_name,
