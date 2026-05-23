@@ -80,6 +80,8 @@ const CREATE_CASHIER_CLOSINGS_SQL = `
 `;
 
 const MIGRATE_SALES_BILLING_SQL = `
+  CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
   ALTER TABLE sales_bills
     ADD COLUMN IF NOT EXISTS bill_number VARCHAR(60),
     ADD COLUMN IF NOT EXISTS session_id VARCHAR(120),
@@ -100,6 +102,14 @@ const MIGRATE_SALES_BILLING_SQL = `
     ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'paid',
     ADD COLUMN IF NOT EXISTS remarks TEXT,
     ADD COLUMN IF NOT EXISTS meta JSONB NOT NULL DEFAULT '{}'::jsonb,
+    ADD COLUMN IF NOT EXISTS sync_id VARCHAR(120),
+    ADD COLUMN IF NOT EXISTS public_token UUID DEFAULT gen_random_uuid(),
+    ADD COLUMN IF NOT EXISTS device_id VARCHAR(120),
+    ADD COLUMN IF NOT EXISTS created_offline BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS synced_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS whatsapp_sent BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS whatsapp_sent_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS whatsapp_number VARCHAR(40),
     ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
@@ -107,8 +117,21 @@ const MIGRATE_SALES_BILLING_SQL = `
   SET bill_number = COALESCE(bill_number, 'BILL-' || id::text)
   WHERE bill_number IS NULL;
 
+  UPDATE sales_bills
+  SET public_token = gen_random_uuid()
+  WHERE public_token IS NULL;
+
+  ALTER TABLE sales_bills
+    ALTER COLUMN public_token SET DEFAULT gen_random_uuid();
+
   CREATE UNIQUE INDEX IF NOT EXISTS sales_bills_bill_number_unique_idx
     ON sales_bills (bill_number);
+  CREATE UNIQUE INDEX IF NOT EXISTS sales_bills_sync_id_unique_idx
+    ON sales_bills (sync_id)
+    WHERE sync_id IS NOT NULL;
+  CREATE UNIQUE INDEX IF NOT EXISTS sales_bills_public_token_unique_idx
+    ON sales_bills (public_token)
+    WHERE public_token IS NOT NULL;
 
   ALTER TABLE sales_bill_items
     ADD COLUMN IF NOT EXISTS product_name VARCHAR(255) NOT NULL DEFAULT '',
@@ -121,6 +144,7 @@ const MIGRATE_SALES_BILLING_SQL = `
     ADD COLUMN IF NOT EXISTS tax_rate NUMERIC(14, 2) NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS tax_amount NUMERIC(14, 2) NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS line_total NUMERIC(14, 2) NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS batch_allocations JSONB NOT NULL DEFAULT '[]'::jsonb,
     ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
   ALTER TABLE sales_bill_payments
@@ -129,6 +153,37 @@ const MIGRATE_SALES_BILLING_SQL = `
     ADD COLUMN IF NOT EXISTS reference_no VARCHAR(120),
     ADD COLUMN IF NOT EXISTS meta JSONB NOT NULL DEFAULT '{}'::jsonb,
     ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+`;
+
+const CREATE_OFFLINE_SYNC_SQL = `
+  CREATE TABLE IF NOT EXISTS offline_sync_queue (
+    id BIGSERIAL PRIMARY KEY,
+    sync_id VARCHAR(120) NOT NULL UNIQUE,
+    device_id VARCHAR(120),
+    user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    entity_type VARCHAR(60) NOT NULL DEFAULT 'bill',
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    status VARCHAR(30) NOT NULL DEFAULT 'queued',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    error_message TEXT,
+    created_offline_at TIMESTAMPTZ,
+    queued_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    synced_at TIMESTAMPTZ
+  );
+
+  CREATE TABLE IF NOT EXISTS sync_conflicts (
+    id BIGSERIAL PRIMARY KEY,
+    sync_id VARCHAR(120),
+    conflict_type VARCHAR(80) NOT NULL,
+    resolution VARCHAR(80) NOT NULL DEFAULT 'pending',
+    details JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_offline_sync_queue_status
+    ON offline_sync_queue(status);
+  CREATE INDEX IF NOT EXISTS idx_sync_conflicts_sync_id
+    ON sync_conflicts(sync_id);
 `;
 
 const globalForSalesBilling = globalThis;
@@ -144,6 +199,7 @@ export async function ensureSalesBillingSchema() {
       await query(CREATE_SALES_BILL_PAYMENTS_SQL);
       await query(CREATE_CASHIER_CLOSINGS_SQL);
       await query(MIGRATE_SALES_BILLING_SQL);
+      await query(CREATE_OFFLINE_SYNC_SQL);
     })().catch((err) => {
       globalForSalesBilling._salesBillingSchemaReadyPromise = null;
       throw err;

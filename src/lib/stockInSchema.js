@@ -1,7 +1,7 @@
 import { query } from '@/lib/db';
 
 // Bump this version when schema migrations change so hot-reload re-runs them
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 let ensuredVersion = 0;
 
 export async function ensureStockInSchema() {
@@ -22,6 +22,7 @@ export async function ensureStockInSchema() {
       apply_taxes BOOLEAN DEFAULT true,
       add_products_prefill BOOLEAN DEFAULT false,
       status VARCHAR(20) DEFAULT 'draft',
+      vendor_id INTEGER,
       vendor_name VARCHAR(255),
       invoice_date DATE,
       invoice_number VARCHAR(100),
@@ -53,6 +54,12 @@ export async function ensureStockInSchema() {
   // Wrapped in DO block so it is idempotent — skipped if constraint already exists.
   // Any orphaned rows (product_id not in products) are logged and cleaned up first
   // so the constraint can always be applied cleanly.
+  await query(`
+    ALTER TABLE stock_in
+      ADD COLUMN IF NOT EXISTS vendor_id INTEGER;
+    CREATE INDEX IF NOT EXISTS idx_stock_in_vendor_id ON stock_in(vendor_id);
+  `);
+
   await query(`
     DO $$
     BEGIN

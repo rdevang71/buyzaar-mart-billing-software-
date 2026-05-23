@@ -205,6 +205,50 @@ export default function MasterDashboardPage() {
             </Card>
           </div>
 
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <Card>
+              <CardHeader icon="V" title="Vendor & Payables" />
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <MiniStat label="Total Vendors" value={data.vendor_summary?.total_vendors || 0} />
+                <MiniStat label="Active" value={data.vendor_summary?.active_vendors || 0} />
+                <MiniStat label="Pending Bills" value={data.vendor_summary?.pending_vendor_invoices || 0} />
+                <MiniStat label="Buying Vendors" value={data.vendor_summary?.purchasing_vendors || 0} />
+              </div>
+              <div className="mt-3 space-y-2">
+                <StatRow label="Purchases in Period" value={`₹${fmt(data.vendor_summary?.purchase_value)}`} highlight />
+                <StatRow label="Total Payable" value={`₹${fmt(data.vendor_summary?.total_payable)}`} highlight />
+              </div>
+            </Card>
+
+            <Card>
+              <CardHeader icon="PO" title="Top Vendors by Purchase" />
+              {data.top_vendors?.length > 0 ? (
+                <div className="mt-3 overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-slate-100">
+                        <th className="pb-2 text-left text-[9px] font-black uppercase tracking-widest text-slate-400">Vendor</th>
+                        <th className="pb-2 text-right text-[9px] font-black uppercase tracking-widest text-slate-400">Purchases</th>
+                        <th className="pb-2 text-right text-[9px] font-black uppercase tracking-widest text-slate-400">Items</th>
+                        <th className="pb-2 text-right text-[9px] font-black uppercase tracking-widest text-slate-400">Value</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.top_vendors.map((vendor) => (
+                        <tr key={`${vendor.id}-${vendor.vendor_name}`} className="border-b border-slate-50 hover:bg-indigo-50/40 transition-colors">
+                          <td className="py-2 text-xs font-semibold text-slate-800">{vendor.vendor_name}</td>
+                          <td className="py-2 text-right text-xs font-black text-slate-700">{vendor.purchase_count || 0}</td>
+                          <td className="py-2 text-right text-xs font-semibold text-slate-600">{Number(vendor.items || 0).toLocaleString('en-IN')}</td>
+                          <td className="py-2 text-right text-xs font-black text-indigo-600">₹{fmt(vendor.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : <EmptyState text="No vendor purchase data" />}
+            </Card>
+          </div>
+
           {/* ── SALES TREND ── */}
           <Card>
             <CardHeader icon="📉" title="Daily Sales Trend" />

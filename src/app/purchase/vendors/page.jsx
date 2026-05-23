@@ -19,7 +19,9 @@ export default function VendorsPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({
+  const [search, setSearch] = useState('');
+  const emptyForm = {
+    id: null,
     name: '',
     company: '',
     short_code: '',
@@ -35,7 +37,9 @@ export default function VendorsPage() {
     gst_number: '',
     pan_number: '',
     margin: 0,
-  });
+    is_active: true,
+  };
+  const [form, setForm] = useState(emptyForm);
 
   useEffect(() => {
     fetchVendors();
@@ -44,7 +48,10 @@ export default function VendorsPage() {
   const fetchVendors = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/vendors');
+      const params = new URLSearchParams();
+      if (search.trim()) params.set('search', search.trim());
+      params.set('includeInactive', 'true');
+      const res = await fetch(`/api/vendors?${params.toString()}`);
       const data = await res.json();
       setVendors(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -52,6 +59,33 @@ export default function VendorsPage() {
       setVendors([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const timer = setTimeout(fetchVendors, 250);
+    return () => clearTimeout(timer);
+  }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const openCreate = () => {
+    setForm(emptyForm);
+    setShowModal(true);
+  };
+
+  const openEdit = (vendor) => {
+    setForm({ ...emptyForm, ...vendor, margin: Number(vendor.margin || 0), is_active: vendor.is_active !== false });
+    setShowModal(true);
+  };
+
+  const handleDelete = async (vendor) => {
+    if (!window.confirm(`Delete vendor ${vendor.name}? Used vendors will be archived.`)) return;
+    try {
+      const res = await fetch(`/api/vendors/${vendor.id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Delete failed');
+      fetchVendors();
+    } catch (err) {
+      alert(err.message || 'Failed to delete vendor');
     }
   };
 
@@ -63,31 +97,15 @@ export default function VendorsPage() {
     if (!isValidEmail(form.email)) return alert('Enter a valid email address');
     setSaving(true);
     try {
-      const res = await fetch('/api/vendors', {
-        method: 'POST',
+      const res = await fetch(form.id ? `/api/vendors/${form.id}` : '/api/vendors', {
+        method: form.id ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Save failed');
       setShowModal(false);
-      setForm({
-        name: '',
-        company: '',
-        short_code: '',
-        business: '',
-        address_1: '',
-        address_2: '',
-        city: '',
-        state: '',
-        pincode: '',
-        country: '',
-        email: '',
-        mobile_number: '',
-        gst_number: '',
-        pan_number: '',
-        margin: 0,
-      });
+      setForm(emptyForm);
       fetchVendors();
     } catch (err) {
       console.error(err);
@@ -111,7 +129,7 @@ export default function VendorsPage() {
           <p className="text-[12.5px] text-gray-400 mt-1">Descriptive Text Need Help?</p>
         </div>
 
-        <button onClick={() => setShowModal(true)} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-[13px] font-medium text-white hover:bg-blue-700 transition-colors flex-shrink-0">
+        <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-[13px] font-medium text-white hover:bg-blue-700 transition-colors flex-shrink-0">
           <i className="ti ti-plus text-[16px]" />
           Create Vendor
         </button>
@@ -125,6 +143,8 @@ export default function VendorsPage() {
             <input
               type="text"
               placeholder="Search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
               className="flex-1 bg-transparent text-[13px] text-gray-700 outline-none placeholder:text-gray-400"
             />
           </div>
@@ -155,11 +175,23 @@ export default function VendorsPage() {
                 vendors.map((row, rowIdx) => (
                   <tr key={row.id || rowIdx} className="border-b border-gray-100 hover:bg-blue-50/50 transition-colors">
                     <td className="px-4 py-3 text-[13px] text-gray-700">{rowIdx + 1}</td>
-                    <td className="px-4 py-3 text-[13px] text-gray-700">{row.name || '-'}</td>
+                    <td className="px-4 py-3 text-[13px] text-gray-700">
+                      <div className="font-medium text-gray-900">{row.name || '-'}</div>
+                      <div className="text-[11px] text-gray-500">{row.company || row.short_code || ''}</div>
+                    </td>
                     <td className="px-4 py-3 text-[13px] text-gray-700">{row.mobile_number || '-'}</td>
                     <td className="px-4 py-3 text-[13px] text-gray-700">{row.email || '-'}</td>
                     <td className="px-4 py-3 text-[13px] text-gray-700">{[row.address_1, row.address_2, row.city, row.state, row.pincode].filter(Boolean).join(', ') || '-'}</td>
-                    <td className="px-4 py-3 text-[13px] text-gray-700">View</td>
+                    <td className="px-4 py-3 text-[13px] text-gray-700">
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => openEdit(row)} className="p-1.5 rounded border border-gray-200 hover:bg-gray-50" title="Edit vendor">
+                          <i className="ti ti-edit text-[15px]" />
+                        </button>
+                        <button onClick={() => handleDelete(row)} className="p-1.5 rounded border border-red-200 text-red-600 hover:bg-red-50" title="Delete vendor">
+                          <i className="ti ti-trash text-[15px]" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))
               )}
@@ -182,7 +214,7 @@ export default function VendorsPage() {
           <div className="absolute inset-0 bg-black/40" onClick={() => setShowModal(false)} />
           <div className="relative w-full max-w-[1000px] bg-white rounded-lg border border-gray-300 shadow-lg overflow-auto max-h-[90vh]">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">Create Vendor</h3>
+              <h3 className="text-lg font-semibold text-gray-900">{form.id ? 'Edit Vendor' : 'Create Vendor'}</h3>
               <button className="p-1.5 rounded-md text-gray-500 hover:bg-gray-100" onClick={() => setShowModal(false)}>
                 <i className="ti ti-x text-[18px]" />
               </button>
@@ -265,12 +297,16 @@ export default function VendorsPage() {
                     <label className="text-[12px] text-gray-700">Vendor Margin(%)</label>
                     <input type="number" value={form.margin} onChange={(e) => setForm({ ...form, margin: Number(e.target.value) })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-[13px] text-gray-800 bg-white placeholder:text-gray-400 focus:outline-none focus:border-blue-500" />
                   </div>
+                  <label className="col-span-2 flex items-center gap-2 text-[12px] text-gray-700">
+                    <input type="checkbox" checked={form.is_active !== false} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} />
+                    Active vendor
+                  </label>
                 </div>
               </section>
 
               <div className="flex items-center justify-end gap-3">
                 <button className="px-4 py-2 rounded-lg border border-gray-200 bg-white" onClick={() => setShowModal(false)}>Cancel</button>
-                <button className="px-4 py-2 rounded-lg bg-blue-600 text-white" onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
+                <button className="px-4 py-2 rounded-lg bg-blue-600 text-white" onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : form.id ? 'Update' : 'Save'}</button>
               </div>
             </div>
           </div>
