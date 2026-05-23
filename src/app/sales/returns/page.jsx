@@ -3,6 +3,57 @@
 import { useEffect, useMemo, useState } from 'react';
 import MainLayout from '@/components/MainLayout';
 import { fetchAuthEndpoint } from '@/lib/auth-endpoints';
+import { generateQRDataURL, getInvoiceURL } from '@/lib/qrService';
+
+function toNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function formatCurrency(value) {
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 2,
+  }).format(toNumber(value));
+}
+
+function formatReceiptDateTime(value) {
+  const date = new Date(value || Date.now());
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  }).format(date);
+}
+
+const DEFAULT_RECEIPT_CONFIG = {
+  businessName: 'BillingPro',
+  subtitle: 'Return Product Receipt',
+  headerText: '',
+  footerText: 'Thank you. Visit again.',
+  showQr: true,
+  showCustomerMobile: true,
+  showSku: true,
+};
+
+async function loadReceiptConfig() {
+  try {
+    const res = await fetch('/api/settings/customize-receipt-print?pageSize=1&isActive=true', {
+      cache: 'no-store',
+      credentials: 'include',
+    });
+    const json = await res.json();
+    const config = json.data?.records?.[0]?.config || {};
+    return { ...DEFAULT_RECEIPT_CONFIG, ...config, subtitle: 'Return Product Receipt' };
+  } catch {
+    return DEFAULT_RECEIPT_CONFIG;
+  }
+}
 
 export default function ReturnsPage() {
   const [formData, setFormData] = useState({
@@ -21,6 +72,7 @@ export default function ReturnsPage() {
   const [myRequests, setMyRequests] = useState([]);
   const [returnHistory, setReturnHistory] = useState([]);
   const [activeReceipt, setActiveReceipt] = useState(null);
+  const [receiptQR, setReceiptQR] = useState('');
 
   const canReviewRequests = useMemo(() => user?.role === 'super_admin' || user?.role === 'admin' || user?.permissions?.includes('*'), [user]);
 
@@ -76,6 +128,17 @@ export default function ReturnsPage() {
     loadReturnHistory();
   }, []);
 
+  useEffect(() => {
+    const token = activeReceipt?.original_public_token || activeReceipt?.public_token || activeReceipt?.bill?.public_token;
+    if (!activeReceipt || !token) {
+      setReceiptQR('');
+      return;
+    }
+    generateQRDataURL(getInvoiceURL(token), { size: 160 })
+      .then(setReceiptQR)
+      .catch(() => setReceiptQR(''));
+  }, [activeReceipt]);
+
   async function searchBill() {
     if (!formData.bill_number.trim()) {
       showToast('Enter bill number', 'error');
@@ -102,6 +165,10 @@ export default function ReturnsPage() {
   }
 
   function toggleItemSelection(item) {
+    if (item.return_status && item.return_status !== 'declined') {
+      showToast(getReturnStatusMessage(item), 'error');
+      return;
+    }
     if (selectedItems.find(i => i.product_id === item.product_id)) {
       setSelectedItems(selectedItems.filter(i => i.product_id !== item.product_id));
     } else {
@@ -118,6 +185,11 @@ export default function ReturnsPage() {
   async function submitReturn() {
     if (selectedItems.length === 0) {
       showToast('Select items to return', 'error');
+      return;
+    }
+    const blockedItem = selectedItems.find((item) => item.return_status && item.return_status !== 'declined');
+    if (blockedItem) {
+      showToast(getReturnStatusMessage(blockedItem), 'error');
       return;
     }
 
@@ -170,6 +242,21 @@ export default function ReturnsPage() {
     if (!request) return {};
     const meta = typeof request.meta === 'string' ? {} : (request.meta || {});
     return request.receipt || meta.receipt || {};
+  }
+
+  function getReturnStatusMessage(item) {
+    const productName = item.name || item.product_name || 'This product';
+    if (item.return_status === 'completed') return `${productName} is already returned on this invoice`;
+    if (item.return_status === 'approved') return `${productName} return is approved. Proceed from My Return Requests`;
+    if (item.return_status === 'pending') return `${productName} return request is already pending`;
+    return `${productName} cannot be returned again`;
+  }
+
+  function getReturnStatusLabel(status) {
+    if (status === 'completed') return 'Returned';
+    if (status === 'approved') return 'Approved - proceed pending';
+    if (status === 'pending') return 'Approval pending';
+    return '';
   }
 
   async function reviewRequest(returnId, action) {
@@ -230,6 +317,88 @@ export default function ReturnsPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function printReturnReceipt(request = activeReceipt) {
+    if (!request || typeof window === 'undefined') return;
+    const receiptConfig = await loadReceiptConfig();
+    const details = getReceiptDetails(request);
+    const token = request.original_public_token || request.public_token || request.bill?.public_token;
+    let qrBlock = '';
+
+    if (token && receiptConfig.showQr) {
+      try {
+        const url = getInvoiceURL(token);
+        const qrData = await generateQRDataURL(url, { size: 160 });
+        qrBlock = `<div style="margin-top:12px;padding-top:12px;border-top:1px dashed #94a3b8;text-align:center"><img src="${qrData}" alt="QR" style="width:96px;height:96px" /><p style="font-size:9px;color:#64748b;margin:4px 0 2px;font-weight:700">SCAN TO VIEW ORIGINAL INVOICE</p><p style="font-size:8px;color:#94a3b8;word-break:break-all">${url}</p></div>`;
+      } catch {}
+    }
+
+    const printWindow = window.open('', '_blank', 'width=380,height=720');
+    if (!printWindow) {
+      showToast('Popup blocked. Please allow popups to print receipt.', 'error');
+      return;
+    }
+
+    const rows = (request.items || []).map((item) => `
+      <tr>
+        <td>${item.product_name || item.name || 'Product'}${receiptConfig.showSku && item.sku ? `<br><small>${item.sku}</small>` : ''}</td>
+        <td style="text-align:center">${toNumber(item.qty, 1)}</td>
+        <td style="text-align:right">${formatCurrency(item.original_price || item.selling_price || 0)}</td>
+        <td style="text-align:right">${formatCurrency(item.line_total || (toNumber(item.qty, 1) * toNumber(item.original_price || item.selling_price)))}</td>
+      </tr>
+    `).join('');
+
+    printWindow.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <title>Return Receipt ${details.returnNumber || request.return_number || request.id || ''}</title>
+          <style>
+            body { font-family: Arial, sans-serif; color: #111827; margin: 0; padding: 16px; font-size: 12px; }
+            h1 { font-size: 18px; margin: 0 0 4px; text-align: center; }
+            .muted { color: #475569; }
+            .center { text-align: center; }
+            .line { border-top: 1px dashed #94a3b8; margin: 10px 0; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { padding: 5px 0; vertical-align: top; }
+            th { border-bottom: 1px solid #cbd5e1; font-size: 11px; }
+            .totals div { display: flex; justify-content: space-between; margin: 3px 0; }
+            .grand { font-size: 16px; font-weight: 800; }
+            @media print { body { padding: 0; } }
+          </style>
+        </head>
+        <body>
+          <h1>${receiptConfig.businessName || 'BillingPro'}</h1>
+          <div class="center muted">Return Product Receipt</div>
+          ${receiptConfig.headerText ? `<div class="center muted" style="white-space:pre-line;margin-top:6px">${receiptConfig.headerText}</div>` : ''}
+          <div class="line"></div>
+          <div><strong>Return No:</strong> ${details.returnNumber || request.return_number || `RET-${request.id}`}</div>
+          <div><strong>Original Bill:</strong> ${request.bill_number || details.billNumber || request.original_bill_id || '-'}</div>
+          <div><strong>Date & Time:</strong> ${formatReceiptDateTime(request.completed_at || details.completedAt)}</div>
+          <div><strong>Customer:</strong> ${details.customerName || request.customer_name || 'Walk-in Customer'}</div>
+          ${(receiptConfig.showCustomerMobile && (details.customerMobile || request.customer_mobile)) ? `<div><strong>Mobile:</strong> ${details.customerMobile || request.customer_mobile}</div>` : ''}
+          <div class="line"></div>
+          <table>
+            <thead>
+              <tr><th style="text-align:left">Item</th><th>Qty</th><th style="text-align:right">Rate</th><th style="text-align:right">Amt</th></tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+          <div class="line"></div>
+          <div class="totals">
+            <div class="grand"><span>Refund</span><span>${formatCurrency(request.refund_amount || details.refundAmount || 0)}</span></div>
+            <div><span>Refund By</span><strong>${request.refund_payment_mode || details.refundPaymentMode || request.original_payment_mode || 'cash'}</strong></div>
+            <div><span>Original Paid By</span><strong>${request.original_payment_mode || 'cash'}</strong></div>
+          </div>
+          <div class="line"></div>
+          <div class="center muted" style="white-space:pre-line">${receiptConfig.footerText || 'Thank you. Visit again.'}</div>
+          ${qrBlock}
+          <script>window.onload = () => { window.print(); window.close(); };</script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
   }
 
   return (
@@ -571,8 +740,10 @@ export default function ReturnsPage() {
                     {searchedBill.items.map(item => (
                       <div
                         key={item.product_id}
-                        className={`border rounded p-3 cursor-pointer transition ${
-                          selectedItems.find(i => i.product_id === item.product_id)
+                        className={`border rounded p-3 transition ${
+                          item.return_status && item.return_status !== 'declined'
+                            ? 'cursor-not-allowed border-amber-200 bg-amber-50'
+                            : selectedItems.find(i => i.product_id === item.product_id)
                             ? 'bg-blue-50 border-blue-300'
                             : 'bg-gray-50 hover:bg-gray-100'
                         }`}
@@ -581,6 +752,7 @@ export default function ReturnsPage() {
                           <input
                             type="checkbox"
                             checked={selectedItems.some(i => i.product_id === item.product_id)}
+                            disabled={item.return_status && item.return_status !== 'declined'}
                             onChange={() => toggleItemSelection(item)}
                             className="mt-1"
                           />
@@ -591,6 +763,12 @@ export default function ReturnsPage() {
                             <p className="text-sm text-gray-700">
                               Qty Purchased: {item.qty} | Price: Rs.{parseFloat(item.selling_price).toFixed(2)}
                             </p>
+                            {item.return_status && item.return_status !== 'declined' && (
+                              <div className="mt-2 rounded border border-amber-200 bg-white px-2 py-1 text-xs font-semibold text-amber-700">
+                                {getReturnStatusLabel(item.return_status)}
+                                {item.return_id ? ` (#${item.return_id})` : ''}
+                              </div>
+                            )}
 
                             {selectedItems.find(i => i.product_id === item.product_id) && (
                               <div className="mt-2">
@@ -670,7 +848,7 @@ export default function ReturnsPage() {
                   <div className="rounded border border-gray-200 p-3">
                     <p className="text-xs font-bold uppercase text-gray-500">Refund</p>
                     <p className="mt-1 text-xl font-bold text-green-700">
-                      Rs.{Number(activeReceipt.refund_amount || getReceiptDetails(activeReceipt).refundAmount || 0).toFixed(2)}
+                      {formatCurrency(activeReceipt.refund_amount || getReceiptDetails(activeReceipt).refundAmount || 0)}
                     </p>
                     <p className="text-sm capitalize text-gray-600">
                       {activeReceipt.refund_payment_mode || getReceiptDetails(activeReceipt).refundPaymentMode || activeReceipt.original_payment_mode || 'cash'}
@@ -707,9 +885,9 @@ export default function ReturnsPage() {
                             <div className="text-xs text-gray-500">{item.sku || ''}</div>
                           </td>
                           <td className="px-3 py-3 text-gray-700">{Number(item.qty || 0)}</td>
-                          <td className="px-3 py-3 text-gray-700">Rs.{Number(item.original_price || item.selling_price || 0).toFixed(2)}</td>
+                          <td className="px-3 py-3 text-gray-700">{formatCurrency(item.original_price || item.selling_price || 0)}</td>
                           <td className="px-3 py-3 font-semibold text-gray-900">
-                            Rs.{Number(item.line_total || ((item.qty || 0) * (item.original_price || item.selling_price || 0))).toFixed(2)}
+                            {formatCurrency(item.line_total || ((item.qty || 0) * (item.original_price || item.selling_price || 0)))}
                           </td>
                         </tr>
                       ))}
@@ -717,10 +895,31 @@ export default function ReturnsPage() {
                   </table>
                 </div>
 
+                {(receiptQR || activeReceipt.original_public_token) && (
+                  <div className="mt-5 flex items-end justify-between gap-4 border-t border-gray-100 pt-4">
+                    <div className="text-center">
+                      {receiptQR ? (
+                        <img
+                          src={receiptQR}
+                          alt="Original invoice QR"
+                          className="h-24 w-24 rounded border border-gray-200"
+                        />
+                      ) : (
+                        <div className="h-24 w-24 rounded bg-gray-100" />
+                      )}
+                      <p className="mt-1 text-[10px] font-bold text-gray-400">SCAN ORIGINAL INVOICE</p>
+                    </div>
+                    <div className="text-right text-xs text-gray-500">
+                      <p>This return receipt is linked to the original invoice.</p>
+                      <p>No signature required.</p>
+                    </div>
+                  </div>
+                )}
+
                 <div className="mt-5 flex justify-end gap-2">
                   <button
                     type="button"
-                    onClick={() => window.print()}
+                    onClick={() => printReturnReceipt(activeReceipt)}
                     className="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
                   >
                     Print

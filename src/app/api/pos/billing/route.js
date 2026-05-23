@@ -2,6 +2,7 @@ import { query } from '@/lib/db';
 import { successResponse, errorResponse, notFoundError } from '@/lib/api-response';
 import { verifyToken } from '@/lib/auth-enhanced';
 import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
+import { ensureSalesReturnsSchema } from '@/lib/salesReturnsSchema';
 
 export async function POST(req) {
   try {
@@ -118,6 +119,7 @@ export async function POST(req) {
 export async function GET(req) {
   try {
     await ensureSalesBillingSchema();
+    await ensureSalesReturnsSchema();
 
     const { searchParams } = new URL(req.url);
     const bill_id = searchParams.get('bill_id');
@@ -141,9 +143,30 @@ export async function GET(req) {
       SELECT
         sbi.*,
         COALESCE(sbi.product_name, p.name) AS name,
-        COALESCE(sbi.sku, p.sku) AS sku
+        COALESCE(sbi.sku, p.sku) AS sku,
+        return_state.status AS return_status,
+        return_state.return_id,
+        return_state.return_number,
+        return_state.updated_at AS return_updated_at
       FROM sales_bill_items sbi
       JOIN products p ON sbi.product_id = p.id
+      LEFT JOIN LATERAL (
+        SELECT sr.status, sr.id AS return_id, sr.return_number, sr.updated_at
+        FROM sales_return_items sri
+        INNER JOIN sales_returns sr ON sr.id = sri.sales_return_id
+        WHERE sr.original_bill_id = sbi.sales_bill_id
+          AND sri.product_id = sbi.product_id
+          AND sr.status <> 'declined'
+        ORDER BY
+          CASE sr.status
+            WHEN 'completed' THEN 1
+            WHEN 'approved' THEN 2
+            WHEN 'pending' THEN 3
+            ELSE 4
+          END,
+          sr.updated_at DESC
+        LIMIT 1
+      ) return_state ON TRUE
       WHERE sbi.sales_bill_id = $1
     `, [bill.id]);
 
