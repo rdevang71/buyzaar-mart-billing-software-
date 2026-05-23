@@ -228,14 +228,16 @@ export default function Topbar({ onMenuOpen }) {
                           <p className="truncate text-sm font-semibold text-gray-900">
                             {canReviewReturns
                               ? `${request.return_type === 'exchange' ? 'Exchange' : 'Return'} request #${request.id}`
-                              : `Return request #${request.id} ${request.status}`}
+                              : request.status === 'approved'
+                                ? `Return request #${request.id} ready to proceed`
+                                : `Return request #${request.id} ${request.status}`}
                           </p>
                           <p className="mt-0.5 truncate text-xs text-gray-500">
                             {request.store_name || `Store ${request.store_id || '-'}`} - Bill {request.bill_number || request.original_bill_id}
                           </p>
                         </div>
                         <span className={`shrink-0 text-xs font-bold ${request.status === 'declined' ? 'text-red-700' : 'text-green-700'}`}>
-                          ₹{Number(request.refund_amount || 0).toFixed(0)}
+                          Rs.{Number(request.refund_amount || 0).toFixed(0)}
                         </span>
                       </div>
                     </button>

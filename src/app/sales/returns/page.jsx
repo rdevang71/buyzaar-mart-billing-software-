@@ -19,6 +19,8 @@ export default function ReturnsPage() {
   const [user, setUser] = useState(null);
   const [requests, setRequests] = useState([]);
   const [myRequests, setMyRequests] = useState([]);
+  const [returnHistory, setReturnHistory] = useState([]);
+  const [activeReceipt, setActiveReceipt] = useState(null);
 
   const canReviewRequests = useMemo(() => user?.role === 'super_admin' || user?.role === 'admin' || user?.permissions?.includes('*'), [user]);
 
@@ -57,10 +59,21 @@ export default function ReturnsPage() {
     }
   }
 
+  async function loadReturnHistory() {
+    try {
+      const res = await fetch('/api/pos/returns?status=completed&pageSize=50', { cache: 'no-store' });
+      const json = await res.json();
+      if (json.success) setReturnHistory(Array.isArray(json.data) ? json.data : []);
+    } catch {
+      setReturnHistory([]);
+    }
+  }
+
   useEffect(() => {
     loadUser();
     loadRequests();
     loadMyRequests();
+    loadReturnHistory();
   }, []);
 
   async function searchBill() {
@@ -138,6 +151,7 @@ export default function ReturnsPage() {
         setSelectedItems([]);
         loadRequests();
         loadMyRequests();
+        loadReturnHistory();
       } else {
         showToast(json.message || 'Error processing return', 'error');
       }
@@ -150,6 +164,12 @@ export default function ReturnsPage() {
 
   function calculateRefund() {
     return selectedItems.reduce((sum, item) => sum + (item.return_qty * item.selling_price), 0);
+  }
+
+  function getReceiptDetails(request) {
+    if (!request) return {};
+    const meta = typeof request.meta === 'string' ? {} : (request.meta || {});
+    return request.receipt || meta.receipt || {};
   }
 
   async function reviewRequest(returnId, action) {
@@ -165,11 +185,48 @@ export default function ReturnsPage() {
         showToast(action === 'approve' ? 'Return approved and stock updated' : 'Return request declined');
         loadRequests();
         loadMyRequests();
+        loadReturnHistory();
       } else {
         showToast(json.message || 'Unable to review request', 'error');
       }
     } catch {
       showToast('Unable to review request', 'error');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function proceedReturn(request) {
+    setLoading(true);
+    try {
+      const paymentMode = request.original_payment_mode || request.refund_payment_mode || 'cash';
+      const res = await fetch('/api/pos/returns', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          return_id: request.id,
+          action: 'complete',
+          refund_payment_mode: paymentMode,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setActiveReceipt({
+          ...request,
+          ...(json.data || {}),
+          receipt: json.data?.receipt,
+          refund_payment_mode: paymentMode,
+          status: 'completed',
+        });
+        showToast('Return completed and receipt generated');
+        loadRequests();
+        loadMyRequests();
+        loadReturnHistory();
+      } else {
+        showToast(json.message || 'Unable to complete return', 'error');
+      }
+    } catch {
+      showToast('Unable to complete return', 'error');
     } finally {
       setLoading(false);
     }
@@ -208,10 +265,13 @@ export default function ReturnsPage() {
                   <tr>
                     <th className="px-3 py-2">Request</th>
                     <th className="px-3 py-2">Bill</th>
+                    <th className="px-3 py-2">Customer</th>
                     <th className="px-3 py-2">Type</th>
                     <th className="px-3 py-2">Refund</th>
+                    <th className="px-3 py-2">Payment</th>
                     <th className="px-3 py-2">Status</th>
                     <th className="px-3 py-2">Updated</th>
+                    <th className="px-3 py-2">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -219,11 +279,18 @@ export default function ReturnsPage() {
                     <tr key={request.id}>
                       <td className="px-3 py-3 font-medium text-gray-900">#{request.id}</td>
                       <td className="px-3 py-3 text-gray-700">{request.bill_number || request.original_bill_id}</td>
+                      <td className="px-3 py-3 text-gray-700">
+                        <div className="font-medium text-gray-900">{request.customer_name || 'Walk-in Customer'}</div>
+                        <div className="text-xs text-gray-500">{request.customer_mobile || 'No mobile'}</div>
+                      </td>
                       <td className="px-3 py-3 capitalize text-gray-700">{request.return_type}</td>
                       <td className="px-3 py-3 font-semibold text-gray-900">Rs.{parseFloat(request.refund_amount || 0).toFixed(2)}</td>
+                      <td className="px-3 py-3 capitalize text-gray-700">{request.refund_payment_mode || request.original_payment_mode || '-'}</td>
                       <td className="px-3 py-3">
                         <span className={`rounded-full px-2 py-1 text-xs font-bold capitalize ${
-                          request.status === 'approved'
+                          request.status === 'completed'
+                            ? 'bg-blue-100 text-blue-700'
+                            : request.status === 'approved'
                             ? 'bg-green-100 text-green-700'
                             : request.status === 'declined'
                             ? 'bg-red-100 text-red-700'
@@ -233,11 +300,33 @@ export default function ReturnsPage() {
                         </span>
                       </td>
                       <td className="px-3 py-3 text-gray-600">
-                        {request.approved_at
+                        {request.completed_at
+                          ? new Date(request.completed_at).toLocaleString()
+                          : request.approved_at
                           ? new Date(request.approved_at).toLocaleString()
                           : request.rejected_at
                           ? new Date(request.rejected_at).toLocaleString()
                           : new Date(request.created_at).toLocaleString()}
+                      </td>
+                      <td className="px-3 py-3">
+                        {request.status === 'approved' ? (
+                          <button
+                            onClick={() => proceedReturn(request)}
+                            disabled={loading}
+                            className="rounded bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700 disabled:bg-gray-400"
+                          >
+                            Proceed
+                          </button>
+                        ) : request.status === 'completed' ? (
+                          <button
+                            onClick={() => setActiveReceipt(request)}
+                            className="rounded border border-gray-300 bg-white px-3 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-50"
+                          >
+                            Receipt
+                          </button>
+                        ) : (
+                          <span className="text-xs text-gray-400">-</span>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -283,7 +372,7 @@ export default function ReturnsPage() {
                         <td className="px-3 py-3 text-gray-700">{request.store_name || `Store ${request.store_id || '-'}`}</td>
                         <td className="px-3 py-3 text-gray-700">{request.bill_number || request.original_bill_id}</td>
                         <td className="px-3 py-3 capitalize text-gray-700">{request.return_type}</td>
-                        <td className="px-3 py-3 font-semibold text-gray-900">₹{parseFloat(request.refund_amount || 0).toFixed(2)}</td>
+                        <td className="px-3 py-3 font-semibold text-gray-900">Rs.{parseFloat(request.refund_amount || 0).toFixed(2)}</td>
                         <td className="px-3 py-3">
                           <div className="flex gap-2">
                             <button
@@ -301,6 +390,75 @@ export default function ReturnsPage() {
                               Decline
                             </button>
                           </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {canReviewRequests && (
+          <div className="mb-6 rounded-lg bg-white p-6 shadow">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Return Product History</h2>
+                <p className="text-sm text-gray-500">Completed return receipts for your store access.</p>
+              </div>
+              <button
+                onClick={loadReturnHistory}
+                className="rounded border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Refresh
+              </button>
+            </div>
+            {returnHistory.length === 0 ? (
+              <p className="rounded bg-gray-50 p-4 text-sm text-gray-500">No completed return history yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 text-sm">
+                  <thead className="bg-gray-50 text-left text-xs uppercase text-gray-500">
+                    <tr>
+                      <th className="px-3 py-2">Return No.</th>
+                      <th className="px-3 py-2">Store</th>
+                      <th className="px-3 py-2">Bill</th>
+                      <th className="px-3 py-2">Customer</th>
+                      <th className="px-3 py-2">Products</th>
+                      <th className="px-3 py-2">Refund</th>
+                      <th className="px-3 py-2">Completed</th>
+                      <th className="px-3 py-2">Receipt</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {returnHistory.map((request) => (
+                      <tr key={request.id}>
+                        <td className="px-3 py-3 font-medium text-gray-900">{request.return_number || `RET-${request.id}`}</td>
+                        <td className="px-3 py-3 text-gray-700">{request.store_name || `Store ${request.store_id || '-'}`}</td>
+                        <td className="px-3 py-3 text-gray-700">{request.bill_number || request.original_bill_id}</td>
+                        <td className="px-3 py-3 text-gray-700">
+                          <div className="font-medium text-gray-900">{request.customer_name || 'Walk-in Customer'}</div>
+                          <div className="text-xs text-gray-500">{request.customer_mobile || 'No mobile'}</div>
+                        </td>
+                        <td className="px-3 py-3 text-gray-700">
+                          {(request.items || []).slice(0, 2).map((item) => item.product_name).join(', ') || '-'}
+                          {(request.items || []).length > 2 ? ` +${request.items.length - 2}` : ''}
+                        </td>
+                        <td className="px-3 py-3">
+                          <div className="font-semibold text-gray-900">Rs.{parseFloat(request.refund_amount || 0).toFixed(2)}</div>
+                          <div className="text-xs capitalize text-gray-500">{request.refund_payment_mode || request.original_payment_mode || 'cash'}</div>
+                        </td>
+                        <td className="px-3 py-3 text-gray-600">
+                          {request.completed_at ? new Date(request.completed_at).toLocaleString() : '-'}
+                        </td>
+                        <td className="px-3 py-3">
+                          <button
+                            onClick={() => setActiveReceipt(request)}
+                            className="rounded border border-gray-300 bg-white px-3 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-50"
+                          >
+                            View
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -343,7 +501,9 @@ export default function ReturnsPage() {
                     <h3 className="font-semibold mb-2 text-gray-900">Bill Details</h3>
                     <div className="text-sm space-y-1 text-gray-700">
                       <p><strong className="text-gray-900">Bill ID:</strong> {searchedBill.bill?.id}</p>
-                      <p><strong className="text-gray-900">Amount:</strong> ₹{parseFloat(searchedBill.bill?.total_amount).toFixed(2)}</p>
+                      <p><strong className="text-gray-900">Customer:</strong> {searchedBill.bill?.customer_name || 'Walk-in Customer'} {searchedBill.bill?.customer_mobile ? `(${searchedBill.bill.customer_mobile})` : ''}</p>
+                      <p><strong className="text-gray-900">Payment:</strong> <span className="capitalize">{searchedBill.bill?.payment_mode || 'cash'}</span></p>
+                      <p><strong className="text-gray-900">Amount:</strong> Rs.{parseFloat(searchedBill.bill?.grand_total || searchedBill.bill?.total_amount || 0).toFixed(2)}</p>
                       <p><strong className="text-gray-900">Date:</strong> {new Date(searchedBill.bill?.created_at).toLocaleString()}</p>
                       <p><strong className="text-gray-900">Items Count:</strong> {searchedBill.items?.length || 0}</p>
                     </div>
@@ -383,7 +543,7 @@ export default function ReturnsPage() {
 
                   <div className="bg-gray-50 p-3 rounded">
                     <p className="text-sm text-gray-700"><strong className="text-gray-900">Refund Amount:</strong></p>
-                    <p className="text-2xl font-bold text-green-600">₹{calculateRefund().toFixed(2)}</p>
+                    <p className="text-2xl font-bold text-green-600">Rs.{calculateRefund().toFixed(2)}</p>
                   </div>
 
                   <button
@@ -429,7 +589,7 @@ export default function ReturnsPage() {
                             <h4 className="font-semibold text-gray-900">{item.name}</h4>
                             <p className="text-sm text-gray-600">SKU: {item.sku}</p>
                             <p className="text-sm text-gray-700">
-                              Qty Purchased: {item.qty} | Price: ₹{parseFloat(item.selling_price).toFixed(2)}
+                              Qty Purchased: {item.qty} | Price: Rs.{parseFloat(item.selling_price).toFixed(2)}
                             </p>
 
                             {selectedItems.find(i => i.product_id === item.product_id) && (
@@ -469,6 +629,114 @@ export default function ReturnsPage() {
             )}
           </div>
         </div>
+
+        {activeReceipt && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 px-4">
+            <div className="w-full max-w-2xl overflow-hidden rounded-lg bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900">Return Product Receipt</h2>
+                  <p className="text-sm text-gray-500">
+                    {getReceiptDetails(activeReceipt).returnNumber || activeReceipt.return_number || `RET-${activeReceipt.id}`}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveReceipt(null)}
+                  className="rounded p-1.5 text-gray-500 hover:bg-gray-100"
+                >
+                  <i className="ti ti-x text-lg" />
+                </button>
+              </div>
+
+              <div className="max-h-[75vh] overflow-auto p-5">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="rounded border border-gray-200 p-3">
+                    <p className="text-xs font-bold uppercase text-gray-500">Customer</p>
+                    <p className="mt-1 font-semibold text-gray-900">
+                      {getReceiptDetails(activeReceipt).customerName || activeReceipt.customer_name || 'Walk-in Customer'}
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      {getReceiptDetails(activeReceipt).customerMobile || activeReceipt.customer_mobile || 'No mobile'}
+                    </p>
+                  </div>
+                  <div className="rounded border border-gray-200 p-3">
+                    <p className="text-xs font-bold uppercase text-gray-500">Original Bill</p>
+                    <p className="mt-1 font-semibold text-gray-900">{activeReceipt.bill_number || activeReceipt.original_bill_id}</p>
+                    <p className="text-sm capitalize text-gray-600">
+                      Paid by {activeReceipt.original_payment_mode || 'cash'}
+                    </p>
+                  </div>
+                  <div className="rounded border border-gray-200 p-3">
+                    <p className="text-xs font-bold uppercase text-gray-500">Refund</p>
+                    <p className="mt-1 text-xl font-bold text-green-700">
+                      Rs.{Number(activeReceipt.refund_amount || getReceiptDetails(activeReceipt).refundAmount || 0).toFixed(2)}
+                    </p>
+                    <p className="text-sm capitalize text-gray-600">
+                      {activeReceipt.refund_payment_mode || getReceiptDetails(activeReceipt).refundPaymentMode || activeReceipt.original_payment_mode || 'cash'}
+                    </p>
+                  </div>
+                  <div className="rounded border border-gray-200 p-3">
+                    <p className="text-xs font-bold uppercase text-gray-500">Processed</p>
+                    <p className="mt-1 font-semibold text-gray-900">{activeReceipt.completed_by_name || user?.name || '-'}</p>
+                    <p className="text-sm text-gray-600">
+                      {activeReceipt.completed_at
+                        ? new Date(activeReceipt.completed_at).toLocaleString()
+                        : getReceiptDetails(activeReceipt).completedAt
+                        ? new Date(getReceiptDetails(activeReceipt).completedAt).toLocaleString()
+                        : '-'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-5 overflow-hidden rounded border border-gray-200">
+                  <table className="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead className="bg-gray-50 text-left text-xs uppercase text-gray-500">
+                      <tr>
+                        <th className="px-3 py-2">Product</th>
+                        <th className="px-3 py-2">Qty</th>
+                        <th className="px-3 py-2">Price</th>
+                        <th className="px-3 py-2">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {(activeReceipt.items || []).map((item) => (
+                        <tr key={item.id || item.product_id}>
+                          <td className="px-3 py-3 text-gray-900">
+                            <div className="font-medium">{item.product_name || item.name || 'Product'}</div>
+                            <div className="text-xs text-gray-500">{item.sku || ''}</div>
+                          </td>
+                          <td className="px-3 py-3 text-gray-700">{Number(item.qty || 0)}</td>
+                          <td className="px-3 py-3 text-gray-700">Rs.{Number(item.original_price || item.selling_price || 0).toFixed(2)}</td>
+                          <td className="px-3 py-3 font-semibold text-gray-900">
+                            Rs.{Number(item.line_total || ((item.qty || 0) * (item.original_price || item.selling_price || 0))).toFixed(2)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="mt-5 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                  >
+                    Print
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveReceipt(null)}
+                    className="rounded bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </MainLayout>
   );
