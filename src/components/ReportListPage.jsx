@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import MainLayout from '@/components/MainLayout';
 
 const PAGE_SIZES = [10, 25, 50, 100];
@@ -41,6 +42,7 @@ export default function ReportsListPage({
   emptyMessage = 'No Rows To Show',
   extraActions = null,
 }) {
+  const pathname = usePathname();
   const today = new Date().toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric',
   });
@@ -149,7 +151,14 @@ export default function ReportsListPage({
 
   const set = (key, val) => setFilterValues((prev) => ({ ...prev, [key]: val }));
 
-  const effectiveApiPath = apiPath || (reportKey ? `/api/reports/${reportKey}` : '');
+  const inferredReportKey = useMemo(() => {
+    if (reportKey) return reportKey;
+    const prefix = '/reports/';
+    if (!pathname?.startsWith(prefix)) return '';
+    return pathname.slice(prefix.length).replace(/^\/+|\/+$/g, '');
+  }, [pathname, reportKey]);
+
+  const effectiveApiPath = apiPath || (inferredReportKey ? `/api/reports/${inferredReportKey}` : '');
 
   const buildQuery = (values, extra = {}) => {
     const params = new URLSearchParams();
@@ -200,7 +209,7 @@ export default function ReportsListPage({
 
   const handleDownload = () => {
     if (!effectiveApiPath) return;
-    const queryString = buildQuery(filterValues, { export: 'xlsx' });
+    const queryString = buildQuery(filterValues, { export: 'xlsx', columns: JSON.stringify(columns) });
     window.location.href = `${effectiveApiPath}?${queryString}`;
   };
 
