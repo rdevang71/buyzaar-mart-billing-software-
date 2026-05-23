@@ -138,11 +138,8 @@ export default function POSPage() {
   const [session, setSession] = useState(null);
   const [stores, setStores] = useState([]);
   const [selectedStoreId, setSelectedStoreId] = useState('');
-<<<<<<< HEAD
-=======
   const [deviceUid, setDeviceUid] = useState('');
   // State: Products & Search
->>>>>>> df4bd7e04a38573c71794487e8005cb9d6d9377e
   const [products, setProducts] = useState([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
