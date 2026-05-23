@@ -139,9 +139,11 @@ export default function POSPage() {
   const [stores, setStores] = useState([]);
   const [selectedStoreId, setSelectedStoreId] = useState('');
   const [deviceUid, setDeviceUid] = useState('');
+  const [counterName, setCounterName] = useState('');
   // State: Products & Search
   const [products, setProducts] = useState([]);
   const [search, setSearch] = useState('');
+  const [barcode, setBarcode] = useState('');
   const [loading, setLoading] = useState(false);
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [cart, setCart] = useState([]);
@@ -772,8 +774,10 @@ export default function POSPage() {
             </div>
 
             {/* Product Grid */}
-            <div className="p-3 grid grid-cols-2 sm:grid-cols-3 2xl:grid-cols-4 gap-2 overflow-auto flex-1"
-              style={{ maxHeight: '68vh' }}>
+            <div
+              className="p-3 grid grid-cols-2 sm:grid-cols-3 2xl:grid-cols-4 gap-2 overflow-auto flex-1 items-start content-start"
+              style={{ maxHeight: '68vh' }}
+            >
               {loading ? (
                 <div className="col-span-full flex flex-col items-center justify-center py-20 text-slate-400">
                   <div className="w-10 h-10 rounded-full border-4 border-indigo-200 border-t-indigo-500 animate-spin mb-4"></div>
@@ -791,36 +795,43 @@ export default function POSPage() {
                     key={product.id}
                     onClick={() => addProduct(product)}
                     disabled={product.availableStock <= 0}
-                    className={`relative text-left rounded-xl border p-3 transition-all group text-sm ${
+                    className={`self-start relative text-left rounded-xl border p-3 transition-all group w-full ${
                       product.availableStock > 0
-                        ? 'border-slate-200 hover:border-indigo-400 hover:shadow-lg hover:shadow-indigo-100/60 bg-white cursor-pointer active:scale-[0.98]'
-                        : 'border-slate-100 bg-slate-50 opacity-55 cursor-not-allowed'
+                        ? 'border-slate-200 hover:border-indigo-400 hover:shadow-md hover:shadow-indigo-100/60 bg-white cursor-pointer active:scale-[0.98]'
+                        : 'border-slate-100 bg-slate-50/70 opacity-55 cursor-not-allowed'
                     }`}
                   >
-                    {/* Category badge */}
-                    <span className="inline-block text-[9px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-md mb-1.5 truncate max-w-full leading-tight">
-                      {product.categoryName}
-                    </span>
-                    <p className="font-bold text-slate-800 text-xs leading-snug mb-1.5 group-hover:text-indigo-700 transition-colors line-clamp-2">
-                      {product.name}
-                    </p>
-                    <p className="text-[10px] text-slate-400 font-mono mb-2">{product.sku}</p>
-                    <div className="flex items-center justify-between gap-1 flex-wrap">
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md leading-tight ${
+                    {/* Top row: category + stock pill */}
+                    <div className="flex items-center justify-between gap-1 mb-1.5">
+                      <span className="text-[9px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-md truncate leading-tight max-w-[65%]">
+                        {product.categoryName}
+                      </span>
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md leading-tight shrink-0 ${
                         product.availableStock > 10
                           ? 'bg-emerald-50 text-emerald-700'
                           : product.availableStock > 0
                           ? 'bg-amber-50 text-amber-700'
                           : 'bg-rose-50 text-rose-700'
                       }`}>
-                        {product.availableStock > 0 ? `${product.availableStock}` : 'OOS'}
+                        {product.availableStock > 0 ? `${product.availableStock} left` : 'OOS'}
                       </span>
-                      <span className="font-black text-indigo-700 text-sm">
+                    </div>
+
+                    {/* Product name */}
+                    <p className="font-bold text-slate-800 text-xs leading-snug mb-1 group-hover:text-indigo-700 transition-colors line-clamp-2">
+                      {product.name}
+                    </p>
+
+                    {/* SKU + Price row */}
+                    <div className="flex items-center justify-between gap-1 mt-1.5">
+                      <span className="text-[10px] text-slate-400 font-mono truncate">{product.sku}</span>
+                      <span className="font-black text-indigo-700 text-sm shrink-0">
                         ₹{toNumber(product.sellingPrice).toLocaleString('en-IN')}
                       </span>
                     </div>
-                    {/* Hover add indicator */}
-                    <div className="absolute inset-0 rounded-xl bg-indigo-600/0 group-hover:bg-indigo-600/[0.03] transition-colors pointer-events-none"></div>
+
+                    {/* Hover overlay */}
+                    <div className="absolute inset-0 rounded-xl bg-indigo-600/0 group-hover:bg-indigo-600/[0.03] transition-colors pointer-events-none" />
                   </button>
                 ))
               )}
