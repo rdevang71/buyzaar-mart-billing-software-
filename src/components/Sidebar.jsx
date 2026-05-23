@@ -3,11 +3,28 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-export default function Sidebar({ items = [], activeMenu, setActiveMenu, mobileOpen, onMobileClose }) {
+export default function Sidebar({
+  items = [],
+  activeMenu,
+  setActiveMenu,
+  mobileOpen,
+  onMobileClose,
+  onMobileSubOpen,
+}) {
   const pathname = usePathname();
 
   const handleClick = (e, item) => {
     if (item.subSidebar) {
+      const isMobile =
+        typeof window !== 'undefined' &&
+        window.matchMedia('(max-width: 767px)').matches;
+
+      if (isMobile) {
+        e.preventDefault();
+        onMobileSubOpen?.(item);
+        return;
+      }
+
       // allow navigation to the menu href (so dashboard pages open),
       // but also set active menu for subSidebar display
       setActiveMenu(item);

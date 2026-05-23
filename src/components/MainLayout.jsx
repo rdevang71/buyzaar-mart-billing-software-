@@ -15,6 +15,7 @@ export default function MainLayout({ children }) {
   const { user, loading } = useUser();
   const [activeMenu, setActiveMenu] = useState(null);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [mobilePanel, setMobilePanel] = useState('main');
   const accessibleMenuItems = useMemo(() => filterMenuItemsForUser(menuItems, user), [user]);
   const accessAllowed = !loading && user && canAccessPath(user, pathname);
   const hasAccessibleMenu = accessibleMenuItems.length > 0;
@@ -56,6 +57,7 @@ export default function MainLayout({ children }) {
   // Close mobile drawer on route change
   useEffect(() => {
     setMobileOpen(false);
+    setMobilePanel('main');
   }, [pathname]);
 
   const subOpen = activeMenu?.subSidebar != null;
@@ -71,7 +73,12 @@ export default function MainLayout({ children }) {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Topbar onMenuOpen={() => setMobileOpen(true)} />
+      <Topbar
+        onMenuOpen={() => {
+          setMobilePanel('main');
+          setMobileOpen(true);
+        }}
+      />
 
       {hasAccessibleMenu && (
         <Sidebar
@@ -79,7 +86,15 @@ export default function MainLayout({ children }) {
           activeMenu={activeMenu}
           setActiveMenu={setActiveMenu}
           mobileOpen={mobileOpen}
-          onMobileClose={() => setMobileOpen(false)}
+          onMobileSubOpen={(item) => {
+            setActiveMenu(item);
+            setMobilePanel('sub');
+            setMobileOpen(true);
+          }}
+          onMobileClose={() => {
+            setMobileOpen(false);
+            setMobilePanel('main');
+          }}
         />
       )}
 
@@ -94,12 +109,15 @@ export default function MainLayout({ children }) {
       )}
 
       {/* Mobile SubSidebar — full-screen overlay drawer */}
-      {hasAccessibleMenu && subOpen && mobileOpen && (
+      {hasAccessibleMenu && subOpen && mobileOpen && mobilePanel === 'sub' && (
         <div className="md:hidden fixed inset-0 z-[60] bg-white flex flex-col">
           <SubSidebar
             subSidebar={activeMenu.subSidebar}
+            sectionHref={activeMenu.href}
+            onBackToMain={() => setMobilePanel('main')}
             onClose={() => {
               setMobileOpen(false);
+              setMobilePanel('main');
             }}
           />
         </div>
