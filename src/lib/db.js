@@ -4,15 +4,19 @@ import { Pool } from 'pg';
 const globalForPg = globalThis;
 
 if (!globalForPg._pgPool) {
+  const poolMax = Number(process.env.PG_POOL_MAX || 20);
+  const idleTimeoutMs = Number(process.env.PG_IDLE_TIMEOUT_MS || 30000);
+  const connectTimeoutMs = Number(process.env.PG_CONNECT_TIMEOUT_MS || 10000);
+
   globalForPg._pgPool = new Pool({
     host:     process.env.DB_HOST     || 'localhost',
     port:     Number(process.env.DB_PORT) || 5432,
     database: process.env.DB_NAME     || 'billingpro',
     user:     process.env.DB_USER     || 'postgres',
     password: process.env.DB_PASSWORD || '',
-    max: 10,                  // max connections in pool
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 2000,
+    max: Number.isFinite(poolMax) ? poolMax : 20,
+    idleTimeoutMillis: Number.isFinite(idleTimeoutMs) ? idleTimeoutMs : 30000,
+    connectionTimeoutMillis: Number.isFinite(connectTimeoutMs) ? connectTimeoutMs : 10000,
   });
 
   globalForPg._pgPool.on('error', (err) => {
