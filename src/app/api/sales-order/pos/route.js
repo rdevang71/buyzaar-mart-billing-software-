@@ -427,6 +427,7 @@ export async function GET(req) {
     await ensureSalesBillingSchema();
     await ensureCatalogExtrasSchema();
     await ensureProductDiscountSchema();
+    await ensureInventoryBatchSchema();
 
     const auth = await extractAuthUser(req);
     if (auth.error || !auth.user) return errorResponse(auth.error || 'Unauthorized', 401);
