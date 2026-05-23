@@ -1,11 +1,23 @@
-import { query } from '@/lib/db';
+import { getClient, query } from '@/lib/db';
 import { successResponse, errorResponse, notFoundError } from '@/lib/api-response';
 import { verifyToken } from '@/lib/auth-enhanced';
 import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
 import { ensureSalesReturnsSchema } from '@/lib/salesReturnsSchema';
+import { ensureInvoiceSalesOrdersSchema } from '@/lib/invoiceSalesOrdersSchema';
+import { allocateBatchStock, ensureInventoryBatchSchema, getInventoryIssueStrategy } from '@/lib/inventoryBatching';
+
+function toNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
 
 export async function POST(req) {
+  let client;
   try {
+    await ensureSalesBillingSchema();
+    await ensureInvoiceSalesOrdersSchema();
+    await ensureInventoryBatchSchema();
+
     // Try to get token from Authorization header or cookies
     let token = req.headers.get('authorization')?.replace('Bearer ', '');
     
@@ -25,6 +37,8 @@ export async function POST(req) {
     const {
       store_id,
       customer_id,
+      customer_name,
+      customer_mobile,
       items = [],
       payment_mode,
       total_amount,
@@ -39,79 +53,204 @@ export async function POST(req) {
       return errorResponse('Missing required fields', 400);
     }
 
-    // Calculate totals
-    let calculatedTotal = 0;
+    client = await getClient();
+    await client.query('BEGIN');
+
+    const normalizedItems = [];
+    let calculatedSubtotal = 0;
     let calculatedTax = 0;
 
     for (const item of items) {
-      const itemTotal = item.qty * item.selling_price;
-      calculatedTotal += itemTotal;
-      if (item.tax_rate) {
-        calculatedTax += (itemTotal * item.tax_rate) / 100;
-      }
+      const productId = Number(item.product_id || item.productId);
+      const qty = toNumber(item.qty);
+      if (!productId || qty <= 0) throw new Error('Invalid product or quantity');
+
+      const productRes = await client.query(
+        `SELECT id, name, sku, barcode, mrp, selling_price, cost_price
+         FROM products
+         WHERE id = $1
+         FOR UPDATE`,
+        [productId]
+      );
+      const product = productRes.rows[0];
+      if (!product) throw new Error(`Product ${productId} not found`);
+
+      const sellingPrice = toNumber(item.selling_price ?? item.sellingPrice, toNumber(product.selling_price));
+      const taxRate = toNumber(item.tax_rate ?? item.taxRate);
+      const itemDiscount = toNumber(item.discount_amount ?? item.discountAmount);
+      const lineSubtotal = qty * sellingPrice;
+      const lineTax = toNumber(item.tax_amount ?? item.taxAmount, (Math.max(0, lineSubtotal - itemDiscount) * taxRate) / 100);
+      const lineTotal = Math.max(0, lineSubtotal - itemDiscount + lineTax);
+
+      calculatedSubtotal += lineSubtotal;
+      calculatedTax += lineTax;
+      normalizedItems.push({ item, product, productId, qty, sellingPrice, taxRate, itemDiscount, lineTax, lineTotal });
     }
 
-    // Create sales bill
-    const billRes = await query(`
+    const billNumber = invoice_number || `POS-${Date.now()}`;
+    const subtotal = calculatedSubtotal;
+    const taxTotal = toNumber(total_tax, calculatedTax);
+    const discountTotal = toNumber(discount_amount);
+    const grandTotal = toNumber(total_amount, Math.max(0, subtotal - discountTotal + taxTotal + toNumber(round_off)));
+    const paidAmount = grandTotal;
+
+    const billRes = await client.query(`
       INSERT INTO sales_bills (
-        store_id, customer_id, total_amount, total_tax, discount_amount, round_off,
-        payment_mode, notes, user_id, status
+        bill_number, store_id, customer_name, customer_mobile,
+        subtotal, discount_total, tax_total, round_off, grand_total,
+        paid_amount, balance_amount, payment_mode, remarks, user_id, status, meta,
+        created_at, updated_at
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, 'completed'
-      ) RETURNING id, created_at
+        $1, $2, $3, $4,
+        $5, $6, $7, $8, $9,
+        $10, 0, $11, $12, $13, 'completed', $14::jsonb,
+        NOW(), NOW()
+      ) RETURNING id, bill_number, public_token, created_at
     `, [
-      store_id,
-      customer_id || null,
-      total_amount,
-      total_tax || calculatedTax,
-      discount_amount,
-      round_off,
+      billNumber,
+      Number(store_id),
+      customer_name || 'Walk-in Customer',
+      customer_mobile || '',
+      subtotal,
+      discountTotal,
+      taxTotal,
+      toNumber(round_off),
+      grandTotal,
+      paidAmount,
       payment_mode,
       notes,
-      user.id
+      user.id,
+      JSON.stringify({ source: 'legacy-pos-billing', customer_id: customer_id || null }),
     ]);
 
     const bill_id = billRes.rows[0]?.id;
 
-    // Insert bill items
-    for (const item of items) {
-      await query(`
+    const stockOutRes = await client.query(
+      `INSERT INTO stock_out (
+         transaction_id, method, destination_id, apply_taxes, add_products_prefill,
+         status, invoice_number, total_items, total_cost, total_tax,
+         reference_type, reference_id, meta, created_at, confirmed_at
+       ) VALUES (
+         $1, 'pos_sale', $2, true, false,
+         'confirmed', $3, $4, 0, $5,
+         'sales_bill', $6, $7::jsonb, NOW(), NOW()
+       ) RETURNING id`,
+      [
+        `POS-STKO-${bill_id}`,
+        Number(store_id),
+        billNumber,
+        normalizedItems.reduce((sum, row) => sum + row.qty, 0),
+        taxTotal,
+        String(bill_id),
+        JSON.stringify({ source: 'legacy-pos-billing', billId: bill_id, billNumber }),
+      ]
+    );
+
+    const stockOutId = stockOutRes.rows[0]?.id;
+    const issueStrategy = getInventoryIssueStrategy();
+
+    for (const row of normalizedItems) {
+      const allocations = await allocateBatchStock(client, {
+        productId: row.productId,
+        storeId: Number(store_id),
+        qty: row.qty,
+        strategy: issueStrategy,
+        referenceType: 'sales_bill',
+        referenceId: bill_id,
+        meta: { billNumber, stockOutId },
+      });
+
+      await client.query(`
         INSERT INTO sales_bill_items (
-          sales_bill_id, product_id, qty, selling_price, tax_rate, cost_price
-        ) VALUES ($1, $2, $3, $4, $5, $6)
+          sales_bill_id, product_id, product_name, barcode, sku, qty,
+          selling_price, mrp, tax_rate, discount_amount, tax_amount, line_total, batch_allocations
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)
       `, [
         bill_id,
-        item.product_id,
-        item.qty,
-        item.selling_price,
-        item.tax_rate || 0,
-        item.cost_price || 0
+        row.productId,
+        row.item.product_name || row.item.name || row.product.name,
+        row.item.barcode || row.product.barcode || null,
+        row.item.sku || row.product.sku || null,
+        row.qty,
+        row.sellingPrice,
+        toNumber(row.item.mrp, toNumber(row.product.mrp)),
+        row.taxRate,
+        row.itemDiscount,
+        row.lineTax,
+        row.lineTotal,
+        JSON.stringify(allocations),
       ]);
 
-      // Update stock out
-      await query(`
-        INSERT INTO stock_out (product_id, store_id, qty, reference_type, reference_id)
-        VALUES ($1, $2, $3, 'sales_bill', $4)
-      `, [item.product_id, store_id, item.qty, bill_id]);
+      for (const allocation of allocations) {
+        await client.query(
+          `INSERT INTO stock_out_items (
+             stock_out_id, product_id, product_name, qty, cost_price, tax_value,
+             batch_id, batch_no, expiry_date, created_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())`,
+          [
+            stockOutId,
+            row.productId,
+            row.item.product_name || row.item.name || row.product.name,
+            allocation.qty,
+            allocation.costPrice || toNumber(row.item.cost_price, toNumber(row.product.cost_price)),
+            row.taxRate,
+            allocation.batchId,
+            allocation.batchNo,
+            allocation.expiryDate,
+          ]
+        );
+      }
     }
 
-    // Generate invoice
-    const invoiceRes = await query(`
-      INSERT INTO invoice_sales_orders (sales_bill_id, invoice_number, status)
-      VALUES ($1, $2, 'generated')
-      RETURNING id, invoice_number
-    `, [bill_id, invoice_number || `INV-${Date.now()}`]);
+    await client.query(
+      `INSERT INTO sales_bill_payments (sales_bill_id, method, amount, reference_no, meta, created_at)
+       VALUES ($1, $2, $3, '', '{}'::jsonb, NOW())`,
+      [bill_id, payment_mode, paidAmount]
+    );
+
+    const invoiceRes = await client.query(`
+      INSERT INTO invoice_sales_orders (
+        transaction_id, sales_order_id, sales_order_type, booking_id, booking_date,
+        billing_user_id, sales_bill_id, customer_name, customer_mobile, payment_mode,
+        gross_bill, total_discount, invoice_id, invoice_date, status, store_id, meta
+      ) VALUES (
+        $1, $2, 'POS', $3, CURRENT_DATE,
+        $4, $5, $6, $7, $8,
+        $9, $10, $11, CURRENT_DATE, 'generated', $12, $13::jsonb
+      ) RETURNING id, invoice_id
+    `, [
+      `INV-${bill_id}`,
+      billNumber,
+      billNumber,
+      user.id,
+      bill_id,
+      customer_name || 'Walk-in Customer',
+      customer_mobile || '',
+      payment_mode,
+      grandTotal,
+      discountTotal,
+      billNumber,
+      Number(store_id),
+      JSON.stringify({ source: 'legacy-pos-billing' }),
+    ]);
+
+    await client.query('COMMIT');
 
     return successResponse({
       bill_id,
-      invoice_number: invoiceRes.rows[0]?.invoice_number,
-      total_amount,
-      total_tax: total_tax || calculatedTax,
+      bill_number: billRes.rows[0]?.bill_number,
+      invoice_number: invoiceRes.rows[0]?.invoice_id,
+      public_token: billRes.rows[0]?.public_token,
+      total_amount: grandTotal,
+      total_tax: taxTotal,
       status: 'completed'
     });
   } catch (err) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
     console.error('POS billing error:', err);
     return errorResponse(err.message);
+  } finally {
+    if (client) client.release();
   }
 }
 

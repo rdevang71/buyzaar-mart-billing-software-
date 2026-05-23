@@ -21,6 +21,7 @@ import { cookies }            from 'next/headers';
 import { verifyToken }        from '@/lib/auth-enhanced';
 import { query }              from '@/lib/db';
 import { sendBillOnWhatsApp } from '@/lib/whatsappService';
+import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
 import { allocateBatchStock, ensureInventoryBatchSchema, getInventoryIssueStrategy } from '@/lib/inventoryBatching';
 
 export async function POST(request) {
@@ -33,6 +34,7 @@ export async function POST(request) {
 
   const payload = verifyToken(token);
   if (!payload?.sub) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  await ensureSalesBillingSchema();
   await ensureInventoryBatchSchema();
 
   let body;

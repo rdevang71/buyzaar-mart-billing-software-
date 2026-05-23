@@ -6,6 +6,8 @@ import { ensureStockInSchema } from '@/lib/stockInSchema';
 import { ensureStockOutSchema } from '@/lib/stockOutSchema';
 import { ensureInvoiceSalesOrdersSchema } from '@/lib/invoiceSalesOrdersSchema';
 import { ensureInventoryBatchSchema } from '@/lib/inventoryBatching';
+import { ensureVendorsSchema } from '@/lib/vendorsSchema';
+import { ensurePurchaseOrderSchema } from '@/lib/purchaseOrderSchema';
 
 const REPORT_ROLES = ['super_admin', 'admin', 'manager'];
 
@@ -215,6 +217,8 @@ async function ensureReportSchemas() {
   await ensureSalesBillingSchema();
   await ensureInvoiceSalesOrdersSchema();
   await ensureInventoryBatchSchema();
+  await ensureVendorsSchema();
+  await ensurePurchaseOrderSchema();
 }
 
 export function normalizeReportKey(slug) {
@@ -889,36 +893,82 @@ async function getStockMovementReport(filters, user) {
 
 async function getPurchaseFamilyReport(reportKey, filters, user) {
   await ensureStockInSchema();
+  await ensureVendorsSchema();
+  await ensurePurchaseOrderSchema();
   const range = parseDateRange(filters.date_range);
   const params = [range.from, range.to];
-  const conditions = [`DATE(si.created_at) BETWEEN $1 AND $2`];
+  const poConditions = [`DATE(COALESCE(po.confirmed_at, po.created_at)) BETWEEN $1 AND $2`];
+  const stockConditions = [`DATE(COALESCE(si.confirmed_at, si.created_at)) BETWEEN $1 AND $2`];
   const requestedStoreId = Number(filters.store || 0) || null;
   const assignedStores = (user.assigned_stores || []).map(Number).filter(Number.isFinite);
   if (user.role === 'super_admin') {
     if (requestedStoreId) {
       params.push(requestedStoreId);
-      conditions.push(`si.destination_id = $${params.length}`);
+      poConditions.push(`po.destination_id = $${params.length}`);
+      stockConditions.push(`si.destination_id = $${params.length}`);
     }
   } else if (requestedStoreId && assignedStores.includes(requestedStoreId)) {
     params.push(requestedStoreId);
-    conditions.push(`si.destination_id = $${params.length}`);
+    poConditions.push(`po.destination_id = $${params.length}`);
+    stockConditions.push(`si.destination_id = $${params.length}`);
   } else if (assignedStores.length) {
     params.push(assignedStores);
-    conditions.push(`si.destination_id = ANY($${params.length}::int[])`);
+    poConditions.push(`po.destination_id = ANY($${params.length}::int[])`);
+    stockConditions.push(`si.destination_id = ANY($${params.length}::int[])`);
   } else {
-    conditions.push('1 = 0');
+    poConditions.push('1 = 0');
+    stockConditions.push('1 = 0');
   }
   const productJoin = reportKey.includes('product') || reportKey.includes('details');
   const res = await query(
-    `SELECT si.id, si.transaction_id, si.invoice_number, si.invoice_date, si.vendor_name,
-            si.total_items, si.total_cost, si.total_tax, si.status, si.created_at,
-            COALESCE(s.name, 'Store') AS store
-            ${productJoin ? `, COALESCE(p.name, sii.product_name, 'Product') AS product, p.sku, sii.qty, sii.cost_price, sii.tax_value` : ''}
-     FROM stock_in si
-     LEFT JOIN stores s ON s.id = si.destination_id
-     ${productJoin ? 'LEFT JOIN stock_in_items sii ON sii.stock_in_id = si.id LEFT JOIN products p ON p.id = sii.product_id' : ''}
-     WHERE ${conditions.join(' AND ')}
-     ORDER BY si.created_at DESC
+    `SELECT *
+     FROM (
+       SELECT
+         po.id,
+         po.transaction_id,
+         po.invoice_number,
+         po.invoice_date,
+         COALESCE(v.name, 'Vendor') AS vendor_name,
+         po.vendor_id,
+         po.total_items,
+         po.total_cost,
+         po.total_tax,
+         po.status,
+         COALESCE(po.confirmed_at, po.created_at) AS created_at,
+         COALESCE(s.name, 'Store') AS store,
+         'purchase_order' AS source_type
+         ${productJoin ? `, COALESCE(p.name, poi.product_name, 'Product') AS product, p.sku, poi.qty, poi.cost_price, poi.tax_value` : ''}
+       FROM purchase_orders po
+       LEFT JOIN vendors v ON v.id = po.vendor_id
+       LEFT JOIN stores s ON s.id = po.destination_id
+       ${productJoin ? 'LEFT JOIN purchase_order_items poi ON poi.purchase_order_id = po.id LEFT JOIN products p ON p.id = poi.product_id' : ''}
+       WHERE ${poConditions.join(' AND ')}
+
+       UNION ALL
+
+       SELECT
+         si.id,
+         si.transaction_id,
+         si.invoice_number,
+         si.invoice_date,
+         COALESCE(v.name, NULLIF(si.vendor_name, ''), 'Vendor') AS vendor_name,
+         si.vendor_id,
+         si.total_items,
+         si.total_cost,
+         si.total_tax,
+         si.status,
+         COALESCE(si.confirmed_at, si.created_at) AS created_at,
+         COALESCE(s.name, 'Store') AS store,
+         'stock_in' AS source_type
+         ${productJoin ? `, COALESCE(p.name, sii.product_name, 'Product') AS product, p.sku, sii.qty, sii.cost_price, sii.tax_value` : ''}
+       FROM stock_in si
+       LEFT JOIN vendors v ON v.id = si.vendor_id OR LOWER(v.name) = LOWER(COALESCE(si.vendor_name, ''))
+       LEFT JOIN stores s ON s.id = si.destination_id
+       ${productJoin ? 'LEFT JOIN stock_in_items sii ON sii.stock_in_id = si.id LEFT JOIN products p ON p.id = sii.product_id' : ''}
+       WHERE ${stockConditions.join(' AND ')}
+         AND COALESCE(si.reference_type, '') <> 'purchase_order'
+     ) purchases
+     ORDER BY created_at DESC
      LIMIT 1000`,
     params
   );

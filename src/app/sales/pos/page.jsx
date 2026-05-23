@@ -699,13 +699,69 @@ export default function POSPage() {
   };
 
   // ── CHECKOUT ──
+  const saveBillOffline = (payload, toastMessage = 'Bill saved offline - will sync when back online') => {
+    const offlineBill = {
+      id: `OFFLINE-${Date.now()}`,
+      billNumber: payload.invoiceNumber,
+      invoiceNumber: payload.invoiceNumber,
+      customerName: payload.customerName,
+      customerMobile,
+      paymentMode,
+      grandTotal: cartTotals.grandTotal,
+      subtotal: cartTotals.subtotal,
+      discountTotal: cartTotals.discount,
+      taxTotal: cartTotals.taxTotal,
+      createdAt: new Date().toISOString(),
+      isOffline: true,
+      status: 'pending_sync',
+    };
+
+    const queue = readStorage(STORAGE_KEYS.QUEUE, []);
+    queue.push({ payload, totals: cartTotals, createdAt: new Date().toISOString() });
+    writeStorage(STORAGE_KEYS.QUEUE, queue);
+    setPendingQueueCount(queue.length);
+
+    const offlineBills = readStorage(STORAGE_KEYS.OFFLINE_BILLS, []);
+    writeStorage(STORAGE_KEYS.OFFLINE_BILLS, [offlineBill, ...offlineBills].slice(0, 20));
+    setRecentBills((current) => [offlineBill, ...current].slice(0, 20));
+
+    const receiptItems = cart.map((item) => ({
+      ...item,
+      name: item.name,
+      selling_price: item.sellingPrice,
+      line_total:
+        item.qty * item.sellingPrice -
+        toNumber(item.discountAmount) +
+        (Math.max(0, item.qty * item.sellingPrice - toNumber(item.discountAmount)) *
+          toNumber(item.taxRate)) /
+          100,
+    }));
+
+    setReceiptData({
+      bill: {
+        ...offlineBill,
+        publicToken: null,
+      },
+      items: receiptItems,
+      subtotal: cartTotals.subtotal,
+      discount: cartTotals.discount,
+      taxTotal: cartTotals.taxTotal,
+      grandTotal: cartTotals.grandTotal,
+    });
+    setReceiptModal(true);
+
+    showToast(toastMessage, 'info');
+    clearCart();
+  };
+
   const createBill = async () => {
     if (!session?.sessionId) { showToast('Open session first', 'error'); return; }
     if (cart.length === 0) { showToast('Add products to cart', 'error'); return; }
     if (customerMobile && !validatePhoneNumber(customerMobile).isValid) { showToast(validatePhoneNumber(customerMobile).error, 'error'); return; }
     setIsProcessing(true);
+    let payload = null;
     try {
-      const payload = {
+      payload = {
         sessionId: session.sessionId,
         storeId: session.storeId || selectedStoreId,
         deviceUid,
@@ -806,7 +862,14 @@ export default function POSPage() {
           setCustomerHistory((current) => [savedBill, ...current].slice(0, 50));
         clearCart(); loadPOSData();
       } else showToast(json.message || 'Failed to create bill', 'error');
-    } catch (err) { console.error('Checkout error:', err); showToast('Network error. Bill saved locally.', 'error'); }
+    } catch (err) {
+      console.error('Checkout error:', err);
+      if (payload) {
+        saveBillOffline(payload, 'Network error. Bill saved locally and will sync automatically.');
+      } else {
+        showToast('Network error. Bill could not be saved locally.', 'error');
+      }
+    }
     finally { setIsProcessing(false); }
   };
 

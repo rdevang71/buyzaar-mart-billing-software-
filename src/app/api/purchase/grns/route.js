@@ -11,6 +11,7 @@ export async function GET() {
         s.transaction_id,
         s.invoice_number,
         s.invoice_date,
+        s.vendor_id,
         s.vendor_name,
         s.other_charges,
         s.total_items,
@@ -45,6 +46,7 @@ export async function GET() {
         cost: totalCost,
         referenceType: row.reference_type || '—',
         referenceId: row.reference_id || '—',
+        vendorId: row.vendor_id,
         vendorName: row.vendor_name,
         totalTax: Number(row.total_tax || 0),
         createdAt: row.created_at,
@@ -67,8 +69,8 @@ export async function POST(request) {
       await client.query('BEGIN');
       // create a stock_in record referencing the purchase order
       const insertText = `
-        INSERT INTO stock_in (method, destination_id, apply_taxes, add_products_prefill, meta, status, reference_type, reference_id, vendor_name, invoice_number, invoice_date, created_at)
-        VALUES ($1, $2, $3, $4, $5, 'draft', 'purchase_order', $6, $7, $8, $9, NOW())
+        INSERT INTO stock_in (method, destination_id, apply_taxes, add_products_prefill, meta, status, reference_type, reference_id, vendor_id, vendor_name, invoice_number, invoice_date, created_at)
+        VALUES ($1, $2, $3, $4, $5, 'draft', 'purchase_order', $6, $7, $8, $9, $10, NOW())
         RETURNING id`;
       const values = [
         'purchase_order',
@@ -77,6 +79,7 @@ export async function POST(request) {
         payload.addProductsPrefill ?? false,
         JSON.stringify(payload),
         payload.poId || null,
+        payload.vendorId || payload.vendor || null,
         payload.vendorName || null,
         payload.invoiceNumber || null,
         payload.invoiceDate || null,

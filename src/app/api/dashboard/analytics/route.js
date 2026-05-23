@@ -3,6 +3,10 @@ import { successResponse, errorResponse } from '@/lib/api-response';
 import { verifyToken } from '@/lib/auth-enhanced';
 import { ensureCustomersSchema } from '@/lib/customersSchema';
 import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
+import { ensureVendorsSchema } from '@/lib/vendorsSchema';
+import { ensurePurchaseOrderSchema } from '@/lib/purchaseOrderSchema';
+import { ensureVendorInvoicesSchema } from '@/lib/vendorInvoicesSchema';
+import { ensureStockInSchema } from '@/lib/stockInSchema';
 
 export async function GET(req) {
   try {
@@ -22,6 +26,10 @@ export async function GET(req) {
     if (!user) return errorResponse('Invalid token', 401);
     await ensureCustomersSchema();
     await ensureSalesBillingSchema();
+    await ensureVendorsSchema();
+    await ensurePurchaseOrderSchema();
+    await ensureVendorInvoicesSchema();
+    await ensureStockInSchema();
 
     const { searchParams } = new URL(req.url);
     const rawStoreId = searchParams.get('store_id');
@@ -353,17 +361,98 @@ export async function GET(req) {
 
     // 10. Payment Mode Analysis
     const paymentModesRes = await query(`
-      SELECT 
-        payment_mode,
+      WITH bill_payments AS (
+        SELECT
+          sb.id,
+          COALESCE(NULLIF(TRIM(sbp.method), ''), NULLIF(TRIM(sb.payment_mode), ''), 'cash') AS payment_mode,
+          COALESCE(sbp.amount, NULLIF(sb.paid_amount, 0), sb.grand_total, 0) AS amount
+        FROM sales_bills sb
+        LEFT JOIN sales_bill_payments sbp ON sbp.sales_bill_id = sb.id
+        WHERE DATE(sb.created_at) >= '${date_from}'
+          AND DATE(sb.created_at) <= '${date_to}'
+          AND sb.status != 'cancelled'
+          ${storeFilter}
+      )
+      SELECT
+        INITCAP(payment_mode) AS payment_mode,
         COALESCE(COUNT(DISTINCT id), 0) as transactions,
-        COALESCE(SUM(grand_total), 0) as amount
-      FROM sales_bills
-      WHERE DATE(created_at) >= '${date_from}' 
-        AND DATE(created_at) <= '${date_to}'
-        AND status != 'cancelled'
-        ${storeFilter}
-      GROUP BY payment_mode
+        COALESCE(SUM(amount), 0) as amount
+      FROM bill_payments
+      GROUP BY INITCAP(payment_mode)
       ORDER BY amount DESC
+    `).catch(() => ({ rows: [] }));
+
+    // 11. Vendor / Purchase Health
+    const vendorSummaryRes = await query(`
+      WITH purchases AS (
+        SELECT
+          po.vendor_id,
+          COALESCE(po.total_cost, 0) + COALESCE(po.total_tax, 0) AS amount
+        FROM purchase_orders po
+        WHERE DATE(COALESCE(po.confirmed_at, po.created_at)) >= '${date_from}'
+          AND DATE(COALESCE(po.confirmed_at, po.created_at)) <= '${date_to}'
+          ${hasStoreFilter ? `AND po.destination_id = ${selectedStoreId}` : ''}
+        UNION ALL
+        SELECT
+          si.vendor_id,
+          COALESCE(si.total_cost, 0) + COALESCE(si.total_tax, 0) AS amount
+        FROM stock_in si
+        WHERE DATE(COALESCE(si.confirmed_at, si.created_at)) >= '${date_from}'
+          AND DATE(COALESCE(si.confirmed_at, si.created_at)) <= '${date_to}'
+          AND COALESCE(si.reference_type, '') <> 'purchase_order'
+          ${hasStoreFilter ? `AND si.destination_id = ${selectedStoreId}` : ''}
+      ),
+      payable AS (
+        SELECT
+          vi.id,
+          vi.total_amount,
+          vi.amount_paid
+        FROM vendor_invoices vi
+        LEFT JOIN purchase_orders po ON po.id = vi.purchase_order_id
+        WHERE LOWER(COALESCE(vi.status, 'pending')) IN ('pending', 'partial')
+          ${hasStoreFilter ? `AND (po.destination_id = ${selectedStoreId} OR vi.purchase_order_id IS NULL)` : ''}
+      )
+      SELECT
+        (SELECT COUNT(*)::int FROM vendors) AS total_vendors,
+        (SELECT COUNT(*)::int FROM vendors WHERE COALESCE(is_active, TRUE) = TRUE) AS active_vendors,
+        (SELECT COUNT(*)::int FROM payable) AS pending_vendor_invoices,
+        (SELECT COALESCE(SUM(GREATEST(total_amount - amount_paid, 0)), 0) FROM payable) AS total_payable,
+        (SELECT COALESCE(SUM(amount), 0) FROM purchases) AS purchase_value,
+        (SELECT COUNT(DISTINCT vendor_id)::int FROM purchases WHERE vendor_id IS NOT NULL) AS purchasing_vendors
+    `).catch(() => ({ rows: [{ total_vendors: 0, active_vendors: 0, pending_vendor_invoices: 0, total_payable: 0, purchase_value: 0, purchasing_vendors: 0 }] }));
+
+    const topVendorsRes = await query(`
+      WITH purchases AS (
+        SELECT
+          po.vendor_id,
+          COALESCE(po.total_cost, 0) + COALESCE(po.total_tax, 0) AS amount,
+          COALESCE(po.total_items, 0) AS items
+        FROM purchase_orders po
+        WHERE DATE(COALESCE(po.confirmed_at, po.created_at)) >= '${date_from}'
+          AND DATE(COALESCE(po.confirmed_at, po.created_at)) <= '${date_to}'
+          ${hasStoreFilter ? `AND po.destination_id = ${selectedStoreId}` : ''}
+        UNION ALL
+        SELECT
+          si.vendor_id,
+          COALESCE(si.total_cost, 0) + COALESCE(si.total_tax, 0) AS amount,
+          COALESCE(si.total_items, 0) AS items
+        FROM stock_in si
+        WHERE DATE(COALESCE(si.confirmed_at, si.created_at)) >= '${date_from}'
+          AND DATE(COALESCE(si.confirmed_at, si.created_at)) <= '${date_to}'
+          AND COALESCE(si.reference_type, '') <> 'purchase_order'
+          ${hasStoreFilter ? `AND si.destination_id = ${selectedStoreId}` : ''}
+      )
+      SELECT
+        COALESCE(v.id, 0) AS id,
+        COALESCE(v.name, 'Unmapped Vendor') AS vendor_name,
+        COUNT(*)::int AS purchase_count,
+        COALESCE(SUM(p.items), 0) AS items,
+        COALESCE(SUM(p.amount), 0) AS amount
+      FROM purchases p
+      LEFT JOIN vendors v ON v.id = p.vendor_id
+      GROUP BY v.id, v.name
+      ORDER BY amount DESC
+      LIMIT 8
     `).catch(() => ({ rows: [] }));
 
     const salesData = salesRes.rows[0] || {};
@@ -391,6 +480,15 @@ export async function GET(req) {
       top_customers: topCustomersRes.rows || [],
       staff_productivity: staffProductivityRes.rows || [],
       payment_modes: paymentModesRes.rows || [],
+      vendor_summary: {
+        total_vendors: parseInt(vendorSummaryRes.rows[0]?.total_vendors || 0),
+        active_vendors: parseInt(vendorSummaryRes.rows[0]?.active_vendors || 0),
+        pending_vendor_invoices: parseInt(vendorSummaryRes.rows[0]?.pending_vendor_invoices || 0),
+        total_payable: parseFloat(vendorSummaryRes.rows[0]?.total_payable || 0),
+        purchase_value: parseFloat(vendorSummaryRes.rows[0]?.purchase_value || 0),
+        purchasing_vendors: parseInt(vendorSummaryRes.rows[0]?.purchasing_vendors || 0),
+      },
+      top_vendors: topVendorsRes.rows || [],
     });
   } catch (err) {
     console.error('Dashboard analytics error:', err);
