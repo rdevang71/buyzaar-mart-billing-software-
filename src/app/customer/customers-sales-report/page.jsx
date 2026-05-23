@@ -57,8 +57,13 @@ function toCsv(rows) {
 
 export default function CustomersSalesReportPage() {
   const today = useMemo(() => new Date(), []);
+  const defaultFrom = useMemo(() => {
+    const date = new Date();
+    date.setDate(date.getDate() - 30);
+    return date;
+  }, []);
 
-  const [dateFrom, setDateFrom] = useState(formatDateInput(today));
+  const [dateFrom, setDateFrom] = useState(formatDateInput(defaultFrom));
   const [dateTo, setDateTo] = useState(formatDateInput(today));
   const [store, setStore] = useState('all');
   const [stores, setStores] = useState([]);

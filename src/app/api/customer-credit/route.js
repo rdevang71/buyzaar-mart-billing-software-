@@ -18,7 +18,7 @@ function normalizeText(value) {
 
 function buildCreditQuery({ store, search, page, pageSize }) {
   const params = [];
-  const where = ['amount_due > 0'];
+  const where = [];
 
   if (store && store.toLowerCase() !== 'all') {
     params.push(store);
@@ -38,7 +38,7 @@ function buildCreditQuery({ store, search, page, pageSize }) {
     )`);
   }
 
-  const whereSql = `WHERE ${where.join(' AND ')}`;
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const offset = (page - 1) * pageSize;
   params.push(pageSize, offset);
   const limitIdx = params.length - 1;
@@ -75,8 +75,8 @@ function buildCreditQuery({ store, search, page, pageSize }) {
       LEFT JOIN stores s ON s.id = sb.store_id
       WHERE LOWER(COALESCE(sb.status, '')) NOT IN ('void', 'cancelled', 'canceled')
         AND (
-          COALESCE(sb.balance_amount, 0) > 0
-          OR LOWER(COALESCE(sb.payment_mode, '')) = 'credit'
+          NULLIF(TRIM(sb.customer_mobile), '') IS NOT NULL
+          OR NULLIF(TRIM(sb.customer_name), '') IS NOT NULL
         )
 
       UNION ALL
