@@ -24,7 +24,6 @@ if (!globalForPg._pgPool) {
   globalForPg._pgPool = new Pool({
     ...baseConfig,
     ssl,
-    options: `-c search_path=${process.env.DB_SCHEMA || 'public'}`,
     max: Number.isFinite(poolMax) ? poolMax : 20,
     idleTimeoutMillis: Number.isFinite(idleTimeoutMs) ? idleTimeoutMs : 30000,
     connectionTimeoutMillis: Number.isFinite(connectTimeoutMs) ? connectTimeoutMs : 10000,
