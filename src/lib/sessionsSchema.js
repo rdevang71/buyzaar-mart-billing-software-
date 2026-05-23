@@ -1,54 +1,44 @@
 import { query } from '@/lib/db';
-
-let ensured = false;
+import { makeSchemaEnsurer } from '@/lib/schemaGuard';
 
 /**
  * Ensure sessions table exists and FK references users(id) correctly.
  * Must be called AFTER ensureUsersTable().
  */
-export async function ensureSessionsSchema() {
-  if (ensured) return;
+export const ensureSessionsSchema = makeSchemaEnsurer('sessions', async () => {
+  await query(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL,
+      access_token_hash VARCHAR(64) NOT NULL,
+      refresh_token_hash VARCHAR(64),
+      ip_address VARCHAR(45),
+      user_agent VARCHAR(500),
+      expires_at TIMESTAMP NOT NULL,
+      refresh_expires_at TIMESTAMP,
+      last_activity TIMESTAMP NOT NULL DEFAULT NOW(),
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
 
+  // Drop any existing (possibly broken) FK and re-add it pointing to users(id)
   try {
+    await query(`ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_user_id_fkey;`);
     await query(`
-      CREATE TABLE IF NOT EXISTS sessions (
-        id BIGSERIAL PRIMARY KEY,
-        user_id BIGINT NOT NULL,
-        access_token_hash VARCHAR(64) NOT NULL,
-        refresh_token_hash VARCHAR(64),
-        ip_address VARCHAR(45),
-        user_agent VARCHAR(500),
-        expires_at TIMESTAMP NOT NULL,
-        refresh_expires_at TIMESTAMP,
-        last_activity TIMESTAMP NOT NULL DEFAULT NOW(),
-        is_active BOOLEAN NOT NULL DEFAULT TRUE,
-        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-      );
+      ALTER TABLE sessions ADD CONSTRAINT sessions_user_id_fkey
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE NOT VALID;
     `);
-
-    // Drop any existing (possibly broken) FK and re-add it pointing to users(id)
-    try {
-      await query(`ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_user_id_fkey;`);
-      await query(`
-        ALTER TABLE sessions ADD CONSTRAINT sessions_user_id_fkey
-          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE NOT VALID;
-      `);
-    } catch (fkErr) {
-      console.warn('[SESSIONS_SCHEMA] Could not fix FK constraint:', fkErr.message);
-    }
-
-    // Indexes for performance
-    await query(`CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(access_token_hash);`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);`);
-
-    ensured = true;
-  } catch (err) {
-    console.error('[SESSIONS_SCHEMA] Error:', err.message);
-    throw err;
+  } catch (fkErr) {
+    console.warn('[SESSIONS_SCHEMA] Could not fix FK constraint:', fkErr.message);
   }
-}
+
+  // Indexes for performance
+  await query(`CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(access_token_hash);`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);`);
+});
 
 /**
  * Create a new session

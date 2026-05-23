@@ -25,6 +25,11 @@ export async function ensureSalesReturnsSchema() {
           approved_at TIMESTAMPTZ,
           rejected_at TIMESTAMPTZ,
           rejection_reason TEXT,
+          completed_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+          completed_at TIMESTAMPTZ,
+          refund_payment_mode VARCHAR(40),
+          refund_reference VARCHAR(120),
+          return_number VARCHAR(80),
           meta JSONB NOT NULL DEFAULT '{}'::jsonb,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -45,10 +50,16 @@ export async function ensureSalesReturnsSchema() {
           ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ,
           ADD COLUMN IF NOT EXISTS rejected_at TIMESTAMPTZ,
           ADD COLUMN IF NOT EXISTS rejection_reason TEXT,
+          ADD COLUMN IF NOT EXISTS completed_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+          ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ,
+          ADD COLUMN IF NOT EXISTS refund_payment_mode VARCHAR(40),
+          ADD COLUMN IF NOT EXISTS refund_reference VARCHAR(120),
+          ADD COLUMN IF NOT EXISTS return_number VARCHAR(80),
           ADD COLUMN IF NOT EXISTS meta JSONB NOT NULL DEFAULT '{}'::jsonb,
           ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
         CREATE INDEX IF NOT EXISTS idx_sales_returns_status ON sales_returns(status);
+        CREATE INDEX IF NOT EXISTS idx_sales_returns_store_status ON sales_returns(store_id, status);
         CREATE INDEX IF NOT EXISTS idx_sales_returns_created_at ON sales_returns(created_at DESC);
       `);
     })().catch((err) => {

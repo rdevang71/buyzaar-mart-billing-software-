@@ -21,6 +21,10 @@ function canReviewReturn(user, storeId) {
   return isSuperAdmin(user) || isStoreAdmin(user, storeId);
 }
 
+function canCompleteReturn(user, returnRow) {
+  return Number(returnRow.created_by) === Number(user?.id) || canReviewReturn(user, returnRow.store_id);
+}
+
 // Create return/exchange
 export async function POST(req) {
   try {
@@ -121,12 +125,37 @@ export async function GET(req) {
         sb.grand_total as original_amount,
         sb.customer_name,
         sb.customer_mobile,
+        sb.payment_mode AS original_payment_mode,
+        sb.payment_meta AS original_payment_meta,
+        sb.created_at AS original_bill_date,
         s.name as store_name,
-        u.name as requested_by_name
+        u.name as requested_by_name,
+        approver.name as approved_by_name,
+        completer.name as completed_by_name,
+        COALESCE(items.items, '[]'::jsonb) AS items
       FROM sales_returns sr
       LEFT JOIN sales_bills sb ON sr.original_bill_id = sb.id
       LEFT JOIN stores s ON sr.store_id = s.id
       LEFT JOIN users u ON sr.created_by = u.id
+      LEFT JOIN users approver ON sr.approved_by = approver.id
+      LEFT JOIN users completer ON sr.completed_by = completer.id
+      LEFT JOIN LATERAL (
+        SELECT jsonb_agg(
+          jsonb_build_object(
+            'id', sri.id,
+            'product_id', sri.product_id,
+            'product_name', COALESCE(p.name, 'Product'),
+            'sku', p.sku,
+            'qty', sri.qty,
+            'original_price', sri.original_price,
+            'line_total', sri.qty * sri.original_price
+          )
+          ORDER BY sri.id
+        ) AS items
+        FROM sales_return_items sri
+        LEFT JOIN products p ON p.id = sri.product_id
+        WHERE sri.sales_return_id = sr.id
+      ) items ON TRUE
       WHERE 1=1
     `;
 
@@ -183,13 +212,57 @@ export async function PATCH(req) {
     const action = String(body.action || '').toLowerCase();
     const rejectionReason = body.rejection_reason || '';
 
-    if (!returnId || !['approve', 'decline', 'reject'].includes(action)) {
+    if (!returnId || !['approve', 'decline', 'reject', 'complete', 'proceed'].includes(action)) {
       return errorResponse('Valid return_id and action are required', 400);
     }
 
     const returnRes = await query('SELECT * FROM sales_returns WHERE id = $1', [returnId]);
     const returnRow = returnRes.rows[0];
     if (!returnRow) return errorResponse('Return request not found', 404);
+
+    if (action === 'complete' || action === 'proceed') {
+      if (returnRow.status !== 'approved') return errorResponse('Only approved return requests can be completed', 400);
+      if (!canCompleteReturn(auth.user, returnRow)) {
+        return errorResponse('Only the requesting employee, store admin, or super admin can complete this return', 403);
+      }
+
+      const billRes = await query('SELECT * FROM sales_bills WHERE id = $1', [returnRow.original_bill_id]);
+      const bill = billRes.rows[0] || {};
+      const refundPaymentMode = String(body.refund_payment_mode || body.payment_mode || bill.payment_mode || 'cash').trim() || 'cash';
+      const refundReference = String(body.refund_reference || body.reference_no || '').trim();
+      const returnNumber = returnRow.return_number || `RET-${returnId}-${Date.now().toString().slice(-6)}`;
+      const receipt = {
+        returnNumber,
+        returnId,
+        billNumber: bill.bill_number || returnRow.original_bill_id,
+        customerName: bill.customer_name || 'Walk-in Customer',
+        customerMobile: bill.customer_mobile || '',
+        storeId: returnRow.store_id,
+        refundAmount: toNumber(returnRow.refund_amount),
+        refundPaymentMode,
+        refundReference,
+        completedBy: auth.user.id,
+        completedAt: new Date().toISOString(),
+      };
+
+      const completed = await query(
+        `UPDATE sales_returns
+         SET status = 'completed',
+             completed_by = $1,
+             completed_at = NOW(),
+             refund_payment_mode = $2,
+             refund_reference = $3,
+             return_number = $4,
+             meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object('receipt', $5::jsonb),
+             updated_at = NOW()
+         WHERE id = $6
+         RETURNING *`,
+        [auth.user.id, refundPaymentMode, refundReference || null, returnNumber, JSON.stringify(receipt), returnId]
+      );
+
+      return successResponse({ ...completed.rows[0], receipt }, 'Return completed and receipt generated');
+    }
+
     if (returnRow.status !== 'pending') return errorResponse('This request is already reviewed', 400);
     if (!canReviewReturn(auth.user, returnRow.store_id)) {
       return errorResponse('Only this store admin or super admin can review this request', 403);

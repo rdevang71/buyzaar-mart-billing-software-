@@ -1,10 +1,7 @@
 import { query } from '@/lib/db';
+import { makeSchemaEnsurer } from '@/lib/schemaGuard';
 
-let ensured = false;
-
-export async function ensureStoresSchema() {
-  if (ensured) return;
-
+export const ensureStoresSchema = makeSchemaEnsurer('stores', async () => {
   await query(`
     CREATE TABLE IF NOT EXISTS stores (
       id BIGSERIAL PRIMARY KEY,
@@ -45,8 +42,6 @@ export async function ensureStoresSchema() {
       ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
   `);
-
-  ensured = true;
-}
+});
 
 export default null;

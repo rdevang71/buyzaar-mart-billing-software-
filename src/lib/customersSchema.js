@@ -1,11 +1,7 @@
 import { query } from '@/lib/db';
+import { makeSchemaEnsurer } from '@/lib/schemaGuard';
 
-let ensured = false;
-
-export async function ensureCustomersSchema() {
-  if (ensured) return;
-
-  await query(`
+export const ensureCustomersSchema = makeSchemaEnsurer('customers', () => query(`
     CREATE TABLE IF NOT EXISTS customers (
       id BIGSERIAL PRIMARY KEY,
       first_name VARCHAR(120) NOT NULL,
@@ -48,9 +44,6 @@ export async function ensureCustomersSchema() {
     CREATE INDEX IF NOT EXISTS idx_customers_customer_type ON customers(customer_type);
     ALTER TABLE customers ADD COLUMN IF NOT EXISTS customer_group_id BIGINT;
     CREATE INDEX IF NOT EXISTS idx_customers_customer_group_id ON customers(customer_group_id);
-  `);
-
-  ensured = true;
-}
+`));
 
 export default null;
