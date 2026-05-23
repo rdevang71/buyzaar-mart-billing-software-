@@ -2,12 +2,140 @@ import { NextResponse } from 'next/server';
 import { getClient, query } from '@/lib/db';
 import { ensureStockInSchema } from '@/lib/stockInSchema';
 import { ensureInventoryBatchSchema, receiveBatchStock } from '@/lib/inventoryBatching';
+import { ensureStoresSchema } from '@/lib/storesSchema';
+
+function toNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeDate(value) {
+  if (!value) return null;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  }
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function normalizeBatchRows(item) {
+  const rawBatches = Array.isArray(item.batches) ? item.batches : [];
+  const fallbackQty = toNumber(item.qty || 0);
+  if (!rawBatches.length) {
+    return [{
+      qty: fallbackQty,
+      batchNo: item.batch_no || item.batchNo || '',
+      mfgDate: item.mfg_date || item.mfgDate || null,
+      expiryDate: item.expiry_date || item.expiryDate || null,
+    }];
+  }
+
+  return rawBatches
+    .map((batch) => ({
+      qty: toNumber(batch.qty || 0),
+      batchNo: batch.batch_no || batch.batchNo || '',
+      mfgDate: batch.mfg_date || batch.mfgDate || null,
+      expiryDate: batch.expiry_date || batch.expiryDate || null,
+    }))
+    .filter((batch) => batch.qty > 0);
+}
+
+async function allocateWarehouseBatchStock(client, {
+  productId,
+  qty,
+  referenceId,
+  sourceItemId = null,
+  meta = {},
+}) {
+  const requiredQty = toNumber(qty);
+  if (!productId || requiredQty <= 0) return [];
+
+  const batchRes = await client.query(
+    `SELECT ib.id, ib.product_id, ib.store_id, ib.batch_no, ib.mfg_date, ib.expiry_date,
+            ib.available_qty, ib.cost_price
+     FROM inventory_batches ib
+     INNER JOIN stores s ON s.id = ib.store_id
+     WHERE ib.product_id = $1
+       AND LOWER(COALESCE(s.meta->>'locationType', 'Warehouse')) = 'warehouse'
+       AND ib.status = 'active'
+       AND ib.available_qty > 0
+       AND (ib.expiry_date IS NULL OR ib.expiry_date >= CURRENT_DATE)
+     ORDER BY CASE WHEN ib.expiry_date IS NULL THEN 1 ELSE 0 END ASC,
+              ib.expiry_date ASC,
+              ib.created_at ASC,
+              ib.id ASC
+     FOR UPDATE`,
+    [Number(productId)]
+  );
+
+  let remaining = requiredQty;
+  const allocations = [];
+
+  for (const batch of batchRes.rows) {
+    if (remaining <= 0) break;
+    const usedQty = Math.min(toNumber(batch.available_qty), remaining);
+    if (usedQty <= 0) continue;
+
+    await client.query(
+      `UPDATE inventory_batches
+       SET available_qty = available_qty - $1,
+           status = CASE WHEN available_qty - $1 <= 0 THEN 'depleted' ELSE status END,
+           updated_at = NOW()
+       WHERE id = $2`,
+      [usedQty, batch.id]
+    );
+
+    await client.query(
+      `INSERT INTO inventory_batch_movements (
+         batch_id, product_id, store_id, direction, qty, reference_type, reference_id, source_item_id, meta
+       ) VALUES ($1, $2, $3, 'out', $4, 'stock_in_to_store', $5, $6, $7::jsonb)`,
+      [
+        batch.id,
+        Number(productId),
+        Number(batch.store_id),
+        usedQty,
+        String(referenceId),
+        sourceItemId,
+        JSON.stringify({ ...meta, destinationType: 'store_stock_in' }),
+      ]
+    );
+
+    allocations.push({
+      batchId: Number(batch.id),
+      batchNo: batch.batch_no,
+      mfgDate: normalizeDate(batch.mfg_date),
+      expiryDate: normalizeDate(batch.expiry_date),
+      qty: usedQty,
+      costPrice: toNumber(batch.cost_price),
+      sourceWarehouseId: Number(batch.store_id),
+    });
+    remaining = Math.round((remaining - usedQty) * 1000) / 1000;
+  }
+
+  if (remaining > 0) {
+    throw new Error(`Insufficient warehouse batch stock for product ${productId}. Short by ${remaining}`);
+  }
+
+  return allocations;
+}
 
 export async function POST(request, { params }) {
   const { id } = await params;
     try {
       await ensureStockInSchema();
       await ensureInventoryBatchSchema();
+      await ensureStoresSchema();
       const body = await request.json();
     const form  = body.form  || {};
     const items = body.items || [];
@@ -35,7 +163,10 @@ export async function POST(request, { params }) {
 
     // ── 2. Fetch destination store (needed for product_saleability upsert) ───
     const stockInRow = await query(
-      `SELECT id, status, destination_id FROM stock_in WHERE id = $1`,
+      `SELECT si.id, si.status, si.destination_id, stores.meta AS destination_meta
+       FROM stock_in si
+       LEFT JOIN stores ON stores.id = si.destination_id
+       WHERE si.id = $1`,
       [id]
     );
     if (!stockInRow.rows.length) {
@@ -47,6 +178,79 @@ export async function POST(request, { params }) {
     const destinationId = stockInRow.rows[0].destination_id;
 
     // ── 3. Compute totals ─────────────────────────────────────────────────────
+    const destinationMeta = typeof stockInRow.rows[0].destination_meta === 'object'
+      ? stockInRow.rows[0].destination_meta
+      : {};
+    const destinationLocationType = String(destinationMeta.locationType || 'Warehouse').toLowerCase();
+    const isStoreDestination = destinationLocationType === 'store';
+    const isWarehouseDestination = destinationLocationType === 'warehouse';
+
+    if (isWarehouseDestination) {
+      for (const item of items) {
+        const batchRows = normalizeBatchRows(item);
+        const itemQty = toNumber(item.qty || 0);
+        const batchQty = batchRows.reduce((sum, batch) => sum + toNumber(batch.qty), 0);
+        if (batchRows.length === 0 || batchQty <= 0) {
+          return NextResponse.json({ error: `Add at least one batch for ${item.name || 'product'}` }, { status: 400 });
+        }
+        if (Math.abs(batchQty - itemQty) > 0.001) {
+          return NextResponse.json(
+            { error: `Batch quantity for ${item.name || 'product'} must equal product quantity` },
+            { status: 400 }
+          );
+        }
+
+        const invalidExpiry = batchRows.find((batch) => {
+          const normalized = normalizeDate(batch.expiryDate);
+          return batch.expiryDate && !normalized;
+        });
+        if (invalidExpiry) {
+          return NextResponse.json({ error: `Invalid expiry date for ${item.name || 'product'}` }, { status: 400 });
+        }
+      }
+    }
+
+    if (isStoreDestination) {
+      const requestedByProduct = items.reduce((acc, item) => {
+        const pid = Number(item.product_id);
+        const qty = Number(item.qty || 0);
+        if (pid && qty > 0) acc[pid] = (acc[pid] || 0) + qty;
+        return acc;
+      }, {});
+      const requestedProductIds = Object.keys(requestedByProduct).map(Number);
+
+      const warehouseStockRes = await query(
+        `SELECT ib.product_id AS id, SUM(ib.available_qty) AS available_qty
+         FROM inventory_batches ib
+         INNER JOIN stores s ON s.id = ib.store_id
+         WHERE ib.product_id = ANY($1::int[])
+           AND LOWER(COALESCE(s.meta->>'locationType', 'Warehouse')) = 'warehouse'
+           AND ib.status = 'active'
+           AND ib.available_qty > 0
+           AND (ib.expiry_date IS NULL OR ib.expiry_date >= CURRENT_DATE)
+         GROUP BY ib.product_id`,
+        [requestedProductIds]
+      );
+      const warehouseStockByProduct = Object.fromEntries(
+        warehouseStockRes.rows.map((row) => [Number(row.id), Number(row.available_qty || 0)])
+      );
+      const exceeded = requestedProductIds
+        .map((pid) => ({
+          name: catalogMap[pid]?.name || `Product ${pid}`,
+          requested: requestedByProduct[pid],
+          available: warehouseStockByProduct[pid] || 0,
+        }))
+        .filter((row) => row.requested > row.available);
+
+      if (exceeded.length) {
+        const first = exceeded[0];
+        return NextResponse.json(
+          { error: `${first.name} has only ${first.available} quantity available in warehouse` },
+          { status: 400 }
+        );
+      }
+    }
+
     let totalItems = 0;
     let totalCost  = Number(form.other_charges || 0);
     let totalTax   = 0;
@@ -75,36 +279,88 @@ export async function POST(request, { params }) {
         const costPrice    = Number(item.cost_price || 0);
         const taxValue     = Number(item.tax_value  || 0);
 
-        const stockInItemRes = await client.query(
-          `INSERT INTO stock_in_items
-             (stock_in_id, product_id, product_name, qty, cost_price, tax_value, batch_no, mfg_date, expiry_date, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
-           RETURNING id`,
-          [
-            id,
-            pid,
-            productName,
+        if (isStoreDestination) {
+          const allocations = await allocateWarehouseBatchStock(client, {
+            productId: pid,
             qty,
-            costPrice,
-            taxValue,
-            item.batch_no || item.batchNo || null,
-            item.mfg_date || item.mfgDate || null,
-            item.expiry_date || item.expiryDate || null,
-          ]
-        );
+            referenceId: id,
+            meta: { productName, invoiceNumber: form.invoice_number || null },
+          });
 
-        await receiveBatchStock(client, {
-          stockInId: id,
-          stockInItemId: stockInItemRes.rows[0]?.id,
-          productId: pid,
-          storeId: destinationId,
-          qty,
-          costPrice,
-          batchNo: item.batch_no || item.batchNo,
-          mfgDate: item.mfg_date || item.mfgDate,
-          expiryDate: item.expiry_date || item.expiryDate,
-          meta: { productName, invoiceNumber: form.invoice_number || null },
-        });
+          for (const allocation of allocations) {
+            const stockInItemRes = await client.query(
+              `INSERT INTO stock_in_items
+                 (stock_in_id, product_id, product_name, qty, cost_price, tax_value, batch_no, mfg_date, expiry_date, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+               RETURNING id`,
+              [
+                id,
+                pid,
+                productName,
+                allocation.qty,
+                allocation.costPrice || costPrice,
+                taxValue,
+                allocation.batchNo || null,
+                allocation.mfgDate || null,
+                allocation.expiryDate || null,
+              ]
+            );
+
+            await receiveBatchStock(client, {
+              stockInId: id,
+              stockInItemId: stockInItemRes.rows[0]?.id,
+              productId: pid,
+              storeId: destinationId,
+              qty: allocation.qty,
+              costPrice: allocation.costPrice || costPrice,
+              batchNo: allocation.batchNo,
+              mfgDate: allocation.mfgDate,
+              expiryDate: allocation.expiryDate,
+              meta: {
+                productName,
+                invoiceNumber: form.invoice_number || null,
+                source: 'warehouse_stock_in',
+                sourceWarehouseId: allocation.sourceWarehouseId,
+                sourceBatchId: allocation.batchId,
+              },
+            });
+          }
+        } else {
+          const batchRows = normalizeBatchRows(item);
+
+          for (const batch of batchRows) {
+            const stockInItemRes = await client.query(
+              `INSERT INTO stock_in_items
+                 (stock_in_id, product_id, product_name, qty, cost_price, tax_value, batch_no, mfg_date, expiry_date, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+               RETURNING id`,
+              [
+                id,
+                pid,
+                productName,
+                batch.qty,
+                costPrice,
+                taxValue,
+                batch.batchNo || null,
+                batch.mfgDate || null,
+                batch.expiryDate || null,
+              ]
+            );
+
+            await receiveBatchStock(client, {
+              stockInId: id,
+              stockInItemId: stockInItemRes.rows[0]?.id,
+              productId: pid,
+              storeId: destinationId,
+              qty: batch.qty,
+              costPrice,
+              batchNo: batch.batchNo,
+              mfgDate: batch.mfgDate,
+              expiryDate: batch.expiryDate,
+              meta: { productName, invoiceNumber: form.invoice_number || null },
+            });
+          }
+        }
 
         // ── 5. Update products.cost_price if the GRN cost differs ─────────────
         //    Only update when the incoming cost is > 0 so zeroed-out entries

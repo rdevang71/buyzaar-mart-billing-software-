@@ -63,12 +63,7 @@ async function ensureProductDiscountSchema() {
 
 function getAvailableStockSql(storeParam = '$1') {
   return `
-    COALESCE(
-      batch_totals.qty,
-      COALESCE(stock_in_totals.qty, 0)
-      - COALESCE(sales_totals.qty, 0)
-      - COALESCE(stock_out_totals.qty, 0)
-    )
+    COALESCE(batch_totals.qty, 0)
   `.trim();
 }
 

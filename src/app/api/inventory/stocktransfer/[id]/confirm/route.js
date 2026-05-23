@@ -76,6 +76,7 @@ export async function POST(request, { params }) {
             qty: allocation.qty,
             costPrice: allocation.costPrice || item.cost_price || 0,
             batchNo: allocation.batchNo,
+            mfgDate: allocation.mfgDate,
             expiryDate: allocation.expiryDate,
             meta: {
               source: 'stock_transfer',
