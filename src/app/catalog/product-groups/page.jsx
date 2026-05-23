@@ -12,6 +12,7 @@ export default function ProductGroupsPage() {
   return (
     <CatalogDataPage
       endpoint="/api/catalog/product-groups"
+      bulkImportType="product-groups"
       breadcrumbs={[
         { label: 'Catalog', href: '/catalog' },
         { label: 'Product', href: '/catalog/products' },

@@ -81,16 +81,61 @@ export default function CatalogListPage({
     return [1,'…',curPage-1,curPage,curPage+1,'…',curTotalPages];
   };
 
-  // ── Download template ──────────────────────────────────────
-  const downloadTemplate = () => {
-    const headers = bulkImportType === 'categories'
-      ? [['name','description','sort_sequence','is_active']]
-      : [['name','category_name','description','sort_sequence','is_active']];
+  const getTemplateFileName = () => {
+    if (bulkImportType === 'products') return 'products-import-template.xlsx';
+    return `${bulkImportType || 'import'}-template.xlsx`;
+  };
 
+  // ── Download template ──────────────────────────────────────
+  const downloadTemplate = async () => {
+    const baseHeaders = bulkImportType === 'categories'
+      ? ['name', 'description', 'sort_sequence', 'is_active']
+      : bulkImportType === 'sub-categories'
+        ? ['name', 'category_name', 'description', 'sort_sequence', 'is_active']
+      : bulkImportType === 'product-groups'
+        ? ['name', 'description', 'category_name', 'is_active']
+        : [
+            'name',
+            'description',
+            'barcode',
+            'sku',
+            'category_name',
+            'sub_category_name',
+            'brand_name',
+            'manufacturer_name',
+            'department_name',
+            'tax_name',
+            'mrp',
+            'selling_price',
+            'cost_price',
+            'unit',
+            'is_active',
+            'is_service',
+          'allow_discount_on_pos',
+          'image_url',
+            'manage_inventory_enabled',
+            'inventory_store_name',
+            'opening_stock_qty',
+            'default_low_stock_value',
+            'disable_billing_on_zero',
+            'disable_sales_on_expiry',
+            'inventory_method',
+            'stock_item_type',
+            'dimension_unit',
+            'length',
+            'width',
+            'height',
+            'weight_unit',
+            'weight_value',
+          ];
+
+    // Keep template headers strictly aligned with the product creation form.
+    // Skip dynamic per-store columns to avoid malformed/duplicate headers.
+    const headers = [...baseHeaders];
     const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet(headers);
+    const ws = XLSX.utils.aoa_to_sheet([headers]);
     XLSX.utils.book_append_sheet(wb, ws, 'Template');
-    XLSX.writeFile(wb, `${bulkImportType || 'import'}-template.xlsx`);
+    XLSX.writeFile(wb, getTemplateFileName());
     setBulkOpen(false);
   };
 
@@ -135,32 +180,50 @@ export default function CatalogListPage({
     }
   };
 
-  const bulkMenuItems = [
-    ...(bulkImportType ? [
-      { label: `Create ${title}`,          action: onCreateClick },
-      { label: `Import ${title} (Excel)`,  action: () => fileRef.current?.click() },
-      { label: `Download Template`,        action: downloadTemplate },
-      { label: `Export ${title}`,          action: () => {
-          const ws = XLSX.utils.json_to_sheet(rows);
-          const wb = XLSX.utils.book_new();
-          XLSX.utils.book_append_sheet(wb, ws, title);
-          XLSX.writeFile(wb, `${title.toLowerCase().replace(' ', '-')}-export.xlsx`);
-          setBulkOpen(false);
-        }
-      },
-    ] : [
-      { label: `Create ${title}`,   action: onCreateClick },
-      { label: `Edit ${title}`,     action: null },
-      { label: `Export ${title}`,   action: () => {
-          const ws = XLSX.utils.json_to_sheet(rows);
-          const wb = XLSX.utils.book_new();
-          XLSX.utils.book_append_sheet(wb, ws, title);
-          XLSX.writeFile(wb, `${title.toLowerCase().replace(' ', '-')}-export.xlsx`);
-          setBulkOpen(false);
-        }
-      },
-    ]),
-  ];
+  const bulkMenuItems = bulkImportType === 'products'
+    ? [
+        { label: 'Import Products (Excel)', action: () => fileRef.current?.click() },
+        { label: 'Download Template', action: downloadTemplate },
+      ]
+    : bulkImportType === 'product-groups'
+      ? [
+          { label: 'Import Product Groups (Excel)', action: () => fileRef.current?.click() },
+          { label: 'Download Template', action: downloadTemplate },
+          { label: 'Export Product Groups', action: () => {
+              const ws = XLSX.utils.json_to_sheet(rows);
+              const wb = XLSX.utils.book_new();
+              XLSX.utils.book_append_sheet(wb, ws, title);
+              XLSX.writeFile(wb, `${title.toLowerCase().replace(' ', '-')}-export.xlsx`);
+              setBulkOpen(false);
+            }
+          },
+        ]
+    : [
+        ...(bulkImportType ? [
+          { label: `Create ${title}`,          action: onCreateClick },
+          { label: `Import ${title} (Excel)`,  action: () => fileRef.current?.click() },
+          { label: `Download Template`,        action: downloadTemplate },
+          { label: `Export ${title}`,          action: () => {
+              const ws = XLSX.utils.json_to_sheet(rows);
+              const wb = XLSX.utils.book_new();
+              XLSX.utils.book_append_sheet(wb, ws, title);
+              XLSX.writeFile(wb, `${title.toLowerCase().replace(' ', '-')}-export.xlsx`);
+              setBulkOpen(false);
+            }
+          },
+        ] : [
+          { label: `Create ${title}`,   action: onCreateClick },
+          { label: `Edit ${title}`,     action: null },
+          { label: `Export ${title}`,   action: () => {
+              const ws = XLSX.utils.json_to_sheet(rows);
+              const wb = XLSX.utils.book_new();
+              XLSX.utils.book_append_sheet(wb, ws, title);
+              XLSX.writeFile(wb, `${title.toLowerCase().replace(' ', '-')}-export.xlsx`);
+              setBulkOpen(false);
+            }
+          },
+        ]),
+      ];
 
   return (
     <div className="min-h-screen bg-gray-100 p-6 font-sans text-sm text-gray-800">
