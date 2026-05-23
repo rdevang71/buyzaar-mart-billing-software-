@@ -899,6 +899,26 @@ export default function POSPage() {
         <div style={{ background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)' }}
           className="rounded-2xl mb-4 px-5 py-3.5 flex items-center justify-between gap-4 shadow-lg shadow-indigo-900/20">
           <div className="flex items-center gap-3 min-w-0 flex-wrap">
+            <div className="md:hidden flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => router.back()}
+                className="w-9 h-9 rounded-xl border border-white/20 bg-white/10 text-white flex items-center justify-center active:bg-white/20"
+                aria-label="Go back"
+                title="Back"
+              >
+                <i className="ti ti-arrow-left text-[18px]" />
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push('/home')}
+                className="w-9 h-9 rounded-xl border border-white/20 bg-white/10 text-white flex items-center justify-center active:bg-white/20"
+                aria-label="Go home"
+                title="Home"
+              >
+                <i className="ti ti-home text-[18px]" />
+              </button>
+            </div>
             <div>
               <p className="text-indigo-300 text-[10px] font-black tracking-[0.15em] uppercase">Point of Sale</p>
               <h1 className="text-xl font-black text-white mt-0.5 leading-tight">POS Billing</h1>
