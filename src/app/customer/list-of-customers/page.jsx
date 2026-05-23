@@ -288,14 +288,14 @@ export default function ListOfCustomersPage() {
           <h1 className="text-[28px] font-semibold text-gray-900 leading-tight">List Of Customers</h1>
           <p className="text-[12.5px] text-gray-400 mt-1">Registered customers plus customers captured from POS bills</p>
         </div>
-
+{/* 
         <button
           onClick={openCreateForm}
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-[13px] font-medium text-white hover:bg-blue-700 transition-colors flex-shrink-0"
         >
           <i className="ti ti-plus text-[16px]" />
           Create Customer
-        </button>
+        </button> */}
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
