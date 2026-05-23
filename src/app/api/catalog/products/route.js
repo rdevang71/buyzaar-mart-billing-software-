@@ -3,6 +3,7 @@ import { successResponse, errorResponse, validationError } from '@/lib/api-respo
 import { ensureStockInSchema } from '@/lib/stockInSchema';
 import { ensureStockOutSchema } from '@/lib/stockOutSchema';
 import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
+import { ensureInventoryBatchSchema, receiveBatchStock } from '@/lib/inventoryBatching';
 
 async function ensureProductDiscountSchema() {
   await query(`
@@ -18,6 +19,7 @@ export async function GET(request) {
       ensureStockInSchema(),
       ensureStockOutSchema(),
       ensureSalesBillingSchema(),
+      ensureInventoryBatchSchema(),
     ]);
 
     await ensureProductDiscountSchema();
@@ -84,11 +86,7 @@ export async function GET(request) {
         ih.name AS income_head_name,
         t.name  AS tax_name,
         t.rate  AS tax_rate,
-        GREATEST(0,
-          COALESCE(sin_agg.qty, 0)
-          - COALESCE(sout_agg.qty, 0)
-          - COALESCE(sold_agg.qty, 0)
-        ) AS actual_stock
+        COALESCE(batch_agg.qty, 0) AS actual_stock
        FROM products p
        LEFT JOIN categories     c   ON p.category_id     = c.id
        LEFT JOIN sub_categories sc  ON p.sub_category_id = sc.id
@@ -98,25 +96,13 @@ export async function GET(request) {
        LEFT JOIN income_heads   ih  ON p.income_head_id  = ih.id
        LEFT JOIN taxes          t   ON p.tax_id          = t.id
        LEFT JOIN (
-         SELECT sii.product_id, SUM(sii.qty) AS qty
-         FROM stock_in_items sii
-         JOIN stock_in si ON si.id = sii.stock_in_id AND si.status = 'confirmed'
-         GROUP BY sii.product_id
-       ) sin_agg  ON sin_agg.product_id  = p.id
-       LEFT JOIN (
-         SELECT soi.product_id, SUM(soi.qty) AS qty
-         FROM stock_out_items soi
-         JOIN stock_out so ON so.id = soi.stock_out_id
-           AND so.status = 'confirmed'
-           AND COALESCE(so.reference_type, '') <> 'sales_bill'
-         GROUP BY soi.product_id
-       ) sout_agg ON sout_agg.product_id = p.id
-       LEFT JOIN (
-         SELECT sbi.product_id, SUM(sbi.qty) AS qty
-         FROM sales_bill_items sbi
-         JOIN sales_bills sb ON sb.id = sbi.sales_bill_id AND sb.status IN ('paid', 'completed')
-         GROUP BY sbi.product_id
-       ) sold_agg ON sold_agg.product_id = p.id
+         SELECT product_id, SUM(available_qty) AS qty
+         FROM inventory_batches
+         WHERE status = 'active'
+           AND available_qty > 0
+           AND (expiry_date IS NULL OR expiry_date >= CURRENT_DATE)
+         GROUP BY product_id
+       ) batch_agg ON batch_agg.product_id = p.id
        ${where}
        ORDER BY p.id DESC
        LIMIT $${i} OFFSET $${i + 1}`,
@@ -139,6 +125,7 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     await ensureStockInSchema();
+    await ensureInventoryBatchSchema();
     await ensureProductDiscountSchema();
     const body = await request.json();
     const { name } = body;
@@ -263,11 +250,25 @@ export async function POST(request) {
 
         const stockInId = stockInInsert.rows[0].id;
         await client.query('UPDATE stock_in SET transaction_id = $1 WHERE id = $2', [`STK-${String(stockInId).padStart(4, '0')}`, stockInId]);
-        await client.query(
+        const stockInItemRes = await client.query(
           `INSERT INTO stock_in_items (stock_in_id, product_id, product_name, qty, cost_price, tax_value, created_at)
-           VALUES ($1, $2, $3, $4, $5, 0, NOW())`,
+           VALUES ($1, $2, $3, $4, $5, 0, NOW())
+           RETURNING id`,
           [stockInId, createdProduct.id, createdProduct.name, openingStockQty, Number(body.cost_price || 0)]
         );
+
+        await receiveBatchStock(client, {
+          stockInId,
+          stockInItemId: stockInItemRes.rows[0]?.id,
+          productId: createdProduct.id,
+          storeId: inventoryStoreId,
+          qty: openingStockQty,
+          costPrice: Number(body.cost_price || 0),
+          batchNo: body.batch_no || body.batchNo || `OPEN-${createdProduct.id}`,
+          mfgDate: body.mfg_date || body.mfgDate || null,
+          expiryDate: body.expiry_date || body.expiryDate || null,
+          meta: { source: 'product-create', productName: createdProduct.name },
+        });
       }
 
       await client.query('COMMIT');

@@ -1,6 +1,6 @@
 import { query } from '@/lib/db';
 
-const BATCH_SCHEMA_VERSION = 1;
+const BATCH_SCHEMA_VERSION = 2;
 const globalForInventoryBatching = globalThis;
 
 function toNumber(value, fallback = 0) {
@@ -10,9 +10,23 @@ function toNumber(value, fallback = 0) {
 
 function normalizeDate(value) {
   if (!value) return null;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  }
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null;
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  return date.toISOString().slice(0, 10);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function buildBatchNumber({ stockInId, productId, batchNo }) {
@@ -153,6 +167,18 @@ export async function ensureInventoryBatchSchema() {
       END IF;
     END
     $$;
+
+    UPDATE inventory_batches destination
+    SET mfg_date = source.mfg_date,
+        expiry_date = source.expiry_date,
+        updated_at = NOW()
+    FROM inventory_batches source
+    WHERE destination.meta ? 'sourceBatchId'
+      AND source.id = NULLIF(destination.meta->>'sourceBatchId', '')::BIGINT
+      AND (
+        destination.mfg_date IS DISTINCT FROM source.mfg_date
+        OR destination.expiry_date IS DISTINCT FROM source.expiry_date
+      );
   `);
 
   globalForInventoryBatching._inventoryBatchSchemaVersion = BATCH_SCHEMA_VERSION;
@@ -245,7 +271,7 @@ export async function allocateBatchStock(client, {
     : 'CASE WHEN expiry_date IS NULL THEN 1 ELSE 0 END ASC, expiry_date ASC, created_at ASC, id ASC';
 
   const batchRes = await client.query(
-    `SELECT id, product_id, store_id, batch_no, expiry_date, available_qty, cost_price
+    `SELECT id, product_id, store_id, batch_no, mfg_date, expiry_date, available_qty, cost_price
      FROM inventory_batches
      WHERE product_id = $1
        AND store_id = $2
@@ -294,7 +320,8 @@ export async function allocateBatchStock(client, {
     allocations.push({
       batchId: Number(batch.id),
       batchNo: batch.batch_no,
-      expiryDate: batch.expiry_date,
+      mfgDate: normalizeDate(batch.mfg_date),
+      expiryDate: normalizeDate(batch.expiry_date),
       qty: usedQty,
       costPrice: toNumber(batch.cost_price),
       strategy: mode,
