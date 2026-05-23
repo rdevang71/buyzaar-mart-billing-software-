@@ -84,6 +84,7 @@ const STORAGE_KEYS = {
   DRAFT: 'pos-draft-v3',
   HELD_BILLS: 'pos-held-bills-v3',
   QUEUE: 'pos-queue-v3',
+  OFFLINE_BILLS: 'pos-offline-bills-v3',
 };
 
 function readStorage(key, fallback) {
@@ -154,6 +155,7 @@ export default function POSPage() {
   const [paymentMode, setPaymentMode] = useState('cash');
   const [payments, setPayments] = useState([emptyPayment()]);
   const [isOffline, setIsOffline] = useState(false);
+  const [pendingQueueCount, setPendingQueueCount] = useState(0);
   const [toast, setToast] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [openSessionModal, setOpenSessionModal] = useState(false);
@@ -253,6 +255,59 @@ export default function POSPage() {
     ));
   }, [search, products]);
 
+  // ── OFFLINE SYNC ──
+  const syncOfflineQueue = useCallback(async () => {
+    const queue = readStorage(STORAGE_KEYS.QUEUE, []);
+    if (queue.length === 0) return;
+
+    let synced = 0;
+    const remaining = [];
+
+    for (const item of queue) {
+      try {
+        const res = await fetch('/api/sales-order/pos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...item.payload,
+            payments: [{ method: item.payload.paymentMode, amount: toNumber(item.totals?.grandTotal || 0) }],
+          }),
+        });
+        const json = await res.json();
+        if (json.success) {
+          synced++;
+          const savedBill = json.data?.bill;
+          if (savedBill) {
+            // Replace the local offline bill with the confirmed server bill
+            setRecentBills((current) => {
+              const filtered = current.filter(
+                (b) => b.billNumber !== item.payload.invoiceNumber && b.invoiceNumber !== item.payload.invoiceNumber
+              );
+              return [{ ...savedBill, isOffline: false }, ...filtered].slice(0, 20);
+            });
+          }
+          // Remove from offline-bills storage too
+          const offlineBills = readStorage(STORAGE_KEYS.OFFLINE_BILLS, []);
+          writeStorage(
+            STORAGE_KEYS.OFFLINE_BILLS,
+            offlineBills.filter((b) => b.billNumber !== item.payload.invoiceNumber)
+          );
+        } else {
+          remaining.push(item);
+        }
+      } catch {
+        remaining.push(item);
+      }
+    }
+
+    writeStorage(STORAGE_KEYS.QUEUE, remaining);
+    setPendingQueueCount(remaining.length);
+    if (synced > 0) {
+      showToast(`✓ ${synced} offline bill${synced > 1 ? 's' : ''} synced & stock updated!`);
+      loadPOSData(); // Refresh products to show updated stock
+    }
+  }, [loadPOSData]);
+
   // ── INIT ──
   useEffect(() => {
     const localDeviceUid = getOrCreateLocalId('pos-device-uid-v1', 'POSDEV');
@@ -263,13 +318,59 @@ export default function POSPage() {
     if (savedCounterName) setCounterName(savedCounterName);
     loadAuth();
     setHeldBills(readStorage(STORAGE_KEYS.HELD_BILLS, []));
+    // Restore offline bills into recent bills on page load
+    const savedOfflineBills = readStorage(STORAGE_KEYS.OFFLINE_BILLS, []);
+    if (savedOfflineBills.length > 0) {
+      setRecentBills((current) => {
+        const merged = [...savedOfflineBills, ...current];
+        const seen = new Set();
+        return merged.filter((b) => {
+          const key = b.billNumber || b.id;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        }).slice(0, 20);
+      });
+    }
+    setIsOffline(typeof navigator !== 'undefined' ? !navigator.onLine : false);
+    setPendingQueueCount(readStorage(STORAGE_KEYS.QUEUE, []).length);
     if (barcodeRef.current) barcodeRef.current.focus();
   }, [loadAuth]);
+
+  // Online / Offline event listeners
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOffline(false);
+      const pending = readStorage(STORAGE_KEYS.QUEUE, []);
+      if (pending.length > 0) {
+        syncOfflineQueue(); // Auto-sync silently; toast shown after success
+      }
+    };
+    const handleOffline = () => {
+      setIsOffline(true);
+      showToast('You are offline. Bills will be saved locally.', 'error');
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+      }
+    };
+  }, [syncOfflineQueue]);
 
   useEffect(() => {
     if (!deviceUid) return;
     loadPOSData();
-  }, [deviceUid, loadPOSData]);
+    // Auto-sync any pending bills when POS loads while online
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      const pending = readStorage(STORAGE_KEYS.QUEUE, []);
+      if (pending.length > 0) syncOfflineQueue();
+    }
+  }, [deviceUid, loadPOSData, syncOfflineQueue]);
 
   useEffect(() => {
     const draft = readStorage(STORAGE_KEYS.DRAFT, null);
@@ -622,10 +723,66 @@ export default function POSPage() {
         roundOff: toNumber(roundOff), invoiceNumber: generateInvoiceNumber(),
       };
       if (isOffline || !navigator.onLine) {
+        // 1. Build a local offline bill object
+        const offlineBill = {
+          id: `OFFLINE-${Date.now()}`,
+          billNumber: payload.invoiceNumber,
+          invoiceNumber: payload.invoiceNumber,
+          customerName: payload.customerName,
+          customerMobile,
+          paymentMode,
+          grandTotal: cartTotals.grandTotal,
+          subtotal: cartTotals.subtotal,
+          discountTotal: cartTotals.discount,
+          taxTotal: cartTotals.taxTotal,
+          createdAt: new Date().toISOString(),
+          isOffline: true,
+          status: 'pending_sync',
+        };
+
+        // 2. Save to offline queue for later server sync
         const queue = readStorage(STORAGE_KEYS.QUEUE, []);
-        queue.push({ payload, createdAt: new Date().toISOString() });
+        queue.push({ payload, totals: cartTotals, createdAt: new Date().toISOString() });
         writeStorage(STORAGE_KEYS.QUEUE, queue);
-        showToast('Bill saved offline. Will sync when online.'); clearCart(); return;
+        setPendingQueueCount(queue.length);
+
+        // 3. Persist offline bill so it survives page refresh
+        const offlineBills = readStorage(STORAGE_KEYS.OFFLINE_BILLS, []);
+        writeStorage(STORAGE_KEYS.OFFLINE_BILLS, [offlineBill, ...offlineBills].slice(0, 20));
+
+        // 4. Add to recent bills immediately (visible in UI right now)
+        setRecentBills((current) => [offlineBill, ...current].slice(0, 20));
+
+        // 5. Build receipt items for printing
+        const receiptItems = cart.map((item) => ({
+          ...item,
+          name: item.name,
+          selling_price: item.sellingPrice,
+          line_total:
+            item.qty * item.sellingPrice -
+            toNumber(item.discountAmount) +
+            (Math.max(0, item.qty * item.sellingPrice - toNumber(item.discountAmount)) *
+              toNumber(item.taxRate)) /
+              100,
+        }));
+
+        // 6. Show receipt modal so cashier can print immediately
+        setReceiptData({
+          bill: {
+            ...offlineBill,
+            publicToken: null,
+          },
+          items: receiptItems,
+          subtotal: cartTotals.subtotal,
+          discount: cartTotals.discount,
+          taxTotal: cartTotals.taxTotal,
+          grandTotal: cartTotals.grandTotal,
+        });
+        setReceiptModal(true);
+
+        showToast('Bill saved offline — will sync when back online', 'info');
+        clearCart();
+        return;
       }
       const res = await fetch('/api/sales-order/pos', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -678,7 +835,7 @@ export default function POSPage() {
         {/* ── TOP BAR ── */}
         <div style={{ background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)' }}
           className="rounded-2xl mb-4 px-5 py-3.5 flex items-center justify-between gap-4 shadow-lg shadow-indigo-900/20">
-          <div className="flex items-center gap-4 min-w-0">
+          <div className="flex items-center gap-3 min-w-0 flex-wrap">
             <div>
               <p className="text-indigo-300 text-[10px] font-black tracking-[0.15em] uppercase">Point of Sale</p>
               <h1 className="text-xl font-black text-white mt-0.5 leading-tight">POS Billing</h1>
@@ -696,6 +853,26 @@ export default function POSPage() {
                 <span className="text-rose-200 text-xs font-semibold">No active session</span>
               </div>
             )}
+            {/* Offline / Auto-sync status */}
+            {isOffline ? (
+              <div className="flex items-center gap-1.5 bg-rose-500/25 border border-rose-400/30 rounded-lg px-3 py-1.5">
+                <span className="w-2 h-2 rounded-full bg-rose-400 shrink-0 animate-pulse"></span>
+                <span className="text-rose-200 text-xs font-bold">OFFLINE</span>
+                {pendingQueueCount > 0 && (
+                  <span className="text-rose-300 text-[10px] font-semibold">
+                    · {pendingQueueCount} pending
+                  </span>
+                )}
+              </div>
+            ) : pendingQueueCount > 0 ? (
+              <div className="flex items-center gap-1.5 bg-emerald-500/20 border border-emerald-400/30 rounded-lg px-3 py-1.5">
+                <svg className="w-3 h-3 text-emerald-400 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 100 16v-4l-3 3 3 3v-4a8 8 0 01-8-8z"/>
+                </svg>
+                <span className="text-emerald-300 text-xs font-semibold">Syncing {pendingQueueCount} bill{pendingQueueCount > 1 ? 's' : ''}…</span>
+              </div>
+            ) : null}
           </div>
 
           <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
@@ -1091,33 +1268,84 @@ export default function POSPage() {
 
             {/* ── RECENT BILLS ── */}
             {recentBills.length > 0 && (
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className={`bg-white rounded-2xl shadow-sm overflow-hidden ${
+                recentBills.some(b => b.isOffline)
+                  ? 'border border-amber-200'
+                  : 'border border-slate-200'
+              }`}>
                 <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-                  <span className="text-xs font-black text-slate-700 tracking-widest uppercase">Recent Bills</span>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
-                    {recentBills.length}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black text-slate-700 tracking-widest uppercase">Recent Bills</span>
+                    {recentBills.some(b => b.isOffline) && (
+                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 animate-pulse">
+                        {recentBills.filter(b => b.isOffline).length} PENDING SYNC
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                      {recentBills.length}
+                    </span>
+                  </div>
                 </div>
-                <div className="max-h-52 overflow-auto divide-y divide-slate-50">
+                <div className="max-h-60 overflow-auto divide-y divide-slate-50">
                   {recentBills.map((bill, idx) => (
-                    <div key={bill.id || bill.billNumber || idx} className="px-3 py-2.5 hover:bg-slate-50/60 transition-colors">
+                    <div
+                      key={bill.id || bill.billNumber || idx}
+                      className={`px-3 py-2.5 transition-colors ${
+                        bill.isOffline ? 'bg-amber-50/40 hover:bg-amber-50' : 'hover:bg-slate-50/60'
+                      }`}
+                    >
                       <div className="flex items-start justify-between gap-2 mb-1.5">
                         <div className="min-w-0">
-                          <p className="font-bold text-slate-900 text-xs truncate">
-                            {bill.billNumber || `Bill ${idx + 1}`}
-                          </p>
+                          <div className="flex items-center gap-1.5">
+                            <p className="font-bold text-slate-900 text-xs truncate">
+                              {bill.billNumber || `Bill ${idx + 1}`}
+                            </p>
+                            {bill.isOffline && (
+                              <span className="text-[8px] font-black px-1 py-0.5 rounded bg-amber-100 text-amber-700 shrink-0 uppercase tracking-wide">
+                                Offline
+                              </span>
+                            )}
+                          </div>
                           <p className="text-[10px] text-slate-500 mt-0.5 truncate">
                             {bill.customerName || 'Walk-in'}{bill.customerMobile ? ` · ${bill.customerMobile}` : ''}
                           </p>
                         </div>
                         <div className="text-right shrink-0">
-                          <p className="font-black text-indigo-600 text-xs">{formatCurrency(bill.grandTotal)}</p>
+                          <p className={`font-black text-xs ${bill.isOffline ? 'text-amber-700' : 'text-indigo-600'}`}>
+                            {formatCurrency(bill.grandTotal)}
+                          </p>
                           <p className="text-[10px] text-slate-400 capitalize mt-0.5">{bill.paymentMode || 'cash'}</p>
                         </div>
                       </div>
-                      <button onClick={() => openReceiptFromBill(bill)}
-                        className="w-full text-[10px] font-bold text-indigo-600 border border-indigo-100 bg-white hover:bg-indigo-50 rounded-lg py-1.5 transition-colors">
-                        View Receipt
+                      <button
+                        onClick={() => {
+                          if (bill.isOffline) {
+                            // For offline bills, reconstruct receipt from stored data
+                            setReceiptData({
+                              bill: {
+                                ...bill,
+                                publicToken: null,
+                              },
+                              items: [],
+                              subtotal: bill.subtotal || bill.grandTotal || 0,
+                              discount: bill.discountTotal || 0,
+                              taxTotal: bill.taxTotal || 0,
+                              grandTotal: bill.grandTotal || 0,
+                            });
+                            setReceiptModal(true);
+                          } else {
+                            openReceiptFromBill(bill);
+                          }
+                        }}
+                        className={`w-full text-[10px] font-bold rounded-lg py-1.5 transition-colors ${
+                          bill.isOffline
+                            ? 'text-amber-700 border border-amber-200 bg-white hover:bg-amber-50'
+                            : 'text-indigo-600 border border-indigo-100 bg-white hover:bg-indigo-50'
+                        }`}
+                      >
+                        {bill.isOffline ? '🖨 Print Offline Receipt' : 'View Receipt'}
                       </button>
                     </div>
                   ))}
@@ -1147,9 +1375,23 @@ export default function POSPage() {
               </div>
 
               <div className="px-5 py-4 text-sm text-slate-800">
+                {/* Offline bill notice */}
+                {receiptData.bill?.isOffline && (
+                  <div className="mb-3 flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5">
+                    <span className="text-amber-500 text-base shrink-0">⚠</span>
+                    <div>
+                      <p className="text-xs font-black text-amber-800">Offline Bill — Pending Server Sync</p>
+                      <p className="text-[10px] text-amber-600 mt-0.5">
+                        This bill will be confirmed & stock updated once internet is restored.
+                      </p>
+                    </div>
+                  </div>
+                )}
                 <div className="text-center mb-3">
                   <p className="text-xl font-black text-slate-950">BillingPro</p>
-                  <p className="text-xs text-slate-500">GST Invoice / POS Receipt</p>
+                  <p className="text-xs text-slate-500">
+                    {receiptData.bill?.isOffline ? 'OFFLINE RECEIPT' : 'GST Invoice / POS Receipt'}
+                  </p>
                 </div>
                 <div className="my-3 border-t border-dashed border-slate-300" />
                 <div className="space-y-1.5 text-xs">

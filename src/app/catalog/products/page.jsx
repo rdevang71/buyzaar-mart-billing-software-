@@ -105,6 +105,7 @@ export default function ProductsPage() {
       onDelete={(row) => {/* delete handled by CatalogDataPage */}}
       totalLabel="Product(s)"
       emptyMessage="No products found"
+      bulkImportType="products"
       extraQueryParams={{ department_id: departmentId, brand_id: brandId, category_id: categoryId }}
       mapRecord={(record, index, page, pageSize) => ({
         id: record.id,
