@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import MainLayout from '@/components/MainLayout';
+import { extractStores } from '@/lib/clientResponse';
 
 const columns = [
   { key: 'customerId', label: 'Customer ID' },
@@ -56,8 +57,13 @@ function toCsv(rows) {
 
 export default function CustomersSalesReportPage() {
   const today = useMemo(() => new Date(), []);
+  const defaultFrom = useMemo(() => {
+    const date = new Date();
+    date.setDate(date.getDate() - 30);
+    return date;
+  }, []);
 
-  const [dateFrom, setDateFrom] = useState(formatDateInput(today));
+  const [dateFrom, setDateFrom] = useState(formatDateInput(defaultFrom));
   const [dateTo, setDateTo] = useState(formatDateInput(today));
   const [store, setStore] = useState('all');
   const [stores, setStores] = useState([]);
@@ -78,7 +84,7 @@ export default function CustomersSalesReportPage() {
       const res = await fetch('/api/stores');
       if (!res.ok) throw new Error('Failed to fetch stores');
       const data = await res.json();
-      setStores(Array.isArray(data) ? data : []);
+      setStores(extractStores(data));
     } catch (err) {
       console.error(err);
       setStores([]);

@@ -31,6 +31,12 @@ export async function ensureCustomerGroupsSchema() {
     CREATE INDEX IF NOT EXISTS idx_customers_customer_group_id ON customers(customer_group_id);
   `);
 
+  await query(`
+    INSERT INTO customer_groups (group_name, group_code, description, is_default, status)
+    SELECT 'Default Customers', 'DEFAULT', 'Default customer group', TRUE, 'Active'
+    WHERE NOT EXISTS (SELECT 1 FROM customer_groups)
+  `);
+
   ensured = true;
 }
 

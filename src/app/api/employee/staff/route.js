@@ -61,6 +61,28 @@ function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
 }
 
+function duplicateMessageFromPgError(err) {
+  const constraint = String(err?.constraint || '').toLowerCase();
+  const detail = String(err?.detail || '').toLowerCase();
+
+  if (constraint.includes('username') || detail.includes('(username)=')) {
+    return 'Employee username already exists';
+  }
+  if (constraint.includes('email') || detail.includes('(email)=') || detail.includes('(email_address)=')) {
+    return 'Employee email already exists';
+  }
+  if (
+    constraint.includes('phone') ||
+    constraint.includes('mobile') ||
+    detail.includes('(phone)=') ||
+    detail.includes('(mobile_number)=')
+  ) {
+    return 'Employee mobile number already exists';
+  }
+
+  return 'Employee username, email, or mobile already exists';
+}
+
 function validateEmployeeInput({
   username,
   firstName,
@@ -223,22 +245,102 @@ export async function POST(request) {
       }
     }
 
+    const duplicateRes = await client.query(
+      `SELECT
+         EXISTS(SELECT 1 FROM employees WHERE LOWER(username) = LOWER($1)) AS username_exists,
+         EXISTS(SELECT 1 FROM employees WHERE LOWER(email_address) = LOWER($2)) AS employee_email_exists,
+         EXISTS(SELECT 1 FROM employees WHERE mobile_number = $3) AS employee_mobile_exists`,
+      [username, emailAddress, mobileNumber]
+    );
+
+    const duplicates = duplicateRes.rows[0] || {};
+    if (duplicates.username_exists) {
+      return NextResponse.json({ error: 'Employee username already exists' }, { status: 409 });
+    }
+    if (duplicates.employee_email_exists) {
+      return NextResponse.json({ error: 'Employee email already exists' }, { status: 409 });
+    }
+    if (duplicates.employee_mobile_exists) {
+      return NextResponse.json({ error: 'Employee mobile number already exists' }, { status: 409 });
+    }
+
+    const existingUsersRes = await client.query(
+      `SELECT id, email, phone
+       FROM users
+       WHERE LOWER(email) = LOWER($1)
+          OR phone = $2`,
+      [emailAddress, mobileNumber]
+    );
+
+    const existingUsers = existingUsersRes.rows || [];
+    const emailUser = existingUsers.find((row) => String(row.email || '').toLowerCase() === emailAddress);
+    const phoneUser = existingUsers.find((row) => String(row.phone || '') === mobileNumber);
+
+    if (emailUser && phoneUser && Number(emailUser.id) !== Number(phoneUser.id)) {
+      return NextResponse.json(
+        { error: 'Email and mobile are already mapped to different users' },
+        { status: 409 }
+      );
+    }
+
+    const existingUserId = emailUser?.id || phoneUser?.id || null;
+    if (existingUserId) {
+      const linkedEmployeeRes = await client.query(
+        `SELECT id FROM employees WHERE user_id = $1 LIMIT 1`,
+        [existingUserId]
+      );
+
+      if (linkedEmployeeRes.rows.length > 0) {
+        return NextResponse.json(
+          { error: 'An employee is already linked with this email or mobile' },
+          { status: 409 }
+        );
+      }
+    }
+
     await client.query('BEGIN');
 
     const passwordHash = await bcrypt.hash(password, 10);
     const fallbackToken = randomUUID();
-    const userRes = await client.query(
-      `INSERT INTO users (name, email, phone, password_hash, role, is_active, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, TRUE, NOW(), NOW())
-       RETURNING id`,
-      [
-        [firstName, lastName].filter(Boolean).join(' ').trim() || username,
-        emailAddress || `${username || 'employee'}-${fallbackToken}@example.com`,
-        mobileNumber || `emp-${fallbackToken.slice(0, 12)}`,
-        passwordHash,
-        systemRole,
-      ]
-    );
+
+    let userId = existingUserId;
+    if (userId) {
+      const userUpdateRes = await client.query(
+        `UPDATE users
+         SET name = $2,
+             email = $3,
+             phone = $4,
+             password_hash = $5,
+             role = $6,
+             is_active = TRUE,
+             updated_at = NOW()
+         WHERE id = $1
+         RETURNING id`,
+        [
+          userId,
+          [firstName, lastName].filter(Boolean).join(' ').trim() || username,
+          emailAddress || `${username || 'employee'}-${fallbackToken}@example.com`,
+          mobileNumber || `emp-${fallbackToken.slice(0, 12)}`,
+          passwordHash,
+          systemRole,
+        ]
+      );
+      userId = userUpdateRes.rows[0]?.id;
+    } else {
+      const userRes = await client.query(
+        `INSERT INTO users (name, email, phone, password_hash, role, is_active, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, TRUE, NOW(), NOW())
+         RETURNING id`,
+        [
+          [firstName, lastName].filter(Boolean).join(' ').trim() || username,
+          emailAddress || `${username || 'employee'}-${fallbackToken}@example.com`,
+          mobileNumber || `emp-${fallbackToken.slice(0, 12)}`,
+          passwordHash,
+          systemRole,
+        ]
+      );
+      userId = userRes.rows[0]?.id;
+    }
 
     for (const storeId of assignedStores) {
       await client.query(
@@ -246,7 +348,7 @@ export async function POST(request) {
          VALUES ($1, $2, TRUE, NOW(), NOW())
          ON CONFLICT (user_id, store_id) DO UPDATE
          SET is_active = TRUE, updated_at = NOW()`,
-        [userRes.rows[0].id, storeId]
+        [userId, storeId]
       );
     }
 
@@ -266,7 +368,7 @@ export async function POST(request) {
       )
       RETURNING *`,
       [
-        userRes.rows[0].id,
+        userId,
         username,
         firstName,
         lastName || null,
@@ -304,7 +406,7 @@ export async function POST(request) {
     await client.query('ROLLBACK').catch(() => {});
 
     if (err.code === '23505') {
-      return NextResponse.json({ error: 'Employee username or email already exists' }, { status: 409 });
+      return NextResponse.json({ error: duplicateMessageFromPgError(err) }, { status: 409 });
     }
 
     console.error('[employee staff POST]', err.message);

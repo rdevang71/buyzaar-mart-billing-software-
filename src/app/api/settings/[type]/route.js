@@ -7,6 +7,10 @@ function normalizeType(value = '') {
   return String(value).trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
 }
 
+function normalizeCode(value = '') {
+  return String(value).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
 function parsePositiveInt(value, fallback = null) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -29,6 +33,7 @@ function mapRecord(row) {
 }
 
 function getAccessibleStoreFilter(user, params, alias = 'sr') {
+  if (user.role === 'super_admin') return '';
   if (Array.isArray(user.permissions) && user.permissions.includes('*')) return '';
 
   const assignedStores = (user.assigned_stores || []).map(Number).filter(Number.isFinite);
@@ -133,39 +138,55 @@ export async function POST(request, context) {
     }
 
     client = await getClient();
+    const code = normalizeCode(body.code) || normalizeCode(name);
     const payload = [
       type,
       name,
-      String(body.code || '').trim() || null,
+      code || null,
       String(body.description || '').trim() || null,
       storeId,
       body.isActive ?? body.is_active ?? true,
       JSON.stringify(body.config || {}),
     ];
 
-    const result = id
-      ? await client.query(
-          `UPDATE settings_records
-           SET name = $2, code = $3, description = $4, store_id = $5,
-               is_active = COALESCE($6, TRUE), config = $7::jsonb, updated_at = NOW()
-           WHERE id = $8 AND setting_type = $1
-           RETURNING *`,
-          [...payload, id]
-        )
-      : await client.query(
-          `INSERT INTO settings_records (
-             setting_type, name, code, description, store_id, is_active, config, created_at, updated_at
-           ) VALUES ($1, $2, $3, $4, $5, COALESCE($6, TRUE), $7::jsonb, NOW(), NOW())
-           ON CONFLICT (setting_type, code, store_id)
-           DO UPDATE SET
-             name = EXCLUDED.name,
-             description = EXCLUDED.description,
-             is_active = EXCLUDED.is_active,
-             config = EXCLUDED.config,
-             updated_at = NOW()
-           RETURNING *`,
-          payload
-        );
+    let result;
+    if (id) {
+      result = await client.query(
+        `UPDATE settings_records
+         SET name = $2, code = $3, description = $4, store_id = $5,
+             is_active = COALESCE($6, TRUE), config = $7::jsonb, updated_at = NOW()
+         WHERE id = $8 AND setting_type = $1
+         RETURNING *`,
+        [...payload, id]
+      );
+    } else {
+      const existing = await client.query(
+        `SELECT id
+         FROM settings_records
+         WHERE setting_type = $1
+           AND code = $2
+           AND store_id IS NOT DISTINCT FROM $3
+         LIMIT 1`,
+        [type, code || null, storeId]
+      );
+
+      result = existing.rows[0]
+        ? await client.query(
+            `UPDATE settings_records
+             SET name = $2, description = $4, is_active = COALESCE($6, TRUE),
+                 config = $7::jsonb, updated_at = NOW()
+             WHERE id = $8 AND setting_type = $1
+             RETURNING *`,
+            [...payload, existing.rows[0].id]
+          )
+        : await client.query(
+            `INSERT INTO settings_records (
+               setting_type, name, code, description, store_id, is_active, config, created_at, updated_at
+             ) VALUES ($1, $2, $3, $4, $5, COALESCE($6, TRUE), $7::jsonb, NOW(), NOW())
+             RETURNING *`,
+            payload
+          );
+    }
 
     if (!result.rows[0]) return notFoundError('Setting not found');
     return successResponse(mapRecord(result.rows[0]), id ? 'Setting updated' : 'Setting created', id ? 200 : 201);

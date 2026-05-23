@@ -164,6 +164,7 @@ export default function CatalogDataPage({
         }}
         search={search}
         onSearchChange={setSearch}
+        onImportSuccess={fetchData}
         showRowActions={showRowActions}
         onEdit={onEdit ? (row) => onEdit(row) : undefined}
         onDelete={onDelete ? (row) => setDeleteId(row.id) : undefined}

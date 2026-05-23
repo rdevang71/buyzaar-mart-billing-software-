@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import MainLayout from '@/components/MainLayout';
+import { extractStores } from '@/lib/clientResponse';
 
 const columns = [
   { key: 'sNo', label: 'S. No.' },
@@ -89,7 +90,7 @@ export default function CreditNoteHistoryPage() {
     try {
       const res = await fetch('/api/stores');
       const data = await res.json();
-      const options = Array.isArray(data) ? data : [];
+      const options = extractStores(data);
       setStores(options);
     } catch (err) {
       console.error(err);

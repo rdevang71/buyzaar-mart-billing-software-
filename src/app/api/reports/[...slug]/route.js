@@ -9,7 +9,24 @@ import {
 } from '@/lib/reportsService';
 
 function filtersFromSearchParams(searchParams) {
-  return Object.fromEntries(searchParams.entries());
+  const filters = Object.fromEntries(searchParams.entries());
+  delete filters.export;
+  delete filters.columns;
+  return filters;
+}
+
+function columnsFromSearchParams(searchParams) {
+  const raw = searchParams.get('columns');
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    return parsed
+      .filter((column) => column?.key && column?.label)
+      .map((column) => ({ key: String(column.key), label: String(column.label) }));
+  } catch {
+    return null;
+  }
 }
 
 export async function GET(request, context) {
@@ -22,10 +39,12 @@ export async function GET(request, context) {
 
     const params = await context.params;
     const reportKey = normalizeReportKey(params.slug);
-    const definition = getReportDefinition(reportKey);
+    const { searchParams } = new URL(request.url);
+    const columns = columnsFromSearchParams(searchParams);
+    const baseDefinition = getReportDefinition(reportKey);
+    const definition = columns ? { ...baseDefinition, columns } : baseDefinition;
     if (!definition) return notFoundError('Report not found');
 
-    const { searchParams } = new URL(request.url);
     const rows = await getReportRows(reportKey, filtersFromSearchParams(searchParams), auth.user);
 
     if (searchParams.get('export') === 'xlsx') {
