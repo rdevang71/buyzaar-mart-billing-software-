@@ -164,6 +164,19 @@ const CREATE_PRODUCT_GROUP_STORES_SQL = `
   );
 `;
 
+const CREATE_PRODUCT_GROUPS_SQL = `
+  CREATE TABLE IF NOT EXISTS product_groups (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL UNIQUE,
+    description TEXT,
+    category_id BIGINT REFERENCES categories(id) ON DELETE SET NULL,
+    sort_sequence INTEGER NOT NULL DEFAULT 0,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+`;
+
 const globalForCatalogExtras = globalThis;
 const globalForCombos = globalThis;
 const globalForMemberships = globalThis;
@@ -376,6 +389,7 @@ export async function ensureCatalogExtrasSchema() {
             );
           `);
       await query(CREATE_PRODUCT_SALEABILITY_SQL);
+      await query(CREATE_PRODUCT_GROUPS_SQL);
       await query(`
         ALTER TABLE product_saleability
           ADD COLUMN IF NOT EXISTS selling_price NUMERIC(14, 2) NOT NULL DEFAULT 0,
