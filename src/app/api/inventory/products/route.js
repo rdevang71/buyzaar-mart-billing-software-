@@ -3,6 +3,7 @@ import { successResponse, errorResponse } from '@/lib/api-response';
 import { ensureCatalogExtrasSchema } from '@/lib/catalogExtrasSchema';
 import { ensureStoresSchema } from '@/lib/storesSchema';
 import { ensureInventoryBatchSchema } from '@/lib/inventoryBatching';
+import { appendStoreScope, getAssignedStoreIds, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 function toNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -15,9 +16,15 @@ export async function GET(request) {
     await ensureStoresSchema();
     await ensureInventoryBatchSchema();
 
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+
+    const permissionCheck = requirePermission(auth.user, 'VIEW_INVENTORY', 'MANAGE_INVENTORY');
+    if (permissionCheck.error) return permissionCheck.error;
+
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search') || '';
-    const storeId = Number(searchParams.get('store_id') || 0) || null;
+    let storeId = Number(searchParams.get('store_id') || 0) || null;
     const warehouseStock = searchParams.get('warehouse_stock') === 'true';
     const page = parseInt(searchParams.get('page') || '1', 10);
     const pageSize = parseInt(searchParams.get('pageSize') || '20', 10);
@@ -26,6 +33,9 @@ export async function GET(request) {
     if (warehouseStock) {
       const params = [];
       const filters = [`TRUE`];
+      const warehouseStoreWhere = [];
+      const scope = appendStoreScope(warehouseStoreWhere, params, 'id', auth.user);
+      if (scope.error) return scope.error;
 
       if (search.trim()) {
         params.push(`%${search.trim()}%`);
@@ -43,6 +53,7 @@ export async function GET(request) {
           SELECT id
           FROM stores
           WHERE LOWER(COALESCE(meta->>'locationType', 'Warehouse')) = 'warehouse'
+            ${warehouseStoreWhere.length ? `AND ${warehouseStoreWhere.join(' AND ')}` : ''}
         ), movement_products AS (
           SELECT ib.product_id, SUM(ib.available_qty) AS available_qty
           FROM inventory_batches ib
@@ -100,9 +111,16 @@ export async function GET(request) {
       });
     }
 
+    if (!storeId && auth.user.role !== 'super_admin') {
+      storeId = getAssignedStoreIds(auth.user)[0] || null;
+    }
+
     if (!storeId) {
       return successResponse({ records: [], total: 0, page, pageSize, totalPages: 0 });
     }
+
+    const storeCheck = requireStore(auth.user, storeId);
+    if (storeCheck.error) return storeCheck.error;
 
     const params = [storeId];
     const filters = [

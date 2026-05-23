@@ -43,7 +43,9 @@ export const ensureCustomersSchema = makeSchemaEnsurer('customers', () => query(
     CREATE INDEX IF NOT EXISTS idx_customers_email_address ON customers(email_address);
     CREATE INDEX IF NOT EXISTS idx_customers_customer_type ON customers(customer_type);
     ALTER TABLE customers ADD COLUMN IF NOT EXISTS customer_group_id BIGINT;
+    ALTER TABLE customers ADD COLUMN IF NOT EXISTS store_id BIGINT;
     CREATE INDEX IF NOT EXISTS idx_customers_customer_group_id ON customers(customer_group_id);
+    CREATE INDEX IF NOT EXISTS idx_customers_store_id ON customers(store_id);
 `));
 
 export default null;

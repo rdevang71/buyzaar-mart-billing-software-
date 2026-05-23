@@ -1,11 +1,18 @@
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { ensureStockInSchema } from '@/lib/stockInSchema';
+import { requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 export async function GET(request, { params }) {
   const { id } = await params;
   try {
     await ensureStockInSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+
+    const permissionCheck = requirePermission(auth.user, 'VIEW_INVENTORY', 'MANAGE_INVENTORY');
+    if (permissionCheck.error) return permissionCheck.error;
+
     const res = await query(
       `SELECT s.id, s.method, s.destination_id, s.meta, s.status, s.created_at,
               s.vendor_name, s.invoice_date, s.invoice_number, s.other_charges, s.remarks,
@@ -19,6 +26,9 @@ export async function GET(request, { params }) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
     const row = res.rows[0];
+    const storeCheck = requireStore(auth.user, row.destination_id);
+    if (storeCheck.error) return storeCheck.error;
+
     const meta = typeof row.meta === 'object' ? row.meta : {};
     const destinationMeta = typeof row.destination_meta === 'object' ? row.destination_meta : {};
     return NextResponse.json({

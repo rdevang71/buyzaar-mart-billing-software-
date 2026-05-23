@@ -1,8 +1,12 @@
 import { query } from '@/lib/db';
 import { successResponse, errorResponse } from '@/lib/api-response';
+import { requireAuth, requireStore } from '@/lib/api-protection';
 
 export async function POST(req) {
   try {
+    const auth = await requireAuth(req);
+    if (auth.error) return auth.error;
+
     const body = await req.json();
     const {
       bill_id,
@@ -27,6 +31,9 @@ export async function POST(req) {
 
     const bill = billRes.rows[0];
     if (!bill) return errorResponse('Bill not found', 404);
+
+    const storeCheck = requireStore(auth.user, bill.store_id);
+    if (storeCheck.error) return storeCheck.error;
 
     const itemsRes = await query(`
       SELECT sbi.*, p.name, p.sku FROM sales_bill_items sbi

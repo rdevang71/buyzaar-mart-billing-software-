@@ -1,12 +1,16 @@
 import { query } from '@/lib/db';
 import { successResponse, errorResponse } from '@/lib/api-response';
+import { getAssignedStoreIds, requireAuth, requireStore } from '@/lib/api-protection';
 
 export async function GET(req) {
   try {
+    const auth = await requireAuth(req);
+    if (auth.error) return auth.error;
+
     const { searchParams } = new URL(req.url);
     const barcode = searchParams.get('barcode');
     const sku = searchParams.get('sku');
-    const store_id = searchParams.get('store_id');
+    let store_id = Number(searchParams.get('store_id') || 0) || null;
 
     if (!barcode && !sku) {
       return errorResponse('barcode or sku required', 400);
@@ -40,9 +44,18 @@ export async function GET(req) {
       params.push(sku);
     }
 
+    if (!store_id && auth.user.role !== 'super_admin') {
+      store_id = getAssignedStoreIds(auth.user)[0] || null;
+    }
+
     if (store_id) {
+      const storeCheck = requireStore(auth.user, store_id);
+      if (storeCheck.error) return storeCheck.error;
+
       searchQuery += ` AND p.store_id = $${params.length + 1}`;
       params.push(store_id);
+    } else if (auth.user.role !== 'super_admin') {
+      searchQuery += ` AND 1 = 0`;
     }
 
     const res = await query(searchQuery, params);

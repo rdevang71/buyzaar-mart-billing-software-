@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { ensureStockInSchema } from '@/lib/stockInSchema';
 import { ensureInventoryBatchSchema } from '@/lib/inventoryBatching';
+import { appendStoreScope, requireAuth, requirePermission } from '@/lib/api-protection';
 
 function barcodeFromId(id) {
   const numeric = String(id || 0).replace(/\D/g, '');
@@ -23,10 +24,22 @@ function formatDateOnly(value) {
   return String(value);
 }
 
-export async function GET() {
+export async function GET(request) {
   try {
     await ensureStockInSchema();
     await ensureInventoryBatchSchema();
+
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+
+    const permissionCheck = requirePermission(auth.user, 'VIEW_INVENTORY', 'MANAGE_INVENTORY');
+    if (permissionCheck.error) return permissionCheck.error;
+
+    const params = [];
+    const whereClauses = [];
+    const scope = appendStoreScope(whereClauses, params, 'ib.store_id', auth.user);
+    if (scope.error) return scope.error;
+    const storeWhere = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
     const res = await query(
       `SELECT
@@ -58,8 +71,10 @@ export async function GET() {
       FROM inventory_batches ib
       LEFT JOIN products p ON p.id = ib.product_id
       LEFT JOIN stores s ON s.id = ib.store_id
+      ${storeWhere}
       ORDER BY ib.expiry_date ASC NULLS LAST, ib.created_at DESC
-      LIMIT 200`
+      LIMIT 200`,
+      params
     );
 
     const rows = res.rows.map((row) => {

@@ -1,10 +1,22 @@
 import { NextResponse } from 'next/server';
 import { getClient, query } from '@/lib/db';
 import { ensureStockTransferSchema } from '@/lib/stockTransferSchema';
+import { appendStoreScope, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
-export async function GET() {
+export async function GET(request) {
   try {
     await ensureStockTransferSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+
+    const permissionCheck = requirePermission(auth.user, 'VIEW_INVENTORY', 'MANAGE_INVENTORY');
+    if (permissionCheck.error) return permissionCheck.error;
+
+    const params = [];
+    const whereClauses = [`st.status = 'confirmed'`];
+    const scope = appendStoreScope(whereClauses, params, 'st.destination_id', auth.user);
+    if (scope.error) return scope.error;
+
     const res = await query(
       `SELECT
         st.id,
@@ -24,10 +36,11 @@ export async function GET() {
       LEFT JOIN stores source ON source.id = st.source_id
       LEFT JOIN stores destination ON destination.id = st.destination_id
       LEFT JOIN stock_transfer_items sti ON sti.stock_transfer_id = st.id
-      WHERE st.status = 'confirmed'
+      WHERE ${whereClauses.join(' AND ')}
       GROUP BY st.id, source.name, destination.name
       ORDER BY st.confirmed_at DESC NULLS LAST, st.created_at DESC
-      LIMIT 200`
+      LIMIT 200`,
+      params
     );
 
     return NextResponse.json(
@@ -53,7 +66,23 @@ export async function GET() {
 export async function POST(request) {
   try {
     await ensureStockTransferSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_INVENTORY');
+    if (permissionCheck.error) return permissionCheck.error;
+
     const payload = await request.json();
+    const sourceId = payload.source ? Number(payload.source) : null;
+    const destinationId = payload.destination ? Number(payload.destination) : null;
+    if ((!sourceId || !destinationId) && auth.user.role !== 'super_admin') {
+      return NextResponse.json({ error: 'Source and destination stores are required for your account' }, { status: 403 });
+    }
+    for (const storeId of [sourceId, destinationId].filter(Boolean)) {
+      const storeCheck = requireStore(auth.user, storeId);
+      if (storeCheck.error) return storeCheck.error;
+    }
+
     const client = await getClient();
 
     try {
@@ -64,8 +93,8 @@ export async function POST(request) {
         ) VALUES ($1, $2, $3, $4, 'draft', NOW())
         RETURNING id`,
         [
-          payload.source ? Number(payload.source) : null,
-          payload.destination ? Number(payload.destination) : null,
+          sourceId,
+          destinationId,
           payload.applyTaxes ?? true,
           JSON.stringify(payload),
         ]

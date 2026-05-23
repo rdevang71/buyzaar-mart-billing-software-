@@ -3,6 +3,7 @@ import { getClient, query } from '@/lib/db';
 import { ensureStockInSchema } from '@/lib/stockInSchema';
 import { ensureInventoryBatchSchema, receiveBatchStock } from '@/lib/inventoryBatching';
 import { ensureStoresSchema } from '@/lib/storesSchema';
+import { requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 function toNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -136,6 +137,11 @@ export async function POST(request, { params }) {
       await ensureStockInSchema();
       await ensureInventoryBatchSchema();
       await ensureStoresSchema();
+      const auth = await requireAuth(request);
+      if (auth.error) return auth.error;
+
+      const permissionCheck = requirePermission(auth.user, 'MANAGE_INVENTORY');
+      if (permissionCheck.error) return permissionCheck.error;
       const body = await request.json();
     const form  = body.form  || {};
     const items = body.items || [];
@@ -176,6 +182,8 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: 'Already confirmed' }, { status: 409 });
     }
     const destinationId = stockInRow.rows[0].destination_id;
+    const storeCheck = requireStore(auth.user, destinationId);
+    if (storeCheck.error) return storeCheck.error;
 
     // ── 3. Compute totals ─────────────────────────────────────────────────────
     const destinationMeta = typeof stockInRow.rows[0].destination_meta === 'object'

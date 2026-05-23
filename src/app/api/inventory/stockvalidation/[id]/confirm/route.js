@@ -1,11 +1,18 @@
 import { NextResponse } from 'next/server';
 import { getClient } from '@/lib/db';
 import { ensureStockValidationSchema } from '@/lib/stockValidationSchema';
+import { requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 export async function POST(request, { params }) {
   const { id } = await params;
   try {
     await ensureStockValidationSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_INVENTORY');
+    if (permissionCheck.error) return permissionCheck.error;
+
     const body = await request.json();
     const form = body.form || {};
     const items = body.items || [];
@@ -33,7 +40,7 @@ export async function POST(request, { params }) {
     const client = await getClient();
     try {
       await client.query('BEGIN');
-      const draft = await client.query('SELECT id, status FROM stock_validation WHERE id = $1', [id]);
+      const draft = await client.query('SELECT id, status, destination_id FROM stock_validation WHERE id = $1', [id]);
       if (draft.rows.length === 0) {
         await client.query('ROLLBACK');
         return NextResponse.json({ error: 'Stock validation not found' }, { status: 404 });
@@ -41,6 +48,11 @@ export async function POST(request, { params }) {
       if (draft.rows[0].status === 'confirmed') {
         await client.query('ROLLBACK');
         return NextResponse.json({ error: 'Already confirmed' }, { status: 409 });
+      }
+      const storeCheck = requireStore(auth.user, draft.rows[0].destination_id);
+      if (storeCheck.error) {
+        await client.query('ROLLBACK');
+        return storeCheck.error;
       }
 
       await client.query('DELETE FROM stock_validation_items WHERE stock_validation_id = $1', [id]);

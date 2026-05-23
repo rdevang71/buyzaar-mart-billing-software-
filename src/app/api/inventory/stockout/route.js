@@ -1,10 +1,22 @@
 import { NextResponse } from 'next/server';
 import { query, getClient } from '@/lib/db';
 import { ensureStockOutSchema } from '@/lib/stockOutSchema';
+import { appendStoreScope, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
-export async function GET() {
+export async function GET(request) {
   try {
     await ensureStockOutSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+
+    const permissionCheck = requirePermission(auth.user, 'VIEW_INVENTORY', 'MANAGE_INVENTORY');
+    if (permissionCheck.error) return permissionCheck.error;
+
+    const params = [];
+    const whereClauses = [`s.status = 'confirmed'`];
+    const scope = appendStoreScope(whereClauses, params, 's.destination_id', auth.user);
+    if (scope.error) return scope.error;
+
     const res = await query(
       `SELECT
         s.id,
@@ -28,10 +40,11 @@ export async function GET() {
       FROM stock_out s
       LEFT JOIN stores st ON st.id = s.destination_id
       LEFT JOIN stock_out_items soi ON soi.stock_out_id = s.id
-      WHERE s.status = 'confirmed'
+      WHERE ${whereClauses.join(' AND ')}
       GROUP BY s.id, st.name
       ORDER BY s.confirmed_at DESC NULLS LAST, s.created_at DESC
-      LIMIT 200`
+      LIMIT 200`,
+      params
     );
 
     const records = res.rows.map((row) => {
@@ -73,14 +86,28 @@ export async function GET() {
 export async function POST(request) {
   try {
     await ensureStockOutSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_INVENTORY');
+    if (permissionCheck.error) return permissionCheck.error;
+
     const payload = await request.json();
+    const destinationId =
+      payload.destination && payload.destination !== 'all'
+        ? Number(payload.destination)
+        : null;
+    if (!destinationId && auth.user.role !== 'super_admin') {
+      return NextResponse.json({ error: 'Store destination is required for your account' }, { status: 403 });
+    }
+    if (destinationId) {
+      const storeCheck = requireStore(auth.user, destinationId);
+      if (storeCheck.error) return storeCheck.error;
+    }
+
     const client = await getClient();
     try {
       await client.query('BEGIN');
-      const destinationId =
-        payload.destination && payload.destination !== 'all'
-          ? Number(payload.destination)
-          : null;
 
       const res = await client.query(
         `INSERT INTO stock_out (

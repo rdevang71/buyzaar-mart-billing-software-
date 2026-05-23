@@ -2,12 +2,19 @@ import { NextResponse } from 'next/server';
 import { getClient } from '@/lib/db';
 import { ensureStockTransferSchema } from '@/lib/stockTransferSchema';
 import { allocateBatchStock, ensureInventoryBatchSchema, getInventoryIssueStrategy, receiveBatchStock } from '@/lib/inventoryBatching';
+import { requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 export async function POST(request, { params }) {
   const { id } = await params;
     try {
       await ensureStockTransferSchema();
       await ensureInventoryBatchSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_INVENTORY');
+    if (permissionCheck.error) return permissionCheck.error;
+
     const body = await request.json();
     const form = body.form || {};
     const items = body.items || [];
@@ -44,6 +51,13 @@ export async function POST(request, { params }) {
       if (draft.rows[0].status === 'confirmed') {
         await client.query('ROLLBACK');
         return NextResponse.json({ error: 'Already confirmed' }, { status: 409 });
+      }
+      for (const storeId of [draft.rows[0].source_id, draft.rows[0].destination_id].filter(Boolean)) {
+        const storeCheck = requireStore(auth.user, storeId);
+        if (storeCheck.error) {
+          await client.query('ROLLBACK');
+          return storeCheck.error;
+        }
       }
 
       await client.query('DELETE FROM stock_transfer_items WHERE stock_transfer_id = $1', [id]);

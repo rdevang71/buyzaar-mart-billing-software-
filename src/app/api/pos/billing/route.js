@@ -1,10 +1,10 @@
 import { getClient, query } from '@/lib/db';
 import { successResponse, errorResponse, notFoundError } from '@/lib/api-response';
-import { verifyToken } from '@/lib/auth-enhanced';
 import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
 import { ensureSalesReturnsSchema } from '@/lib/salesReturnsSchema';
 import { ensureInvoiceSalesOrdersSchema } from '@/lib/invoiceSalesOrdersSchema';
 import { allocateBatchStock, ensureInventoryBatchSchema, getInventoryIssueStrategy } from '@/lib/inventoryBatching';
+import { requireAuth, requireStore } from '@/lib/api-protection';
 
 function toNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -18,20 +18,9 @@ export async function POST(req) {
     await ensureInvoiceSalesOrdersSchema();
     await ensureInventoryBatchSchema();
 
-    // Try to get token from Authorization header or cookies
-    let token = req.headers.get('authorization')?.replace('Bearer ', '');
-    
-    if (!token) {
-      // Try to get from cookies (for client-side requests)
-      token = req.cookies.get('access_token')?.value ||
-              req.cookies.get('auth_token')?.value ||
-              req.cookies.get('token')?.value;
-    }
-    
-    if (!token) return errorResponse('Unauthorized', 401);
-
-    const user = verifyToken(token);
-    if (!user) return errorResponse('Invalid token', 401);
+    const auth = await requireAuth(req);
+    if (auth.error) return auth.error;
+    const user = auth.user;
 
     const body = await req.json();
     const {
@@ -52,6 +41,9 @@ export async function POST(req) {
     if (!store_id || !items.length || !total_amount) {
       return errorResponse('Missing required fields', 400);
     }
+
+    const storeCheck = requireStore(user, store_id);
+    if (storeCheck.error) return storeCheck.error;
 
     client = await getClient();
     await client.query('BEGIN');
@@ -265,6 +257,9 @@ export async function GET(req) {
 
     if (!bill_id) return errorResponse('bill_id required', 400);
 
+    const auth = await requireAuth(req);
+    if (auth.error) return auth.error;
+
     const isNumericId = /^\d+$/.test(bill_id);
     const billRes = await query(
       isNumericId
@@ -277,6 +272,9 @@ export async function GET(req) {
     if (!bill) {
       return notFoundError('Bill not found');
     }
+
+    const storeCheck = requireStore(auth.user, bill.store_id);
+    if (storeCheck.error) return storeCheck.error;
 
     const itemsRes = await query(`
       SELECT
