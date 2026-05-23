@@ -9,7 +9,7 @@ export async function GET(request, { params }) {
     const res = await query(
       `SELECT s.id, s.method, s.destination_id, s.meta, s.status, s.created_at,
               s.vendor_name, s.invoice_date, s.invoice_number, s.other_charges, s.remarks,
-              s.apply_taxes, st.name AS destination_name
+              s.apply_taxes, st.name AS destination_name, st.meta AS destination_meta
        FROM stock_in s
        LEFT JOIN stores st ON st.id = s.destination_id
        WHERE s.id = $1`,
@@ -20,11 +20,13 @@ export async function GET(request, { params }) {
     }
     const row = res.rows[0];
     const meta = typeof row.meta === 'object' ? row.meta : {};
+    const destinationMeta = typeof row.destination_meta === 'object' ? row.destination_meta : {};
     return NextResponse.json({
       id: row.id,
       method: row.method,
       destination: row.destination_id,
       destinationName: row.destination_name,
+      destinationLocationType: destinationMeta.locationType || 'Warehouse',
       status: row.status || 'draft',
       applyTaxes: row.apply_taxes,
       meta,

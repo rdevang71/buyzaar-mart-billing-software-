@@ -6,19 +6,28 @@ import InventoryShell from '@/components/inventory/InventoryShell';
 
 const tableHeaders = [
   'S. No.',
-  'Batch Name',
-  'Barcode',
-  'Date',
-  'Time',
+  'Product',
+  'SKU',
+  'Location',
+  'Batch No',
+  'MFG Date',
+  'Expiry Date',
+  'Current Qty',
+  'Received Qty',
   'Cost',
-  'Items',
-  'User',
-  'Remarks',
-  'View Products',
+  'Status',
 ];
 
 function formatDate(value) {
   if (!value) return '-';
+  if (typeof value === 'string') {
+    const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+      const [, year, month, day] = match;
+      const date = new Date(Number(year), Number(month) - 1, Number(day));
+      return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    }
+  }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
   return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -59,7 +68,7 @@ export default function BatchesPage() {
     const q = search.trim().toLowerCase();
     if (!q) return records;
     return records.filter((row) =>
-      [row.batchName, row.barcode, row.user, row.remarks]
+      [row.batchName, row.product, row.sku, row.store, row.locationType, row.expiryStatus]
         .filter(Boolean)
         .some((field) => String(field).toLowerCase().includes(q))
     );
@@ -68,15 +77,16 @@ export default function BatchesPage() {
   const tableData = useMemo(() => {
     return filtered.map((row, idx) => ({
       'S. No.': idx + 1,
-      'Batch Name': row.batchName || '-',
-      Barcode: row.barcode || '-',
-      Date: formatDate(row.timestamp),
-      Time: formatTime(row.timestamp),
+      Product: row.product || '-',
+      SKU: row.sku || '-',
+      Location: row.store ? `${row.store}${row.locationType ? ` (${row.locationType})` : ''}` : '-',
+      'Batch No': row.batchName || '-',
+      'MFG Date': formatDate(row.mfgDate),
+      'Expiry Date': formatDate(row.expiryDate),
+      'Current Qty': row.items ?? 0,
+      'Received Qty': row.receivedItems ?? 0,
       Cost: formatCurrency(row.cost),
-      Items: row.items ?? 0,
-      User: row.user || 'System',
-      Remarks: row.remarks || '-',
-      'View Products': row.id ? 'Open Stock In' : '-',
+      Status: row.expiryStatus || row.status || '-',
     }));
   }, [filtered]);
 

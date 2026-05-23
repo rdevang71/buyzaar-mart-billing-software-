@@ -8,6 +8,20 @@ function formatCurrency(n) {
   return Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function createBatchRow(qty = 1) {
+  return {
+    batch_id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    batch_no: '',
+    qty,
+    mfg_date: '',
+    expiry_date: '',
+  };
+}
+
+function sumBatchQty(batches = []) {
+  return batches.reduce((sum, batch) => sum + Number(batch.qty || 0), 0);
+}
+
 function LineItemsContent() {
   const search = useSearchParams();
   const router = useRouter();
@@ -29,6 +43,8 @@ function LineItemsContent() {
     remarks: '',
   });
   const [confirming, setConfirming] = useState(false);
+  const isStoreDestination = String(draft?.destinationLocationType || '').toLowerCase() === 'store';
+  const isWarehouseDestination = String(draft?.destinationLocationType || 'Warehouse').toLowerCase() === 'warehouse';
 
   useEffect(() => {
     if (!id) return;
@@ -56,12 +72,15 @@ function LineItemsContent() {
     const controller = new AbortController();
 
     const loadProducts = async () => {
+      if (!draft) return;
       setLoadingProducts(true);
       try {
         const params = new URLSearchParams({ pageSize: '20' });
         if (searchTerm.trim()) params.set('search', searchTerm.trim());
+        const endpoint = isStoreDestination ? '/api/inventory/products' : '/api/catalog/products';
+        if (isStoreDestination) params.set('warehouse_stock', 'true');
 
-        const response = await fetch(`/api/catalog/products?${params.toString()}`, {
+        const response = await fetch(`${endpoint}?${params.toString()}`, {
           signal: controller.signal,
         });
         const res = await response.json();
@@ -79,7 +98,7 @@ function LineItemsContent() {
       controller.abort();
       clearTimeout(t);
     };
-  }, [searchTerm]);
+  }, [searchTerm, draft, isStoreDestination]);
 
   const filteredCart = useMemo(() => {
     if (!cartFilter.trim()) return cart;
@@ -103,9 +122,20 @@ function LineItemsContent() {
 
   const addToCart = (p) => {
     const pid = p.id ?? p.product_id;
+    const availableStock = Number(p.availableStock ?? p.available_stock ?? 0);
+    const selectedQty = cart
+      .filter((item) => String(item.product_id) === String(pid))
+      .reduce((sum, item) => sum + Number(item.qty || 0), 0);
+
+    if (isStoreDestination && selectedQty >= availableStock) {
+      alert(`${p.name} has only ${availableStock} quantity available in warehouse`);
+      return;
+    }
+
     setCart((c) => {
-      const taxRate = Number(p.tax_rate || 0);
+      const taxRate = Number(p.tax_rate ?? p.taxRate ?? 0);
       const cost = Number(p.cost_price || 0);
+      const remainingQty = isStoreDestination ? Math.max(0, availableStock - selectedQty) : 1;
       return [
         ...c,
         {
@@ -115,7 +145,9 @@ function LineItemsContent() {
           sku: p.sku,
           cost_price: cost,
           tax_value: draft?.applyTaxes ? (cost * taxRate) / 100 : 0,
-          qty: 1,
+          qty: isStoreDestination ? Math.min(1, remainingQty) : 1,
+          max_qty: isStoreDestination ? availableStock : null,
+          batches: isStoreDestination ? [] : [createBatchRow(1)],
           batch_no: '',
           mfg_date: '',
           expiry_date: '',
@@ -130,11 +162,59 @@ function LineItemsContent() {
     setCart((c) => c.map((it) => (it.line_id === lineId ? { ...it, ...updates } : it)));
   };
 
+  const updateBatchRow = (lineId, batchId, updates) => {
+    setCart((c) =>
+      c.map((it) => {
+        if (it.line_id !== lineId) return it;
+        const batches = (it.batches || []).map((batch) =>
+          batch.batch_id === batchId ? { ...batch, ...updates } : batch
+        );
+        return { ...it, batches, qty: Math.max(0, sumBatchQty(batches)) };
+      })
+    );
+  };
+
+  const addBatchRow = (lineId) => {
+    setCart((c) =>
+      c.map((it) => {
+        if (it.line_id !== lineId) return it;
+        const batches = [...(it.batches || []), createBatchRow(1)];
+        return { ...it, batches, qty: Math.max(0, sumBatchQty(batches)) };
+      })
+    );
+  };
+
+  const removeBatchRow = (lineId, batchId) => {
+    setCart((c) =>
+      c.map((it) => {
+        if (it.line_id !== lineId) return it;
+        const batches = (it.batches || []).filter((batch) => batch.batch_id !== batchId);
+        return { ...it, batches, qty: Math.max(0, sumBatchQty(batches)) };
+      })
+    );
+  };
+
   const updateQty = (lineId, qty) => {
     setCart((c) =>
-      c.map((it) =>
-        it.line_id === lineId ? { ...it, qty: Math.max(1, Number(qty) || 1) } : it
-      )
+      c.map((it) => {
+        if (it.line_id !== lineId) return it;
+        const requestedQty = Math.max(1, Number(qty) || 1);
+        if (isWarehouseDestination) {
+          const batches = it.batches?.length ? it.batches : [createBatchRow(requestedQty)];
+          const nextBatches = batches.map((batch, index) => index === 0 ? { ...batch, qty: requestedQty } : batch);
+          return { ...it, batches: nextBatches, qty: Math.max(0, sumBatchQty(nextBatches)) };
+        }
+        if (!isStoreDestination || !it.max_qty) return { ...it, qty: requestedQty };
+
+        const otherSelectedQty = c
+          .filter((item) => item.line_id !== lineId && String(item.product_id) === String(it.product_id))
+          .reduce((sum, item) => sum + Number(item.qty || 0), 0);
+        const allowedQty = Math.max(1, Number(it.max_qty || 0) - otherSelectedQty);
+        if (requestedQty > allowedQty) {
+          alert(`${it.name} has only ${it.max_qty} quantity available in warehouse`);
+        }
+        return { ...it, qty: Math.min(requestedQty, allowedQty) };
+      })
     );
   };
 
@@ -145,6 +225,10 @@ function LineItemsContent() {
   const confirm = async () => {
     if (!id) return alert('Missing stock in id');
     if (cart.length === 0) return alert('Add at least one product');
+    if (isWarehouseDestination) {
+      const invalidItem = cart.find((item) => !item.batches?.length || sumBatchQty(item.batches) <= 0);
+      if (invalidItem) return alert(`Add batch quantity for ${invalidItem.name}`);
+    }
     setConfirming(true);
     try {
       const res = await fetch(`/api/inventory/stockin/${encodeURIComponent(id)}/confirm`, {
@@ -294,6 +378,11 @@ function LineItemsContent() {
                     >
                       <div>
                         <div className="text-[13px] font-medium text-gray-900">{p.name}</div>
+                        {isStoreDestination && (
+                          <div className="text-[11px] text-emerald-600 mt-0.5">
+                            Warehouse qty: {Number(p.availableStock || 0)}
+                          </div>
+                        )}
                         <div className="text-[12px] text-gray-500">SKU: {p.sku || '—'}</div>
                       </div>
                       <span className="text-[12px] font-medium text-blue-600">Add</span>
@@ -307,70 +396,154 @@ function LineItemsContent() {
               )}
 
               {filteredCart.length > 0 ? (
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-gray-100">
-                      <th className="text-left text-[11px] font-bold text-gray-500 uppercase tracking-wide py-2 px-2">Product</th>
-                      <th className="text-left text-[11px] font-bold text-gray-500 uppercase tracking-wide py-2 px-2">Qty</th>
-                      <th className="text-left text-[11px] font-bold text-gray-500 uppercase tracking-wide py-2 px-2">Batch</th>
-                      <th className="text-left text-[11px] font-bold text-gray-500 uppercase tracking-wide py-2 px-2">Expiry</th>
-                      <th className="text-left text-[11px] font-bold text-gray-500 uppercase tracking-wide py-2 px-2">Cost</th>
-                      <th className="w-10" />
-                    </tr>
-                  </thead>
-                  <tbody>
+                isWarehouseDestination ? (
+                  <div className="space-y-3">
                     {filteredCart.map((it) => (
-                      <tr key={it.line_id} className="border-b border-gray-50 hover:bg-gray-50/50">
-                        <td className="py-3 px-2">
-                          <div className="text-[13px] font-medium text-gray-900">{it.name}</div>
-                          <div className="text-[11px] text-gray-500">{it.sku}</div>
-                        </td>
-                        <td className="py-3 px-2">
-                          <input
-                            type="number"
-                            min={1}
-                            value={it.qty}
-                            onChange={(e) => updateQty(it.line_id, e.target.value)}
-                            className="w-20 border border-gray-200 rounded px-2 py-1 text-[13px] text-gray-700"
-                          />
-                        </td>
-                        <td className="py-3 px-2">
-                          <input
-                            value={it.batch_no}
-                            onChange={(e) => updateCartItem(it.line_id, { batch_no: e.target.value })}
-                            placeholder="Batch no"
-                            className="w-28 border border-gray-200 rounded px-2 py-1 text-[13px] text-gray-700"
-                          />
-                          <input
-                            type="date"
-                            value={it.mfg_date}
-                            onChange={(e) => updateCartItem(it.line_id, { mfg_date: e.target.value })}
-                            className="mt-1 w-28 border border-gray-200 rounded px-2 py-1 text-[12px] text-gray-700"
-                            title="Manufacturing date"
-                          />
-                        </td>
-                        <td className="py-3 px-2">
-                          <input
-                            type="date"
-                            value={it.expiry_date}
-                            onChange={(e) => updateCartItem(it.line_id, { expiry_date: e.target.value })}
-                            className="w-32 border border-gray-200 rounded px-2 py-1 text-[13px] text-gray-700"
-                          />
-                        </td>
-                        <td className="py-3 px-2 text-[13px] text-gray-700">{formatCurrency(it.cost_price)}</td>
-                        <td className="py-3 px-2">
-                          <button
-                            type="button"
-                            onClick={() => removeItem(it.line_id)}
-                            className="p-1.5 text-red-500 hover:bg-red-50 rounded"
-                          >
-                            <i className="ti ti-trash text-[16px]" />
-                          </button>
-                        </td>
-                      </tr>
+                      <div key={it.line_id} className="rounded-lg border border-gray-200 bg-white">
+                        <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-4 py-3">
+                          <div className="min-w-0">
+                            <div className="text-[14px] font-semibold text-gray-900">{it.name}</div>
+                            <div className="mt-0.5 text-[12px] text-gray-500">SKU: {it.sku || '—'}</div>
+                          </div>
+                          <div className="flex items-center gap-6 text-right">
+                            <div>
+                              <div className="text-[11px] font-semibold uppercase text-gray-400">Total Qty</div>
+                              <div className="text-[15px] font-semibold text-gray-900">{Number(it.qty || 0)}</div>
+                            </div>
+                            <div>
+                              <div className="text-[11px] font-semibold uppercase text-gray-400">Cost</div>
+                              <div className="text-[13px] font-medium text-gray-700">{formatCurrency(it.cost_price)}</div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => removeItem(it.line_id)}
+                              className="p-2 text-red-500 hover:bg-red-50 rounded"
+                              title="Remove product"
+                            >
+                              <i className="ti ti-trash text-[17px]" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="px-4 py-3">
+                          <div className="grid grid-cols-[1.1fr_110px_150px_150px_40px] gap-3 px-1 pb-2 text-[11px] font-bold uppercase tracking-wide text-gray-500">
+                            <span>Batch No</span>
+                            <span>Qty</span>
+                            <span>MFG Date</span>
+                            <span>Expiry Date</span>
+                            <span />
+                          </div>
+
+                          <div className="space-y-2">
+                            {(it.batches || []).map((batch, index) => (
+                              <div key={batch.batch_id} className="grid grid-cols-[1.1fr_110px_150px_150px_40px] gap-3 items-center">
+                                <input
+                                  value={batch.batch_no}
+                                  onChange={(e) => updateBatchRow(it.line_id, batch.batch_id, { batch_no: e.target.value })}
+                                  placeholder={`Batch ${index + 1}`}
+                                  className="h-10 w-full rounded-lg border border-gray-200 px-3 text-[13px] text-gray-800 outline-none focus:border-blue-400"
+                                />
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={batch.qty}
+                                  onChange={(e) => updateBatchRow(it.line_id, batch.batch_id, { qty: e.target.value })}
+                                  placeholder="Qty"
+                                  className="h-10 w-full rounded-lg border border-gray-200 px-3 text-[13px] text-gray-800 outline-none focus:border-blue-400"
+                                />
+                                <input
+                                  type="date"
+                                  value={batch.mfg_date}
+                                  onChange={(e) => updateBatchRow(it.line_id, batch.batch_id, { mfg_date: e.target.value })}
+                                  className="h-10 w-full rounded-lg border border-gray-200 px-3 text-[13px] text-gray-800 outline-none focus:border-blue-400"
+                                  title="Manufacturing date"
+                                />
+                                <input
+                                  type="date"
+                                  value={batch.expiry_date}
+                                  onChange={(e) => updateBatchRow(it.line_id, batch.batch_id, { expiry_date: e.target.value })}
+                                  className="h-10 w-full rounded-lg border border-gray-200 px-3 text-[13px] text-gray-800 outline-none focus:border-blue-400"
+                                  title="Expiry date"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => removeBatchRow(it.line_id, batch.batch_id)}
+                                  disabled={(it.batches || []).length <= 1}
+                                  className="h-10 w-10 rounded-lg text-red-500 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                                  title="Remove batch"
+                                >
+                                  <i className="ti ti-x text-[16px]" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="mt-3 flex items-center justify-between border-t border-gray-100 pt-3">
+                            <button
+                              type="button"
+                              onClick={() => addBatchRow(it.line_id)}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-[12px] font-semibold text-blue-700 hover:bg-blue-100"
+                            >
+                              <i className="ti ti-plus text-[14px]" />
+                              Add batch
+                            </button>
+                            <div className="text-[12px] text-gray-500">
+                              {it.batches?.length || 0} batch{it.batches?.length === 1 ? '' : 'es'} added
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                     ))}
-                  </tbody>
-                </table>
+                  </div>
+                ) : (
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-gray-100">
+                        <th className="text-left text-[11px] font-bold text-gray-500 uppercase tracking-wide py-2 px-2">Product</th>
+                        <th className="text-left text-[11px] font-bold text-gray-500 uppercase tracking-wide py-2 px-2">Qty</th>
+                        <th className="text-left text-[11px] font-bold text-gray-500 uppercase tracking-wide py-2 px-2">Batch</th>
+                        <th className="text-left text-[11px] font-bold text-gray-500 uppercase tracking-wide py-2 px-2">Expiry</th>
+                        <th className="text-left text-[11px] font-bold text-gray-500 uppercase tracking-wide py-2 px-2">Cost</th>
+                        <th className="w-10" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredCart.map((it) => (
+                        <tr key={it.line_id} className="border-b border-gray-50 hover:bg-gray-50/50">
+                          <td className="py-3 px-2">
+                            <div className="text-[13px] font-medium text-gray-900">{it.name}</div>
+                            <div className="text-[11px] text-gray-500">{it.sku}</div>
+                          </td>
+                          <td className="py-3 px-2">
+                            <input
+                              type="number"
+                              min={1}
+                              max={it.max_qty || undefined}
+                              value={it.qty}
+                              onChange={(e) => updateQty(it.line_id, e.target.value)}
+                              className="w-20 border border-gray-200 rounded px-2 py-1 text-[13px] text-gray-700"
+                            />
+                            {isStoreDestination && it.max_qty ? (
+                              <div className="mt-1 text-[10px] text-gray-500">Max {it.max_qty}</div>
+                            ) : null}
+                          </td>
+                          <td className="py-3 px-2 text-[12px] text-gray-500">Auto from warehouse</td>
+                          <td className="py-3 px-2 text-[12px] text-gray-500">FEFO</td>
+                          <td className="py-3 px-2 text-[13px] text-gray-700">{formatCurrency(it.cost_price)}</td>
+                          <td className="py-3 px-2">
+                            <button
+                              type="button"
+                              onClick={() => removeItem(it.line_id)}
+                              className="p-1.5 text-red-500 hover:bg-red-50 rounded"
+                            >
+                              <i className="ti ti-trash text-[16px]" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )
               ) : (
                 !searchTerm.trim() && <div className="min-h-[400px]" />
               )}
