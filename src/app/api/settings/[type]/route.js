@@ -34,7 +34,6 @@ function mapRecord(row) {
 
 function getAccessibleStoreFilter(user, params, alias = 'sr') {
   if (user.role === 'super_admin') return '';
-  if (Array.isArray(user.permissions) && user.permissions.includes('*')) return '';
 
   const assignedStores = (user.assigned_stores || []).map(Number).filter(Number.isFinite);
   if (assignedStores.length === 0) return ' AND 1 = 0';

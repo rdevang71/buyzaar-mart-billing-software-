@@ -131,7 +131,7 @@ export default function CreateCustomRolePage() {
 
           <div className="grid grid-cols-2 gap-x-12 gap-y-8">
             <div>
-              <label className="text-[12px] text-gray-700 font-medium">Role Name *</label>
+              <label className="text-[12px] text-gray-700 font-medium">Role Name <span className="text-red-500">*</span></label>
               <input
                 value={form.roleName}
                 onChange={(e) => setForm({ ...form, roleName: e.target.value })}
@@ -141,7 +141,7 @@ export default function CreateCustomRolePage() {
             </div>
 
             <div>
-              <label className="text-[12px] text-gray-700 font-medium">Permissions *</label>
+              <label className="text-[12px] text-gray-700 font-medium">Permissions <span className="text-red-500">*</span></label>
               <div className="mt-2 rounded-lg border border-gray-300 bg-white p-3">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {permissionOptions.map((option) => {

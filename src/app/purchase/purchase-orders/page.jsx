@@ -95,6 +95,22 @@ async function fetchLookups() {
   };
 }
 
+function normalizeStores(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.data?.stores)) return data.data.stores;
+  if (Array.isArray(data?.stores)) return data.stores;
+  if (Array.isArray(data?.records)) return data.records;
+  return [];
+}
+
+function normalizeVendors(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.data?.records)) return data.data.records;
+  if (Array.isArray(data?.vendors)) return data.vendors;
+  if (Array.isArray(data?.records)) return data.records;
+  return [];
+}
+
 async function fetchPurchaseOrders() {
   const res = await fetch('/api/purchase-orders');
   if (!res.ok) throw new Error('Failed to fetch purchase orders');
@@ -114,12 +130,15 @@ async function createPurchaseOrder(payload) {
 
 export default function PurchaseOrdersPage() {
   const [showModal, setShowModal] = useState(false);
+  const [showReqModal, setShowReqModal] = useState(false);
   const [loadingLookups, setLoadingLookups] = useState(false);
   const [stores, setStores] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [loadingList, setLoadingList] = useState(true);
   const [records, setRecords] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [reqSaving, setReqSaving] = useState(false);
+  const [requisitions, setRequisitions] = useState([]);
   const [draftFilters, setDraftFilters] = useState({
     dateRange: 'all',
     customStart: '',
@@ -145,6 +164,7 @@ export default function PurchaseOrdersPage() {
     invoice_number: '',
     cc_emails: '',
   });
+  const [reqForm, setReqForm] = useState({ requisitionId: '', vendorId: '' });
   const router = useRouter();
 
   useEffect(() => {
@@ -159,8 +179,8 @@ export default function PurchaseOrdersPage() {
     setLoadingLookups(true);
     fetchLookups()
       .then(({ stores: storeData, vendors: vendorData }) => {
-        setStores(Array.isArray(storeData) ? storeData : []);
-        setVendors(Array.isArray(vendorData) ? vendorData : []);
+        setStores(normalizeStores(storeData));
+        setVendors(normalizeVendors(vendorData));
       })
       .catch(() => {
         setStores([]);
@@ -175,8 +195,8 @@ export default function PurchaseOrdersPage() {
     setLoadingLookups(true);
     fetchLookups()
       .then(({ stores: storeData, vendors: vendorData }) => {
-        setStores(Array.isArray(storeData) ? storeData : []);
-        setVendors(Array.isArray(vendorData) ? vendorData : []);
+        setStores(normalizeStores(storeData));
+        setVendors(normalizeVendors(vendorData));
       })
       .catch(() => {
         setStores([]);
@@ -187,6 +207,16 @@ export default function PurchaseOrdersPage() {
 
   const handleOpen = () => setShowModal(true);
   const handleClose = () => setShowModal(false);
+  const handleOpenReqModal = async () => {
+    setShowReqModal(true);
+    try {
+      const res = await fetch('/api/inventory/stockrequisition?for_po=true', { cache: 'no-store', credentials: 'include' });
+      const data = await res.json();
+      setRequisitions(Array.isArray(data?.records) ? data.records : []);
+    } catch {
+      setRequisitions([]);
+    }
+  };
 
   const handleApplyFilters = () => {
     setFilters(draftFilters);
@@ -244,6 +274,29 @@ export default function PurchaseOrdersPage() {
     }
   };
 
+  const handleCreateFromRequisition = async () => {
+    if (!reqForm.requisitionId) return alert('Please select a requisition');
+    if (!reqForm.vendorId) return alert('Please select a vendor');
+
+    setReqSaving(true);
+    try {
+      const res = await fetch('/api/purchase-orders/from-requisition', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(reqForm),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to create PO from requisition');
+      setShowReqModal(false);
+      router.push(`/purchase/purchase-orders/line-items?id=${encodeURIComponent(data.id)}`);
+    } catch (err) {
+      alert(err.message || 'Failed to create PO from requisition');
+    } finally {
+      setReqSaving(false);
+    }
+  };
+
   return (
     <MainLayout>
       <div className="flex items-center gap-2 text-[12px] text-gray-500 mb-4">
@@ -259,7 +312,7 @@ export default function PurchaseOrdersPage() {
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
-          <button className="flex items-center gap-2 px-4 py-2 rounded-lg border border-blue-300 text-[13px] font-medium text-blue-600 hover:bg-blue-50 transition-colors">
+          <button onClick={handleOpenReqModal} className="flex items-center gap-2 px-4 py-2 rounded-lg border border-blue-300 text-[13px] font-medium text-blue-600 hover:bg-blue-50 transition-colors">
             <i className="ti ti-file-document text-[16px]" />
             Create PO Using Requisition
           </button>
@@ -532,6 +585,59 @@ export default function PurchaseOrdersPage() {
                 </button>
                 <button className="px-4 py-2 rounded-lg bg-blue-600 text-white" onClick={handleNext} disabled={saving}>
                   {saving ? 'Creating...' : 'Next'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showReqModal && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center p-6">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowReqModal(false)} />
+          <div className="relative w-full max-w-2xl rounded-lg border border-gray-300 bg-white shadow-lg">
+            <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+              <h3 className="text-lg font-semibold text-gray-900">Create PO Using Requisition</h3>
+              <button className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100" onClick={() => setShowReqModal(false)}>
+                <i className="ti ti-x text-[18px]" />
+              </button>
+            </div>
+            <div className="space-y-4 p-6">
+              <label className="block">
+                <span className="mb-1 block text-[12px] text-gray-700">Approved Requisition <span className="text-red-500">*</span></span>
+                <select
+                  value={reqForm.requisitionId}
+                  onChange={(event) => setReqForm({ ...reqForm, requisitionId: event.target.value })}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13px] text-gray-800"
+                >
+                  <option value="">Select requisition</option>
+                  {requisitions.map((req) => (
+                    <option key={req.id} value={req.id}>
+                      {req.transactionId} - {req.destinationName} - {req.totalItems} items
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[12px] text-gray-700">Vendor <span className="text-red-500">*</span></span>
+                <select
+                  value={reqForm.vendorId}
+                  onChange={(event) => setReqForm({ ...reqForm, vendorId: event.target.value })}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[13px] text-gray-800"
+                >
+                  <option value="">Select vendor</option>
+                  {vendors.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.name}</option>)}
+                </select>
+              </label>
+              {requisitions.length === 0 && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
+                  No approved requisitions available. Create and approve a stock requisition first.
+                </div>
+              )}
+              <div className="flex justify-end gap-3 pt-2">
+                <button onClick={() => setShowReqModal(false)} className="rounded-lg border border-gray-200 px-4 py-2 text-sm">Cancel</button>
+                <button onClick={handleCreateFromRequisition} disabled={reqSaving} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">
+                  {reqSaving ? 'Creating...' : 'Create PO'}
                 </button>
               </div>
             </div>

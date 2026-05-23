@@ -67,6 +67,21 @@ const REPORTS = {
       { key: 'gross_bill',label: 'Gross Bill'},
     ],
   },
+  'sales/monthly-sales': {
+    title: 'Monthly Sales',
+    worksheet: 'Monthly Sales',
+    columns: [
+      { key: 'month', label: 'Month' },
+      { key: 'store', label: 'Store' },
+      { key: 'orders', label: 'Orders' },
+      { key: 'sales', label: 'Sales' },
+      { key: 'discount', label: 'Discount' },
+      { key: 'net_bill', label: 'Net Bill' },
+      { key: 'taxes', label: 'Taxes' },
+      { key: 'gross_bill', label: 'Gross Bill' },
+      { key: 'avg_order_value', label: 'Avg Order Value' },
+    ],
+  },
   'net-sales': {
     title: 'Net Sales',
     worksheet: 'Net Sales',
@@ -126,6 +141,10 @@ function number(value) {
 
 function isoDate(value) {
   if (!value) return '';
+  if (typeof value === 'string') {
+    const match = value.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (match) return match[1];
+  }
   return new Date(value).toLocaleDateString('en-CA');
 }
 
@@ -140,23 +159,41 @@ function displayTime(value) {
 function parseReportDate(value) {
   if (!value) return null;
   const trimmed = String(value).trim();
+  const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) return trimmed;
+
+  const displayMatch = trimmed.match(/^(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{4})$/);
+  if (displayMatch) {
+    const months = {
+      jan: '01', january: '01',
+      feb: '02', february: '02',
+      mar: '03', march: '03',
+      apr: '04', april: '04',
+      may: '05',
+      jun: '06', june: '06',
+      jul: '07', july: '07',
+      aug: '08', august: '08',
+      sep: '09', sept: '09', september: '09',
+      oct: '10', october: '10',
+      nov: '11', november: '11',
+      dec: '12', december: '12',
+    };
+    const month = months[displayMatch[2].toLowerCase()];
+    if (month) return `${displayMatch[3]}-${month}-${displayMatch[1].padStart(2, '0')}`;
+  }
+
   const direct = new Date(trimmed);
   if (!Number.isNaN(direct.getTime())) return direct.toISOString().slice(0, 10);
-
-  const match = trimmed.match(/^(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{4})$/);
-  if (!match) return null;
-  const parsed = new Date(`${match[2]} ${match[1]}, ${match[3]}`);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
+  return null;
 }
 
 function parseDateRange(value) {
   const today = new Date().toISOString().slice(0, 10);
   if (!value) return { from: today, to: today };
   const parts = String(value).split(/\s+-\s+/);
-  return {
-    from: parseReportDate(parts[0]) || today,
-    to: parseReportDate(parts[1] || parts[0]) || today,
-  };
+  const from = parseReportDate(parts[0]) || today;
+  const to = parseReportDate(parts[1] || parts[0]) || from;
+  return from <= to ? { from, to } : { from: to, to: from };
 }
 
 function addStoreScope({ conditions, params, user, alias = 'sb', requestedStoreId }) {
@@ -276,6 +313,7 @@ export async function getReportRows(reportKey, filters = {}, user) {
 
   if (reportKey === 'orders/list-of-orders') return getOrdersReport(filters, user);
   if (reportKey === 'sales/daily-sales') return getDailySalesReport(filters, user);
+  if (reportKey === 'sales/monthly-sales') return getMonthlySalesReport(filters, user);
   if (reportKey === 'daily-sales-dsr') return getDailySalesReport(filters, user);
   if (reportKey === 'net-sales') return getNetSalesReport(filters, user);
   if (reportKey === 'inventory/stock-level') return getStockLevelReport(filters, user);
@@ -427,6 +465,44 @@ async function getNetSalesReport(filters, user) {
   }));
 }
 
+async function getMonthlySalesReport(filters, user) {
+  const params = [];
+  const conditions = [`sb.status IN ('paid', 'completed')`];
+  addSalesFilters({ conditions, params, filters, user, alias: 'sb' });
+
+  const res = await query(
+    `SELECT
+       COALESCE(s.name, 'Store') AS store,
+       DATE_TRUNC('month', sb.created_at)::date AS month_date,
+       TO_CHAR(DATE_TRUNC('month', sb.created_at), 'Mon YYYY') AS month,
+       COUNT(*)::int AS orders,
+       COALESCE(SUM(sb.subtotal), 0) AS sales,
+       COALESCE(SUM(sb.discount_total), 0) AS discount,
+       COALESCE(SUM(sb.tax_total), 0) AS taxes,
+       COALESCE(SUM(sb.grand_total), 0) AS gross_bill
+     FROM sales_bills sb
+     LEFT JOIN stores s ON s.id = sb.store_id
+     WHERE ${conditions.join(' AND ')}
+     GROUP BY s.name, DATE_TRUNC('month', sb.created_at)
+     ORDER BY month_date DESC, s.name ASC`,
+    params
+  );
+
+  return res.rows.map((row, index) => ({
+    id: `monthly-${index}`,
+    month: row.month,
+    date: isoDate(row.month_date),
+    store: row.store,
+    sales: money(row.sales),
+    discount: money(row.discount),
+    net_bill: money(number(row.sales) - number(row.discount)),
+    taxes: money(row.taxes),
+    gross_bill: money(row.gross_bill),
+    orders: row.orders,
+    avg_order_value: money(number(row.gross_bill) / Math.max(1, number(row.orders))),
+  }));
+}
+
 async function getStockLevelReport(filters, user) {
   const range    = parseDateRange(filters.date_range);
   const fromDate = range.from;
@@ -455,6 +531,13 @@ async function getStockLevelReport(filters, user) {
        p.unit,
        COALESCE(s.name, 'Unknown Store') AS store,
        COALESCE(ps.low_stock_value, 0)   AS low_stock_value,
+       COALESCE((
+         SELECT SUM(ib.available_qty)
+         FROM inventory_batches ib
+         WHERE ib.product_id = p.id
+           AND ib.store_id = ps.store_id
+           AND ib.status = 'active'
+       ), 0) AS current_stock,
 
        -- Opening stock = all-time stock in BEFORE fromDate minus all-time stock out BEFORE fromDate
        COALESCE((
@@ -529,7 +612,7 @@ async function getStockLevelReport(filters, user) {
     const opening       = number(row.opening_stock);
     const stockIn       = number(row.stock_in);
     const stockOut      = number(row.stock_out);
-    const currentStock  = opening + stockIn - stockOut;
+    const currentStock  = number(row.current_stock);
     const lowStockValue = number(row.low_stock_value);
     return {
       id:            `stock-${row.id}-${row.store}`,
@@ -604,7 +687,8 @@ async function getSalesDimensionReport(reportKey, filters, user) {
        COALESCE(SUM(sbi.qty * sbi.selling_price), 0) AS sales,
        COALESCE(SUM(sbi.discount_amount), 0) AS discount,
        COALESCE(SUM(sbi.tax_amount), 0) AS taxes,
-       COALESCE(SUM(sbi.line_total), 0) AS gross_bill
+       COALESCE(SUM(sbi.line_total), 0) AS gross_bill,
+       COALESCE(SUM(sbi.qty * COALESCE(p.cost_price, 0)), 0) AS cost_amount
      FROM sales_bills sb
      LEFT JOIN sales_bill_items sbi ON sbi.sales_bill_id = sb.id
      LEFT JOIN products p ON p.id = sbi.product_id
@@ -618,29 +702,37 @@ async function getSalesDimensionReport(reportKey, filters, user) {
     params
   );
 
-  return res.rows.map((row, index) => ({
-    id: `sales-${reportKey}-${index}`,
-    [dimensionAlias]: row.dimension,
-    product: row.dimension,
-    category: row.dimension,
-    brand: row.dimension,
-    department: row.dimension,
-    employee: row.dimension,
-    customer: row.dimension,
-    store: row.store,
-    date: isoDate(row.date),
-    orders: row.orders,
-    items: number(row.items),
-    quantity: number(row.items),
-    sales: money(row.sales),
-    discount: money(row.discount),
-    net_bill: money(number(row.sales) - number(row.discount)),
-    taxes: money(row.taxes),
-    gross_bill: money(row.gross_bill),
-    avg_order_value: money(number(row.gross_bill) / Math.max(1, number(row.orders))),
-    margin: money(0),
-    profit: money(0),
-  }));
+  return res.rows.map((row, index) => {
+    const netSales = number(row.sales) - number(row.discount);
+    const profit = netSales - number(row.cost_amount);
+    const marginPercent = netSales > 0 ? (profit / netSales) * 100 : 0;
+    return {
+      id: `sales-${reportKey}-${index}`,
+      [dimensionAlias]: row.dimension,
+      product: row.dimension,
+      category: row.dimension,
+      brand: row.dimension,
+      department: row.dimension,
+      employee: row.dimension,
+      customer: row.dimension,
+      store: row.store,
+      date: isoDate(row.date),
+      orders: row.orders,
+      items: number(row.items),
+      quantity: number(row.items),
+      sales: money(row.sales),
+      discount: money(row.discount),
+      net_bill: money(netSales),
+      taxes: money(row.taxes),
+      gross_bill: money(row.gross_bill),
+      cost_amount: money(row.cost_amount),
+      margin_amount: money(profit),
+      margin_percent: `${marginPercent.toFixed(2)}%`,
+      avg_order_value: money(number(row.gross_bill) / Math.max(1, number(row.orders))),
+      margin: `${marginPercent.toFixed(2)}%`,
+      profit: money(profit),
+    };
+  });
 }
 
 async function getDailyPaymentBreakupReport(filters, user) {

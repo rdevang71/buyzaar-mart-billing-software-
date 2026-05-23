@@ -50,6 +50,16 @@ function LineItemsContent() {
             invoice_number: d.invoice_number || '',
             cc_emails: d.cc_emails || '',
           });
+          if (Array.isArray(d.items) && d.items.length) {
+            setCart(d.items.map((item) => ({
+              product_id: item.product_id,
+              name: item.name,
+              sku: item.sku,
+              cost_price: Number(item.cost_price || 0),
+              tax_value: Number(item.tax_value || 0),
+              qty: Number(item.qty || 1),
+            })));
+          }
         }
       })
       .finally(() => setLoading(false));

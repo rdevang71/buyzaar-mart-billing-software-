@@ -225,6 +225,8 @@ export default function ReportsListPage({
     )
   );
   const pagedRows = filtered.slice(0, pageSize);
+  const showingFrom = filtered.length > 0 ? 1 : 0;
+  const showingTo = Math.min(pageSize, filtered.length);
 
   return (
     <MainLayout>
@@ -435,7 +437,7 @@ export default function ReportsListPage({
             <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">▼</span>
           </div>
           <span className="text-gray-500 text-xs">
-            Showing 0 to 0 of {filtered.length} {totalLabel}
+            Showing {showingFrom} to {showingTo} of {filtered.length} {totalLabel}
           </span>
         </div>
 

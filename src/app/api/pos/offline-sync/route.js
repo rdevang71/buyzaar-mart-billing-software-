@@ -52,7 +52,22 @@ export async function POST(req) {
         const discountTotal = toNumber(bill.discount_amount ?? bill.discountTotal);
         const roundOff = toNumber(bill.round_off ?? bill.roundOff);
         const grandTotal = toNumber(bill.total_amount ?? bill.grandTotal, Math.max(0, subtotal - discountTotal + taxTotal + roundOff));
-        const paidAmount = toNumber(bill.paid_amount ?? bill.paidAmount, grandTotal);
+        const normalizedPayments = (Array.isArray(bill.payments) && bill.payments.length
+          ? bill.payments
+          : [{ method: bill.payment_mode || bill.paymentMode || 'cash', amount: grandTotal, referenceNo: bill.reference_no || bill.referenceNo || '' }]
+        )
+          .map((payment) => ({
+            method: String(payment.method || bill.payment_mode || bill.paymentMode || 'cash').trim().toLowerCase(),
+            amount: toNumber(payment.amount),
+            referenceNo: String(payment.referenceNo || payment.reference_no || '').trim(),
+          }))
+          .filter((payment) => payment.amount > 0);
+        const paidAmount = normalizedPayments.reduce((sum, payment) => sum + payment.amount, 0);
+        if (!normalizedPayments.length) throw new Error('Add at least one payment');
+        if (Math.abs(paidAmount - grandTotal) > 0.01) {
+          throw new Error(`Payment total must match bill total. Paid ${paidAmount}, bill ${grandTotal}`);
+        }
+        const finalPaymentMode = normalizedPayments.length > 1 ? 'split' : normalizedPayments[0].method;
 
         const billRes = await client.query(`
           INSERT INTO sales_bills (
@@ -81,11 +96,11 @@ export async function POST(req) {
           grandTotal,
           paidAmount,
           Math.max(0, grandTotal - paidAmount),
-          bill.payment_mode || bill.paymentMode || 'cash',
+          finalPaymentMode,
           bill.notes || bill.remarks || '',
           bill.user_id || bill.created_by || user.id,
           bill.device_id || bill.deviceId || null,
-          JSON.stringify({ source: 'legacy-pos-offline-sync', customer_id: bill.customer_id || null }),
+          JSON.stringify({ source: 'legacy-pos-offline-sync', customer_id: bill.customer_id || null, payments: normalizedPayments }),
           bill.created_at || bill.createdAt || null,
         ]);
 
@@ -195,11 +210,13 @@ export async function POST(req) {
           }
         }
 
-        await client.query(
-          `INSERT INTO sales_bill_payments (sales_bill_id, method, amount, reference_no, meta, created_at)
-           VALUES ($1, $2, $3, $4, '{}'::jsonb, NOW())`,
-          [bill_id, bill.payment_mode || bill.paymentMode || 'cash', paidAmount, bill.reference_no || bill.referenceNo || '']
-        );
+        for (const payment of normalizedPayments) {
+          await client.query(
+            `INSERT INTO sales_bill_payments (sales_bill_id, method, amount, reference_no, meta, created_at)
+             VALUES ($1, $2, $3, $4, '{}'::jsonb, NOW())`,
+            [bill_id, payment.method || finalPaymentMode, payment.amount, payment.referenceNo || '']
+          );
+        }
 
         await client.query('COMMIT');
 

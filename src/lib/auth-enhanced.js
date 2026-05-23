@@ -216,9 +216,8 @@ export function hasAnyRole(token, requiredRoles) {
 
 export function canAccessStore(token, storeId) {
   const stores = getAssignedStoresFromToken(token);
-  // Check global wildcard permission in token
-  const permissions = getPermissionsFromToken(token);
-  if (permissions.includes('*')) return true;
+  const role = getRoleFromToken(token);
+  if (role === ROLES.SUPER_ADMIN) return true;
 
   // Check if store is assigned
   return stores.includes(storeId);

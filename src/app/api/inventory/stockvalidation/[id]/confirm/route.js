@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server';
 import { getClient } from '@/lib/db';
 import { ensureStockValidationSchema } from '@/lib/stockValidationSchema';
+import { allocateBatchStock, ensureInventoryBatchSchema, receiveBatchStock } from '@/lib/inventoryBatching';
 import { requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 export async function POST(request, { params }) {
   const { id } = await params;
   try {
     await ensureStockValidationSchema();
+    await ensureInventoryBatchSchema();
     const auth = await requireAuth(request);
     if (auth.error) return auth.error;
 
@@ -57,12 +59,61 @@ export async function POST(request, { params }) {
 
       await client.query('DELETE FROM stock_validation_items WHERE stock_validation_id = $1', [id]);
       for (const item of items) {
+        const productId = Number(item.product_id);
+        const countedQty = Number(item.qty || 0);
+        const productName = item.name || item.product_name || `Product ${productId}`;
         await client.query(
           `INSERT INTO stock_validation_items (
             stock_validation_id, product_id, product_name, qty, cost_price, tax_value, created_at
           ) VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-          [id, item.product_id, item.name || null, item.qty, item.cost_price || 0, item.tax_value || 0]
+          [id, productId, productName, countedQty, item.cost_price || 0, item.tax_value || 0]
         );
+
+        const stockRes = await client.query(
+          `SELECT COALESCE(SUM(available_qty), 0) AS qty
+           FROM inventory_batches
+           WHERE product_id = $1
+             AND store_id = $2
+             AND status = 'active'`,
+          [productId, draft.rows[0].destination_id]
+        );
+        const currentQty = Number(stockRes.rows[0]?.qty || 0);
+        const variance = Math.round((countedQty - currentQty) * 1000) / 1000;
+
+        if (variance > 0) {
+          await receiveBatchStock(client, {
+            stockInId: id,
+            productId,
+            storeId: draft.rows[0].destination_id,
+            qty: variance,
+            costPrice: Number(item.cost_price || 0),
+            batchNo: `AUD-${id}-${productId}`,
+            meta: {
+              source: 'stock_validation',
+              validationId: id,
+              productName,
+              countedQty,
+              previousQty: currentQty,
+              variance,
+            },
+          });
+        } else if (variance < 0) {
+          await allocateBatchStock(client, {
+            productId,
+            storeId: draft.rows[0].destination_id,
+            qty: Math.abs(variance),
+            referenceType: 'stock_validation',
+            referenceId: id,
+            meta: {
+              source: 'stock_validation',
+              validationId: id,
+              productName,
+              countedQty,
+              previousQty: currentQty,
+              variance,
+            },
+          });
+        }
       }
 
       await client.query(

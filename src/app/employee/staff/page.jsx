@@ -248,7 +248,7 @@ function MultiSelect({ label, options, value, onChange, placeholder = 'Select', 
 
   return (
     <div ref={ref}>
-      <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">{label}{required ? ' *' : ''}</label>
+      <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">{label}{required ? <span className="text-red-500"> *</span> : null}</label>
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
@@ -292,7 +292,7 @@ function MultiSelect({ label, options, value, onChange, placeholder = 'Select', 
 function SelectField({ label, value, onChange, options, required = false }) {
   return (
     <div>
-      <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">{label}{required ? ' *' : ''}</label>
+      <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">{label}{required ? <span className="text-red-500"> *</span> : null}</label>
       <div className="relative">
         <select
           required={required}
@@ -883,7 +883,7 @@ export default function EmployeeStaffPage() {
 
               <div className="grid grid-cols-2 gap-x-12 gap-y-6">
                 <div>
-                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">First Name *</label>
+                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">First Name <span className="text-red-500">*</span></label>
                   <input
                     required
                     value={form.firstName}
@@ -904,7 +904,7 @@ export default function EmployeeStaffPage() {
                 </div>
 
                 <div>
-                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Username *</label>
+                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Username <span className="text-red-500">*</span></label>
                   <input
                     required
                     value={form.username}
@@ -926,7 +926,7 @@ export default function EmployeeStaffPage() {
                 />
 
                 <div>
-                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Password {editingId ? '(leave blank to keep current)' : '*'}</label>
+                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Password {editingId ? '(leave blank to keep current)' : <span className="text-red-500">*</span>}</label>
                   <div className="flex gap-2">
                     <input
                       type="password"
@@ -952,7 +952,7 @@ export default function EmployeeStaffPage() {
                 </div>
 
                 <div>
-                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Confirm Password {editingId ? '(if changing)' : '*'}</label>
+                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Confirm Password {editingId ? '(if changing)' : <span className="text-red-500">*</span>}</label>
                   <input
                     type="password"
                     required={!editingId || !!form.password}
@@ -964,7 +964,7 @@ export default function EmployeeStaffPage() {
                 </div>
 
                 <div>
-                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Mobile Number *</label>
+                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Mobile Number <span className="text-red-500">*</span></label>
                   <input
                     type="tel"
                     inputMode="numeric"
@@ -986,7 +986,7 @@ export default function EmployeeStaffPage() {
                 </div>
 
                 <div>
-                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Email Address *</label>
+                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Email Address <span className="text-red-500">*</span></label>
                   <input
                     type="email"
                     required
@@ -998,7 +998,7 @@ export default function EmployeeStaffPage() {
                 </div>
 
                 <div>
-                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Role *</label>
+                  <label className="block text-[12px] font-semibold text-gray-600 mb-1.5">Role <span className="text-red-500">*</span></label>
                   <input
                     required
                     value={form.roleName}

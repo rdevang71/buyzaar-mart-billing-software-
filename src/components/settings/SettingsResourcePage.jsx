@@ -399,7 +399,7 @@ export default function SettingsResourcePage({
                   const required = isRequiredField(field, index);
                   return (
                   <label key={field.key} className={field.type === 'textarea' ? 'block md:col-span-2' : 'block'}>
-                    <span className="mb-1 block text-xs font-semibold text-gray-600">{field.label}{required ? ' *' : ''}</span>
+                    <span className="mb-1 block text-xs font-semibold text-gray-600">{field.label}{required ? <span className="text-red-500"> *</span> : null}</span>
                     {field.type === 'select' ? (
                       <select required={required} value={form.config[field.key] ?? ''} onChange={(event) => setConfig(field.key, event.target.value)} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400">
                         <option value="">Select</option>

@@ -1,6 +1,7 @@
 import { successResponse, errorResponse, notFoundError } from '@/lib/api-response';
 import { getClient, query } from '@/lib/db';
 import { ensureStoresSchema } from '@/lib/storesSchema';
+import { requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 const STORE_DELETE_DEPENDENCIES = [
   { table: 'stock_in', column: 'destination_id', label: 'Stock In' },
@@ -76,12 +77,17 @@ function buildStoreMeta(body = {}) {
 export async function GET(request, { params }) {
   try {
     await ensureStoresSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+
     const resolvedParams = await params;
     const storeId = Number(resolvedParams?.id);
 
     if (!Number.isFinite(storeId)) {
       return errorResponse('Invalid store id', 400);
     }
+    const storeCheck = requireStore(auth.user, storeId);
+    if (storeCheck.error) return storeCheck.error;
 
     const res = await query(
       `SELECT id, name, address_line1, address_line2, city, state, pincode, country, manager_name, manager_mobile, manager_email, opening_time, closing_time, is_active, meta, created_at, updated_at
@@ -104,12 +110,20 @@ export async function GET(request, { params }) {
 export async function PUT(request, { params }) {
   try {
     await ensureStoresSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_STORES');
+    if (permissionCheck.error) return permissionCheck.error;
+
     const resolvedParams = await params;
     const storeId = Number(resolvedParams?.id);
 
     if (!Number.isFinite(storeId)) {
       return errorResponse('Invalid store id', 400);
     }
+    const storeCheck = requireStore(auth.user, storeId);
+    if (storeCheck.error) return storeCheck.error;
 
     const body = await request.json();
     const name = (body.name || '').trim();
@@ -177,12 +191,20 @@ export async function DELETE(request, { params }) {
   let client;
   try {
     await ensureStoresSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_STORES');
+    if (permissionCheck.error) return permissionCheck.error;
+
     const resolvedParams = await params;
     const storeId = Number(resolvedParams?.id);
 
     if (!Number.isFinite(storeId)) {
       return errorResponse('Invalid store id', 400);
     }
+    const storeCheck = requireStore(auth.user, storeId);
+    if (storeCheck.error) return storeCheck.error;
 
     client = await getClient();
     await client.query('BEGIN');

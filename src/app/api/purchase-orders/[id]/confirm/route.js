@@ -4,12 +4,20 @@ import { ensureStockInSchema } from '@/lib/stockInSchema';
 import { ensureVendorsSchema } from '@/lib/vendorsSchema';
 import { ensurePurchaseOrderSchema } from '@/lib/purchaseOrderSchema';
 
+function normalizePurchaseOrderLookup(value) {
+  const raw = decodeURIComponent(String(value || '')).replace(/^#/, '').trim();
+  const numericId = /^\d+$/.test(raw) ? Number(raw) : null;
+  const transactionId = raw.toUpperCase();
+  return { numericId, transactionId };
+}
+
 export async function POST(request, { params }) {
-  const { id } = params;
+  const { id } = await params;
   try {
     await ensureStockInSchema();
     await ensureVendorsSchema();
     await ensurePurchaseOrderSchema();
+    const { numericId, transactionId } = normalizePurchaseOrderLookup(id);
 
     const body = await request.json();
     const form = body.form || {};
@@ -36,23 +44,30 @@ export async function POST(request, { params }) {
     try {
       await client.query('BEGIN');
 
-      const draft = await client.query('SELECT id, status FROM purchase_orders WHERE id = $1', [id]);
+      const draft = await client.query(
+        `SELECT id, status
+         FROM purchase_orders
+         WHERE id = COALESCE($1::int, -1)
+            OR UPPER(transaction_id) = $2`,
+        [numericId, transactionId]
+      );
       if (draft.rows.length === 0) {
         await client.query('ROLLBACK');
         return NextResponse.json({ error: 'Purchase order not found' }, { status: 404 });
       }
+      const purchaseOrderId = draft.rows[0].id;
       if (draft.rows[0].status === 'confirmed') {
         await client.query('ROLLBACK');
         return NextResponse.json({ error: 'Already confirmed' }, { status: 409 });
       }
 
-      await client.query('DELETE FROM purchase_order_items WHERE purchase_order_id = $1', [id]);
+      await client.query('DELETE FROM purchase_order_items WHERE purchase_order_id = $1', [purchaseOrderId]);
 
       for (const item of items) {
         await client.query(
           `INSERT INTO purchase_order_items (purchase_order_id, product_id, product_name, qty, cost_price, tax_value, created_at)
            VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-          [id, item.product_id, item.name || null, item.qty, item.cost_price || 0, item.tax_value || 0]
+          [purchaseOrderId, item.product_id, item.name || null, item.qty, item.cost_price || 0, item.tax_value || 0]
         );
       }
 
@@ -84,12 +99,12 @@ export async function POST(request, { params }) {
           totalCost,
           totalTax,
           JSON.stringify(form),
-          id,
+          purchaseOrderId,
         ]
       );
 
       await client.query('COMMIT');
-      return NextResponse.json({ success: true, id, totalItems, totalCost, totalTax });
+      return NextResponse.json({ success: true, id: purchaseOrderId, totalItems, totalCost, totalTax });
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;

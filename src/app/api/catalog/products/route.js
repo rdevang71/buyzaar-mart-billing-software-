@@ -4,6 +4,7 @@ import { ensureStockInSchema } from '@/lib/stockInSchema';
 import { ensureStockOutSchema } from '@/lib/stockOutSchema';
 import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
 import { ensureInventoryBatchSchema, receiveBatchStock } from '@/lib/inventoryBatching';
+import { getAssignedStoreIds, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 async function ensureProductDiscountSchema() {
   await query(`
@@ -23,6 +24,11 @@ export async function GET(request) {
     ]);
 
     await ensureProductDiscountSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+
+    const permissionCheck = requirePermission(auth.user, 'VIEW_CATALOG', 'MANAGE_CATALOG');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const { searchParams } = new URL(request.url);
     const search      = searchParams.get('search')   || '';
@@ -33,10 +39,32 @@ export async function GET(request) {
     const page        = parseInt(searchParams.get('page')     || '1');
     const pageSize    = parseInt(searchParams.get('pageSize') || '10');
     const offset      = (page - 1) * pageSize;
+    const requestedStoreId = Number(searchParams.get('store_id') || 0) || null;
 
     const conditions = [];
     const params = [];
     let i = 1;
+    let stockStoreFilter = '';
+
+    if (requestedStoreId) {
+      const storeCheck = requireStore(auth.user, requestedStoreId);
+      if (storeCheck.error) return storeCheck.error;
+      conditions.push(`EXISTS (SELECT 1 FROM product_saleability ps_scope WHERE ps_scope.product_id = p.id AND ps_scope.store_id = $${i} AND ps_scope.is_active = TRUE)`);
+      params.push(requestedStoreId);
+      stockStoreFilter = `AND store_id = $${i}`;
+      i++;
+    } else if (auth.user.role !== 'super_admin') {
+      const assignedStores = getAssignedStoreIds(auth.user);
+      if (!assignedStores.length) {
+        conditions.push('1 = 0');
+        stockStoreFilter = 'AND 1 = 0';
+      } else {
+        conditions.push(`EXISTS (SELECT 1 FROM product_saleability ps_scope WHERE ps_scope.product_id = p.id AND ps_scope.store_id = ANY($${i}::int[]) AND ps_scope.is_active = TRUE)`);
+        params.push(assignedStores);
+        stockStoreFilter = `AND store_id = ANY($${i}::int[])`;
+        i++;
+      }
+    }
 
     if (search) {
       conditions.push(`(p.name ILIKE $${i} OR p.barcode ILIKE $${i} OR p.sku ILIKE $${i})`);
@@ -99,6 +127,7 @@ export async function GET(request) {
          SELECT product_id, SUM(available_qty) AS qty
          FROM inventory_batches
          WHERE status = 'active'
+           ${stockStoreFilter}
            AND available_qty > 0
            AND (expiry_date IS NULL OR expiry_date >= CURRENT_DATE)
          GROUP BY product_id
@@ -127,6 +156,12 @@ export async function POST(request) {
     await ensureStockInSchema();
     await ensureInventoryBatchSchema();
     await ensureProductDiscountSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_CATALOG');
+    if (permissionCheck.error) return permissionCheck.error;
+
     const body = await request.json();
     const { name } = body;
 
@@ -180,6 +215,16 @@ export async function POST(request) {
       const openingStockQty = Number(body.opening_stock_qty || 0);
       const inventoryStoreId = body.inventory_store_id ? Number(body.inventory_store_id) : null;
       const manageInventoryEnabled = body.manage_inventory_enabled !== false;
+      if (inventoryStoreId) {
+        const storeCheck = requireStore(auth.user, inventoryStoreId);
+        if (storeCheck.error) {
+          await client.query('ROLLBACK');
+          return storeCheck.error;
+        }
+      } else if (openingStockQty > 0 && auth.user.role !== 'super_admin') {
+        await client.query('ROLLBACK');
+        return errorResponse('Store is required for opening stock', 403);
+      }
 
       if (manageInventoryEnabled && openingStockQty > 0) {
         const stockInInsert = await client.query(

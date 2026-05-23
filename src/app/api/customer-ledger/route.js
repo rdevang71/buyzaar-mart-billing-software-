@@ -20,7 +20,7 @@ function money(value) {
 }
 
 function getStoreScope(user, params, alias = 'x') {
-  if (Array.isArray(user.permissions) && user.permissions.includes('*')) return '';
+  if (user.role === 'super_admin') return '';
   const stores = (user.assigned_stores || []).map(Number).filter(Number.isFinite);
   if (!stores.length) return ' AND 1 = 0';
   params.push(stores);

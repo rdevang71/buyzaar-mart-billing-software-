@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -9,10 +9,41 @@ export default function SubSidebar({ subSidebar, sectionHref, onBackToMain, onCl
   const currentSectionHref = subSidebar.sectionHref || sectionHref;
   const groups = subSidebar.groups || [];
   const [openGroups, setOpenGroups] = useState({});
+  const scrollRef = useRef(null);
+  const activeLinkRef = useRef(null);
+  const storageKey = useMemo(
+    () => `sub-sidebar-scroll:${subSidebar.title || currentSectionHref || 'default'}`,
+    [currentSectionHref, subSidebar.title]
+  );
 
   useEffect(() => {
     setOpenGroups(Object.fromEntries(groups.map((g) => [g.label, true])));
   }, [subSidebar]);
+
+  useEffect(() => {
+    const node = scrollRef.current;
+    if (!node) return undefined;
+
+    const saved = Number(sessionStorage.getItem(storageKey));
+    if (Number.isFinite(saved) && saved > 0) {
+      requestAnimationFrame(() => {
+        node.scrollTop = saved;
+      });
+    } else if (activeLinkRef.current) {
+      requestAnimationFrame(() => {
+        activeLinkRef.current?.scrollIntoView({ block: 'nearest' });
+      });
+    }
+
+    const saveScroll = () => {
+      sessionStorage.setItem(storageKey, String(node.scrollTop));
+    };
+    node.addEventListener('scroll', saveScroll, { passive: true });
+    return () => {
+      saveScroll();
+      node.removeEventListener('scroll', saveScroll);
+    };
+  }, [pathname, storageKey, openGroups]);
 
   /* ── Employee-style flat list ── */
   if (subSidebar.flatItems?.length) {
@@ -22,7 +53,7 @@ export default function SubSidebar({ subSidebar, sectionHref, onBackToMain, onCl
         pathname.startsWith(currentSectionHref + '/'));
 
     return (
-      <div className="flex flex-col h-full bg-white border-r border-gray-200 overflow-y-auto">
+      <div ref={scrollRef} className="flex flex-col h-full bg-white border-r border-gray-200 overflow-y-auto">
         {(onBackToMain || onClose) && (
           <div className="md:hidden flex items-center justify-between px-3 py-2.5 border-b border-gray-200 bg-white shrink-0">
             {onBackToMain ? (
@@ -80,6 +111,7 @@ export default function SubSidebar({ subSidebar, sectionHref, onBackToMain, onCl
               <Link
                 key={item.href}
                 href={item.href}
+                ref={active ? activeLinkRef : null}
                 onClick={() => onClose?.()}
                 className={`flex items-center gap-3 px-3 py-3 rounded-lg text-[13px] font-medium transition-colors ${
                   active
@@ -110,7 +142,7 @@ export default function SubSidebar({ subSidebar, sectionHref, onBackToMain, onCl
     setOpenGroups((prev) => ({ ...prev, [label]: !prev[label] }));
 
   return (
-    <div className="flex flex-col h-full bg-[#f0f4fa] border-r border-gray-200 overflow-y-auto">
+    <div ref={scrollRef} className="flex flex-col h-full bg-[#f0f4fa] border-r border-gray-200 overflow-y-auto">
       <div className="flex items-center justify-between px-4 py-3.5 border-b border-gray-200 bg-white sticky top-0 z-10">
         <div className="flex items-center gap-2">
           {onBackToMain && (
@@ -173,6 +205,7 @@ export default function SubSidebar({ subSidebar, sectionHref, onBackToMain, onCl
                       <Link
                         key={item.href}
                         href={item.href}
+                        ref={active ? activeLinkRef : null}
                         onClick={() => onClose?.()}
                         className={`block px-2 py-2 rounded-lg text-[12.5px] transition-colors
                           ${active
