@@ -5,12 +5,14 @@ const nextConfig = {
     const backendUrl = process.env.BACKEND_URL || '';
     if (!backendUrl) return [];
 
-    return [
-      {
-        source: '/api/:path*',
-        destination: `${backendUrl.replace(/\/$/, '')}/api/:path*`,
-      },
-    ];
+    return {
+      beforeFiles: [
+        {
+          source: '/api/:path*',
+          destination: `${backendUrl.replace(/\/$/, '')}/api/:path*`,
+        },
+      ],
+    };
   },
 };
 
