@@ -237,7 +237,8 @@ export async function POST(req) {
         $6, $7, $8, $9, $10,
         $11, $12, $13, $14, $15,
         $16::jsonb, 'paid', $17::jsonb, NOW(), NOW()
-      ) RETURNING id, bill_number, public_token`,
+      ) ON CONFLICT (bill_number) DO NOTHING
+      RETURNING id, bill_number, public_token`,
       [
         billNumber,
         sessionId || null,
@@ -258,6 +259,38 @@ export async function POST(req) {
         JSON.stringify({ clientBillId, source: 'pos', deviceUid, counterUid, counterName }),
       ]
     );
+
+    // Bill already exists (idempotent retry from offline sync) — return existing bill as success
+    if (!billRes.rows[0]) {
+      await client.query('ROLLBACK');
+      const existingRes = await client.query(
+        `SELECT id, bill_number, public_token, customer_name, customer_mobile,
+                grand_total, tax_total, payment_mode, status, created_at
+         FROM sales_bills WHERE bill_number = $1 LIMIT 1`,
+        [billNumber]
+      );
+      const existing = existingRes.rows[0];
+      if (existing) {
+        return successResponse({
+          bill: {
+            id:            existing.id,
+            invoiceNumber: existing.bill_number,
+            billNumber:    existing.bill_number,
+            publicToken:   existing.public_token ?? null,
+            customerName:  existing.customer_name,
+            customerMobile: existing.customer_mobile,
+            grandTotal:    toNumber(existing.grand_total),
+            totalTax:      toNumber(existing.tax_total),
+            paymentMode:   existing.payment_mode,
+            itemCount:     items.length,
+            createdAt:     existing.created_at,
+            status:        existing.status || 'paid',
+          },
+          message: `Bill ${billNumber} already synced`,
+        }, 'Bill already synced', 200);
+      }
+      return errorResponse('Failed to create bill', 500);
+    }
 
     const billId = billRes.rows[0]?.id;
     if (!billId) return errorResponse('Failed to create bill', 500);
