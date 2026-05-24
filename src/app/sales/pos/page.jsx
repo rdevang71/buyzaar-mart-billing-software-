@@ -45,6 +45,33 @@ function emptyPayment() {
   return { method: 'cash', amount: '', referenceNo: '' };
 }
 
+function getReceiptPayments(receipt) {
+  const bill = receipt?.bill || receipt || {};
+  const direct = Array.isArray(bill.payments) ? bill.payments : Array.isArray(receipt?.payments) ? receipt.payments : [];
+  if (direct.length) return direct;
+  if (Array.isArray(bill.payment_meta)) return bill.payment_meta;
+  if (Array.isArray(bill.paymentMeta)) return bill.paymentMeta;
+  return [];
+}
+
+function formatPaymentMethod(method) {
+  const value = String(method || 'cash').trim();
+  return value ? value.charAt(0).toUpperCase() + value.slice(1) : 'Cash';
+}
+
+function formatPaymentBreakup(payments, fallbackMode = 'cash') {
+  const rows = (Array.isArray(payments) ? payments : [])
+    .map((payment) => ({
+      method: payment.method || payment.payment_mode || payment.mode || fallbackMode,
+      amount: toNumber(payment.amount),
+    }))
+    .filter((payment) => payment.amount > 0);
+
+  if (!rows.length) return formatPaymentMethod(fallbackMode);
+  if (rows.length === 1) return `${formatPaymentMethod(rows[0].method)} ${formatCurrency(rows[0].amount)}`;
+  return `Split: ${rows.map((payment) => `${formatPaymentMethod(payment.method)} ${formatCurrency(payment.amount)}`).join(' + ')}`;
+}
+
 const PAYMENT_OPTIONS = [
   { value: 'cash', label: 'Cash', icon: 'ti-cash' },
   { value: 'card', label: 'Card', icon: 'ti-credit-card' },
@@ -179,8 +206,14 @@ export default function POSPage() {
   const [receiptModal, setReceiptModal] = useState(false);
   const [receiptData, setReceiptData] = useState(null);
   const [receiptQR, setReceiptQR] = useState('');
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scannerError, setScannerError] = useState('');
+  const [scannerStatus, setScannerStatus] = useState('');
   const [holdDetectModal, setHoldDetectModal] = useState(false);
   const [detectedHeldBills, setDetectedHeldBills] = useState([]);
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const scannerStopRef = useRef(false);
 
   // ── TOAST ──
   const showToast = (msg, type = 'success') => {
@@ -404,6 +437,70 @@ export default function POSPage() {
   }, [cart, customerName, customerMobile, orderDiscount, roundOff, paymentMode, payments]);
 
   // ── BARCODE ──
+  useEffect(() => {
+    if (!scannerOpen) return undefined;
+    let detector = null;
+    let rafId = 0;
+
+    const stopScanner = () => {
+      scannerStopRef.current = true;
+      if (rafId) cancelAnimationFrame(rafId);
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+      }
+    };
+
+    const startScanner = async () => {
+      scannerStopRef.current = false;
+      setScannerError('');
+      setScannerStatus('Opening camera...');
+      try {
+        if (typeof window === 'undefined' || !navigator?.mediaDevices?.getUserMedia) {
+          throw new Error('Camera access is not available in this browser.');
+        }
+        if (!('BarcodeDetector' in window)) {
+          throw new Error('This browser does not support live barcode detection. Use the scan box with a hardware scanner.');
+        }
+        detector = new window.BarcodeDetector({
+          formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code'],
+        });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+          audio: false,
+        });
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+        }
+        setScannerStatus('Point camera at the barcode');
+
+        const scanFrame = async () => {
+          if (scannerStopRef.current || !videoRef.current || !detector) return;
+          try {
+            const codes = await detector.detect(videoRef.current);
+            const code = codes?.[0]?.rawValue;
+            if (code) {
+              stopScanner();
+              setScannerOpen(false);
+              await handleBarcode(code);
+              return;
+            }
+          } catch {}
+          rafId = requestAnimationFrame(scanFrame);
+        };
+        rafId = requestAnimationFrame(scanFrame);
+      } catch (err) {
+        setScannerStatus('');
+        setScannerError(err.message || 'Unable to start camera scanner.');
+      }
+    };
+
+    startScanner();
+    return stopScanner;
+  }, [scannerOpen]);
+
   const handleBarcode = async (value) => {
     const code = value?.trim();
     if (!code) return;
@@ -589,11 +686,15 @@ export default function POSPage() {
     const bill = receipt.bill || {};
     const items = receipt.items || [];
     const receiptConfig = await loadReceiptConfig();
+    const token = bill.publicToken || bill.public_token;
+    const paymentText = formatPaymentBreakup(getReceiptPayments(receipt), bill.payment_mode || bill.paymentMode || 'cash');
 
     // Generate QR for the print window (async, non-blocking)
+    let qrBlock = '';
     if (token && receiptConfig.showQr) {
       try {
         const url = getInvoiceURL(token);
+        const qrData = await generateQRDataURL(url, { size: 160 });
         qrBlock = `<div style="margin-top:12px;padding-top:12px;border-top:1px dashed #94a3b8;text-align:center"><img src="${qrData}" alt="QR" style="width:96px;height:96px" /><p style="font-size:9px;color:#64748b;margin:4px 0 2px;font-weight:700">SCAN TO VIEW DIGITAL INVOICE</p><p style="font-size:8px;color:#94a3b8;word-break:break-all">${url}</p></div>`;
       } catch {}
     }
@@ -653,7 +754,7 @@ export default function POSPage() {
             ${receiptConfig.showDiscount ? `<div><span>Discount</span><strong>${formatCurrency(bill.discount_total || bill.discountTotal || receipt.discount || 0)}</strong></div>` : ''}
             ${receiptConfig.showTaxBreakup ? `<div><span>Tax</span><strong>${formatCurrency(bill.tax_total || bill.totalTax || receipt.taxTotal || 0)}</strong></div>` : ''}
             <div class="grand"><span>Total</span><span>${formatCurrency(bill.grand_total || bill.grandTotal || receipt.grandTotal || 0)}</span></div>
-            <div><span>Paid By</span><strong>${bill.payment_mode || bill.paymentMode || 'cash'}</strong></div>
+            <div><span>Paid By</span><strong>${paymentText}</strong></div>
           </div>
           <div class="line"></div>
           <div class="center muted" style="white-space:pre-line">${receiptConfig.footerText || 'Thank you. Visit again.'}</div>
@@ -1082,6 +1183,14 @@ export default function POSPage() {
                     style={{ width: '140px' }}
                   />
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setScannerOpen(true)}
+                  className="h-10 w-10 rounded-xl border border-slate-200 bg-slate-50 text-slate-600 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 transition-colors"
+                  title="Open mobile camera scanner"
+                >
+                  <i className="ti ti-camera text-base" />
+                </button>
               </div>
             </div>
 
@@ -1475,7 +1584,7 @@ export default function POSPage() {
                           <p className={`font-black text-xs ${bill.isOffline ? 'text-amber-700' : 'text-indigo-600'}`}>
                             {formatCurrency(bill.grandTotal)}
                           </p>
-                          <p className="text-[10px] text-slate-400 capitalize mt-0.5">{bill.paymentMode || 'cash'}</p>
+                          <p className="text-[10px] text-slate-400 mt-0.5">{formatPaymentBreakup(bill.payments, bill.paymentMode || 'cash')}</p>
                         </div>
                       </div>
                       <button
@@ -1580,7 +1689,7 @@ export default function POSPage() {
                   )}
                   <div className="flex justify-between gap-3">
                     <span className="font-semibold text-slate-500">Payment</span>
-                    <span className="font-bold text-slate-900 capitalize">{receiptData.bill?.paymentMode || receiptData.bill?.payment_mode || 'cash'}</span>
+                    <span className="font-bold text-slate-900 text-right">{formatPaymentBreakup(getReceiptPayments(receiptData), receiptData.bill?.paymentMode || receiptData.bill?.payment_mode || 'cash')}</span>
                   </div>
                 </div>
                 <div className="my-3 border-t border-dashed border-slate-300" />
@@ -1641,6 +1750,49 @@ export default function POSPage() {
         )}
 
         {/* ── Open Session Modal ── */}
+        {scannerOpen && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 p-4">
+            <div className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">Scan Barcode</h3>
+                  <p className="text-[11px] text-slate-500">{scannerStatus || 'Camera scanner'}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setScannerOpen(false)}
+                  className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700"
+                >
+                  Close
+                </button>
+              </div>
+              <div className="bg-slate-950">
+                <video ref={videoRef} playsInline muted className="h-72 w-full object-cover" />
+              </div>
+              {scannerError && (
+                <div className="px-4 py-3 text-xs font-semibold text-rose-600">
+                  {scannerError}
+                </div>
+              )}
+              <div className="px-4 pb-4 pt-3">
+                <input
+                  type="text"
+                  value={barcode}
+                  onChange={(e) => setBarcode(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      setScannerOpen(false);
+                      handleBarcode(barcode);
+                    }
+                  }}
+                  placeholder="Or enter/scan barcode"
+                  className={inputClassName}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
         {openSessionModal && (
           <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/50 p-4">
             <div className="w-full max-w-md rounded-2xl bg-white p-6">
@@ -1833,7 +1985,7 @@ export default function POSPage() {
                           </div>
                           <div className="text-right">
                             <span className="font-black text-indigo-600 text-sm">{formatCurrency(bill.grandTotal)}</span>
-                            <p className="text-[10px] text-slate-400 capitalize mt-0.5">{bill.paymentMode}</p>
+                            <p className="text-[10px] text-slate-400 mt-0.5">{formatPaymentBreakup(bill.payments, bill.paymentMode)}</p>
                           </div>
                         </div>
                         {bill.itemCount && (

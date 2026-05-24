@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import MainLayout from '@/components/MainLayout';
 import Link from 'next/link';
 import { useUser } from '@/hooks/useUser';
+import { fetchAuthEndpoint } from '@/lib/auth-endpoints';
 
 const checklistItems = [
   { label: 'Add your first products',  desc: 'Use AI import or add manually', href: '/catalog/products' },
@@ -37,10 +38,7 @@ export default function HomePage() {
     const fetchStats = async () => {
       try {
         setLoading(true);
-        const res = await fetch('/api/dashboard/stats', {
-          cache: 'no-store',
-          credentials: 'include',
-        });
+        const res = await fetchAuthEndpoint('/api/dashboard/stats');
         const json = await res.json();
         if (res.ok && json.success) {
           setStats(json.data);

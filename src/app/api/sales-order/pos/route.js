@@ -276,7 +276,7 @@ export async function POST(req) {
       await client.query('ROLLBACK');
       const existingRes = await client.query(
         `SELECT id, bill_number, public_token, customer_name, customer_mobile,
-                grand_total, tax_total, payment_mode, status, created_at
+                grand_total, tax_total, payment_mode, payment_meta, status, created_at
          FROM sales_bills WHERE bill_number = $1 LIMIT 1`,
         [billNumber]
       );
@@ -293,6 +293,7 @@ export async function POST(req) {
             grandTotal:    toNumber(existing.grand_total),
             totalTax:      toNumber(existing.tax_total),
             paymentMode:   existing.payment_mode,
+            payments:      Array.isArray(existing.payment_meta) ? existing.payment_meta : normalizedPayments,
             itemCount:     items.length,
             createdAt:     existing.created_at,
             status:        existing.status || 'paid',
@@ -450,6 +451,7 @@ export async function POST(req) {
         grandTotal,
         totalTax,
         paymentMode: finalPaymentMode,
+        payments: normalizedPayments,
         itemCount:  items.length,
         createdAt:  new Date().toISOString(),
         status:     'paid',
@@ -623,6 +625,7 @@ export async function GET(req) {
         customer_name AS "customerName",
         grand_total AS "grandTotal",
         payment_mode AS "paymentMode",
+        payment_meta AS "payments",
         status,
         created_at AS "createdAt"
       FROM sales_bills

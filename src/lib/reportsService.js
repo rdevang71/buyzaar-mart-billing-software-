@@ -156,6 +156,24 @@ function displayTime(value) {
   });
 }
 
+function formatPaymentMethod(method) {
+  const value = String(method || 'cash').trim();
+  return value ? value.charAt(0).toUpperCase() + value.slice(1) : 'Cash';
+}
+
+function paymentBreakupText(value, fallbackMode = 'cash') {
+  const rows = Array.isArray(value) ? value : [];
+  const payments = rows
+    .map((payment) => ({
+      method: payment.method || payment.payment_mode || fallbackMode,
+      amount: number(payment.amount),
+    }))
+    .filter((payment) => payment.amount > 0);
+  if (!payments.length) return formatPaymentMethod(fallbackMode);
+  if (payments.length === 1) return formatPaymentMethod(payments[0].method);
+  return `Split: ${payments.map((payment) => `${formatPaymentMethod(payment.method)} ${money(payment.amount)}`).join(' + ')}`;
+}
+
 function parseReportDate(value) {
   if (!value) return null;
   const trimmed = String(value).trim();
@@ -238,7 +256,14 @@ function addSalesFilters({ conditions, params, filters, user, alias = 'sb' }) {
 
   if (filters.payment_type && !['all', 'select', 'select...'].includes(String(filters.payment_type).toLowerCase())) {
     params.push(String(filters.payment_type).toLowerCase());
-    conditions.push(`LOWER(${alias}.payment_mode) = $${params.length}`);
+    conditions.push(`(
+      LOWER(${alias}.payment_mode) = $${params.length}
+      OR EXISTS (
+        SELECT 1 FROM sales_bill_payments filter_sbp
+        WHERE filter_sbp.sales_bill_id = ${alias}.id
+          AND LOWER(filter_sbp.method) = $${params.length}
+      )
+    )`);
   }
 
   if (filters.payment_status && !['all', 'select'].includes(String(filters.payment_status).toLowerCase())) {
@@ -350,6 +375,7 @@ async function getOrdersReport(filters, user) {
        sb.balance_amount,
        sb.status,
        sb.payment_mode,
+       COALESCE(payments.payments, '[]'::jsonb) AS payments,
        sb.customer_name,
        sb.customer_mobile,
        sb.remarks,
@@ -358,6 +384,11 @@ async function getOrdersReport(filters, user) {
      FROM sales_bills sb
      LEFT JOIN stores s ON s.id = sb.store_id
      LEFT JOIN users u ON u.id = sb.user_id
+     LEFT JOIN LATERAL (
+       SELECT jsonb_agg(jsonb_build_object('method', sbp.method, 'amount', sbp.amount, 'referenceNo', sbp.reference_no) ORDER BY sbp.id) AS payments
+       FROM sales_bill_payments sbp
+       WHERE sbp.sales_bill_id = sb.id
+     ) payments ON TRUE
      WHERE ${conditions.join(' AND ')}
      ORDER BY sb.created_at DESC
      LIMIT 1000`,
@@ -390,7 +421,7 @@ async function getOrdersReport(filters, user) {
     original_customer: row.customer_name || 'Walk-in Customer',
     inv_customer_phone: row.customer_mobile || '',
     orig_customer_phone: row.customer_mobile || '',
-    payment_mode: row.payment_mode,
+    payment_mode: paymentBreakupText(row.payments, row.payment_mode),
     remarks: row.remarks || '',
   }));
 }
@@ -740,13 +771,21 @@ async function getDailyPaymentBreakupReport(filters, user) {
   const conditions = [`sb.status IN ('paid', 'completed')`];
   addSalesFilters({ conditions, params, filters, user, alias: 'sb' });
   const res = await query(
-    `SELECT DATE(sb.created_at) AS date, COALESCE(s.name, 'Store') AS store,
-            COALESCE(NULLIF(sb.payment_mode, ''), 'cash') AS payment_mode,
-            COUNT(*)::int AS orders, COALESCE(SUM(sb.grand_total), 0) AS amount
-     FROM sales_bills sb
-     LEFT JOIN stores s ON s.id = sb.store_id
-     WHERE ${conditions.join(' AND ')}
-     GROUP BY DATE(sb.created_at), s.name, sb.payment_mode
+    `WITH bill_payments AS (
+       SELECT
+         sb.id,
+         DATE(sb.created_at) AS date,
+         COALESCE(s.name, 'Store') AS store,
+         COALESCE(NULLIF(sbp.method, ''), NULLIF(sb.payment_mode, ''), 'cash') AS payment_mode,
+         COALESCE(sbp.amount, sb.grand_total) AS amount
+       FROM sales_bills sb
+       LEFT JOIN stores s ON s.id = sb.store_id
+       LEFT JOIN sales_bill_payments sbp ON sbp.sales_bill_id = sb.id
+       WHERE ${conditions.join(' AND ')}
+     )
+     SELECT date, store, payment_mode, COUNT(DISTINCT id)::int AS orders, COALESCE(SUM(amount), 0) AS amount
+     FROM bill_payments
+     GROUP BY date, store, payment_mode
      ORDER BY date DESC, store ASC`,
     params
   );
@@ -854,10 +893,16 @@ async function getOrderPaymentReport(filters, user) {
   const res = await query(
     `SELECT sb.id, sb.bill_number, sb.created_at, sb.payment_mode, sb.status,
             sb.grand_total, sb.paid_amount, sb.balance_amount,
+            COALESCE(payments.payments, '[]'::jsonb) AS payments,
             COALESCE(s.name, 'Store') AS store,
             sb.customer_name, sb.customer_mobile
      FROM sales_bills sb
      LEFT JOIN stores s ON s.id = sb.store_id
+     LEFT JOIN LATERAL (
+       SELECT jsonb_agg(jsonb_build_object('method', sbp.method, 'amount', sbp.amount, 'referenceNo', sbp.reference_no) ORDER BY sbp.id) AS payments
+       FROM sales_bill_payments sbp
+       WHERE sbp.sales_bill_id = sb.id
+     ) payments ON TRUE
      WHERE ${conditions.join(' AND ')}
      ORDER BY sb.created_at DESC
      LIMIT 1000`,
@@ -874,7 +919,7 @@ async function getOrderPaymentReport(filters, user) {
     store: row.store,
     customer: row.customer_name || 'Walk-in Customer',
     customer_mobile: row.customer_mobile || '',
-    payment_mode: row.payment_mode,
+    payment_mode: paymentBreakupText(row.payments, row.payment_mode),
     payment_status: row.status,
     amount: money(row.grand_total),
     paid_amount: money(row.paid_amount || row.grand_total),

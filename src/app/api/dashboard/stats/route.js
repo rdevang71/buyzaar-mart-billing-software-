@@ -181,6 +181,10 @@ export async function GET(request) {
       todaySales: 0,
       totalRevenue: 0,
       todayRevenue: 0,
+      weekRevenue: 0,
+      avgOrderValue: 0,
+      dailyData: [],
+      topProducts: [],
       recentOrders: []
     };
     try {
@@ -196,6 +200,7 @@ export async function GET(request) {
       );
       salesMetrics.totalSales = salesCountResult.rows[0]?.count || 0;
       salesMetrics.totalRevenue = parseFloat(salesCountResult.rows[0]?.total_revenue || 0);
+      salesMetrics.avgOrderValue = salesMetrics.totalSales > 0 ? salesMetrics.totalRevenue / salesMetrics.totalSales : 0;
 
       // Get today's sales
       const todayParams = [];
@@ -210,6 +215,58 @@ export async function GET(request) {
       );
       salesMetrics.todaySales = todaySalesResult.rows[0]?.count || 0;
       salesMetrics.todayRevenue = parseFloat(todaySalesResult.rows[0]?.today_revenue || 0);
+
+      const weekParams = [];
+      const weekScope = scopedCondition('sb', weekParams);
+      const weekSalesResult = await query(
+        `SELECT COALESCE(SUM(grand_total), 0)::numeric as week_revenue
+         FROM sales_bills sb
+         WHERE sb.created_at >= NOW() - INTERVAL '7 days'
+         AND sb.status IN ('paid', 'completed')${weekScope}`,
+        weekParams
+      );
+      salesMetrics.weekRevenue = parseFloat(weekSalesResult.rows[0]?.week_revenue || 0);
+
+      const dailyParams = [];
+      const dailyScope = scopedCondition('sb', dailyParams);
+      const dailyDataResult = await query(
+        `SELECT DATE(sb.created_at) AS date,
+                COUNT(*)::int AS orders,
+                COALESCE(SUM(sb.grand_total), 0)::numeric AS revenue
+         FROM sales_bills sb
+         WHERE sb.created_at >= CURRENT_DATE - INTERVAL '6 days'
+         AND sb.status IN ('paid', 'completed')${dailyScope}
+         GROUP BY DATE(sb.created_at)
+         ORDER BY DATE(sb.created_at) ASC`,
+        dailyParams
+      );
+      salesMetrics.dailyData = (dailyDataResult.rows || []).map((row) => ({
+        date: row.date,
+        label: new Date(row.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
+        orders: row.orders || 0,
+        revenue: parseFloat(row.revenue || 0),
+      }));
+
+      const topParams = [];
+      const topScope = scopedCondition('sb', topParams);
+      const topProductsResult = await query(
+        `SELECT COALESCE(p.name, sbi.product_name, 'Product') AS name,
+                COALESCE(SUM(sbi.qty), 0)::numeric AS qty,
+                COALESCE(SUM(sbi.line_total), 0)::numeric AS revenue
+         FROM sales_bill_items sbi
+         INNER JOIN sales_bills sb ON sb.id = sbi.sales_bill_id
+         LEFT JOIN products p ON p.id = sbi.product_id
+         WHERE sb.status IN ('paid', 'completed')${topScope}
+         GROUP BY COALESCE(p.name, sbi.product_name, 'Product')
+         ORDER BY qty DESC, revenue DESC
+         LIMIT 5`,
+        topParams
+      );
+      salesMetrics.topProducts = (topProductsResult.rows || []).map((row) => ({
+        name: row.name,
+        qty: parseFloat(row.qty || 0),
+        revenue: parseFloat(row.revenue || 0),
+      }));
 
       // Get recent orders
       const recentParams = [];

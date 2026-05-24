@@ -30,6 +30,7 @@ export async function POST(req) {
       customer_mobile,
       items = [],
       payment_mode,
+      payments = [],
       total_amount,
       total_tax,
       discount_amount = 0,
@@ -84,18 +85,26 @@ export async function POST(req) {
     const taxTotal = toNumber(total_tax, calculatedTax);
     const discountTotal = toNumber(discount_amount);
     const grandTotal = toNumber(total_amount, Math.max(0, subtotal - discountTotal + taxTotal + toNumber(round_off)));
-    const paidAmount = grandTotal;
+    const normalizedPayments = (Array.isArray(payments) && payments.length ? payments : [{ method: payment_mode || 'cash', amount: grandTotal, referenceNo: '' }])
+      .map((payment) => ({
+        method: String(payment.method || payment.payment_mode || payment_mode || 'cash').trim().toLowerCase(),
+        amount: toNumber(payment.amount),
+        referenceNo: String(payment.referenceNo || payment.reference_no || '').trim(),
+      }))
+      .filter((payment) => payment.amount > 0);
+    const paidAmount = normalizedPayments.reduce((sum, payment) => sum + payment.amount, 0);
+    const finalPaymentMode = normalizedPayments.length > 1 ? 'split' : (normalizedPayments[0]?.method || payment_mode || 'cash');
 
     const billRes = await client.query(`
       INSERT INTO sales_bills (
         bill_number, store_id, customer_name, customer_mobile,
         subtotal, discount_total, tax_total, round_off, grand_total,
-        paid_amount, balance_amount, payment_mode, remarks, user_id, status, meta,
+        paid_amount, balance_amount, payment_mode, payment_meta, remarks, user_id, status, meta,
         created_at, updated_at
       ) VALUES (
         $1, $2, $3, $4,
         $5, $6, $7, $8, $9,
-        $10, 0, $11, $12, $13, 'completed', $14::jsonb,
+        $10, 0, $11, $12::jsonb, $13, $14, 'completed', $15::jsonb,
         NOW(), NOW()
       ) RETURNING id, bill_number, public_token, created_at
     `, [
@@ -109,10 +118,11 @@ export async function POST(req) {
       toNumber(round_off),
       grandTotal,
       paidAmount,
-      payment_mode,
+      finalPaymentMode,
+      JSON.stringify(normalizedPayments),
       notes,
       user.id,
-      JSON.stringify({ source: 'legacy-pos-billing', customer_id: customer_id || null }),
+      JSON.stringify({ source: 'legacy-pos-billing', customer_id: customer_id || null, payments: normalizedPayments }),
     ]);
 
     const bill_id = billRes.rows[0]?.id;
@@ -194,11 +204,13 @@ export async function POST(req) {
       }
     }
 
-    await client.query(
-      `INSERT INTO sales_bill_payments (sales_bill_id, method, amount, reference_no, meta, created_at)
-       VALUES ($1, $2, $3, '', '{}'::jsonb, NOW())`,
-      [bill_id, payment_mode, paidAmount]
-    );
+    for (const payment of normalizedPayments) {
+      await client.query(
+        `INSERT INTO sales_bill_payments (sales_bill_id, method, amount, reference_no, meta, created_at)
+         VALUES ($1, $2, $3, $4, '{}'::jsonb, NOW())`,
+        [bill_id, payment.method || finalPaymentMode, payment.amount, payment.referenceNo || '']
+      );
+    }
 
     const invoiceRes = await client.query(`
       INSERT INTO invoice_sales_orders (
@@ -218,7 +230,7 @@ export async function POST(req) {
       bill_id,
       customer_name || 'Walk-in Customer',
       customer_mobile || '',
-      payment_mode,
+      finalPaymentMode,
       grandTotal,
       discountTotal,
       billNumber,
@@ -306,10 +318,18 @@ export async function GET(req) {
       ) return_state ON TRUE
       WHERE sbi.sales_bill_id = $1
     `, [bill.id]);
+    const paymentsRes = await query(
+      `SELECT method, amount, reference_no AS "referenceNo", created_at AS "createdAt"
+       FROM sales_bill_payments
+       WHERE sales_bill_id = $1
+       ORDER BY id ASC`,
+      [bill.id]
+    );
 
     return successResponse({
-      bill,
-      items: itemsRes.rows || []
+      bill: { ...bill, payments: paymentsRes.rows || [] },
+      items: itemsRes.rows || [],
+      payments: paymentsRes.rows || []
     });
   } catch (err) {
     return errorResponse(err.message);
