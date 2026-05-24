@@ -72,7 +72,7 @@ export default function MainLayout({ children }) {
   );
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[#f4f7fb] text-slate-900">
       <Topbar
         onMenuOpen={() => {
           setMobilePanel('main');
@@ -100,7 +100,7 @@ export default function MainLayout({ children }) {
 
       {/* Desktop SubSidebar panel */}
       {hasAccessibleMenu && subOpen && (
-        <div className="hidden md:block fixed left-[218px] top-[52px] h-[calc(100vh-52px)] z-30 shadow-md w-[200px]">
+        <div className="hidden md:block fixed left-[64px] top-[56px] h-[calc(100vh-56px)] z-30 w-[256px] border-r border-slate-200/80 bg-[#edf3fa] shadow-[6px_0_22px_rgba(15,23,42,0.06)] animate-shell-slide-in">
           <SubSidebar
             subSidebar={activeMenu.subSidebar}
             onClose={null}
@@ -127,15 +127,17 @@ export default function MainLayout({ children }) {
       <main
         className={`
           transition-all duration-300
-          mt-[52px]
-          ${hasAccessibleMenu ? 'md:ml-[218px]' : 'md:ml-0'}
-          ${hasAccessibleMenu && subOpen ? 'md:ml-[418px]' : ''}
-          min-h-[calc(100vh-52px)]
-          p-3 sm:p-5 md:p-7
+          mt-[56px]
+          ${hasAccessibleMenu ? 'md:ml-[64px]' : 'md:ml-0'}
+          ${hasAccessibleMenu && subOpen ? 'md:ml-[320px]' : ''}
+          min-h-[calc(100vh-56px)]
+          p-3 sm:p-5 md:p-6 lg:p-7
           max-w-full overflow-x-hidden
         `}
       >
-        {content}
+        <div key={pathname} className="page-route-transition">
+          {content}
+        </div>
       </main>
     </div>
   );

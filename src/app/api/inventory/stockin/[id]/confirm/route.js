@@ -419,22 +419,36 @@ export async function POST(request, { params }) {
       }
 
       // ── 7. Mark stock_in as confirmed ────────────────────────────────────────
+      const stockIn = stockInRow.rows[0];
+      const vendorLookupName = String(form.vendor || stockIn.vendor_name || '').trim();
+      const formVendorIds = Array.isArray(form.vendorIds) ? form.vendorIds.map(Number).filter(Number.isFinite) : [];
+      let vendorId = Number(stockIn.vendor_id || formVendorIds[0] || 0) || null;
+      if (!vendorId && vendorLookupName) {
+        const vendorRes = await client.query(
+          `SELECT id FROM vendors WHERE LOWER(name) = LOWER($1) LIMIT 1`,
+          [vendorLookupName]
+        );
+        vendorId = Number(vendorRes.rows[0]?.id || 0) || null;
+      }
+
       await client.query(
         `UPDATE stock_in SET
            status         = 'confirmed',
            vendor_name    = $1,
-           invoice_date   = $2,
-           invoice_number = $3,
-           other_charges  = $4,
-           remarks        = $5,
-           total_items    = $6,
-           total_cost     = $7,
-           total_tax      = $8,
-           meta           = meta || $9::jsonb,
+           vendor_id      = $2,
+           invoice_date   = $3,
+           invoice_number = $4,
+           other_charges  = $5,
+           remarks        = $6,
+           total_items    = $7,
+           total_cost     = $8,
+           total_tax      = $9,
+           meta           = meta || $10::jsonb,
            confirmed_at   = NOW()
-         WHERE id = $10`,
+         WHERE id = $11`,
         [
           form.vendor        || null,
+          vendorId,
           normalizedInvoiceDate || null,
           form.invoice_number|| null,
           Number(form.other_charges || 0),
@@ -446,17 +460,6 @@ export async function POST(request, { params }) {
           id,
         ]
       );
-
-      const stockIn = stockInRow.rows[0];
-      const vendorLookupName = String(form.vendor || stockIn.vendor_name || '').trim();
-      let vendorId = Number(stockIn.vendor_id || 0) || null;
-      if (!vendorId && vendorLookupName) {
-        const vendorRes = await client.query(
-          `SELECT id FROM vendors WHERE LOWER(name) = LOWER($1) LIMIT 1`,
-          [vendorLookupName]
-        );
-        vendorId = Number(vendorRes.rows[0]?.id || 0) || null;
-      }
 
       if (vendorId && (stockIn.reference_type === 'purchase_order' || vendorLookupName)) {
         const grossInvoiceAmount = Math.max(0, totalCost + totalTax);

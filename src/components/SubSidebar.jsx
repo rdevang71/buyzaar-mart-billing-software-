@@ -9,6 +9,7 @@ export default function SubSidebar({ subSidebar, sectionHref, onBackToMain, onCl
   const currentSectionHref = subSidebar.sectionHref || sectionHref;
   const groups = subSidebar.groups || [];
   const [openGroups, setOpenGroups] = useState({});
+  const [searchQuery, setSearchQuery] = useState('');
   const scrollRef = useRef(null);
   const activeLinkRef = useRef(null);
   const storageKey = useMemo(
@@ -18,7 +19,21 @@ export default function SubSidebar({ subSidebar, sectionHref, onBackToMain, onCl
 
   useEffect(() => {
     setOpenGroups(Object.fromEntries(groups.map((g) => [g.label, true])));
+    setSearchQuery('');
   }, [subSidebar]);
+
+  const filteredGroups = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return groups;
+    return groups
+      .map((group) => ({
+        ...group,
+        items: group.items.filter((item) =>
+          `${group.label} ${item.label}`.toLowerCase().includes(q)
+        ),
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [groups, searchQuery]);
 
   useEffect(() => {
     const node = scrollRef.current;
@@ -53,7 +68,7 @@ export default function SubSidebar({ subSidebar, sectionHref, onBackToMain, onCl
         pathname.startsWith(currentSectionHref + '/'));
 
     return (
-      <div ref={scrollRef} className="flex flex-col h-full bg-white border-r border-gray-200 overflow-y-auto">
+      <div ref={scrollRef} className="flex flex-col h-full bg-[#edf3fa] border-r border-slate-200 overflow-y-auto">
         {(onBackToMain || onClose) && (
           <div className="md:hidden flex items-center justify-between px-3 py-2.5 border-b border-gray-200 bg-white shrink-0">
             {onBackToMain ? (
@@ -142,8 +157,9 @@ export default function SubSidebar({ subSidebar, sectionHref, onBackToMain, onCl
     setOpenGroups((prev) => ({ ...prev, [label]: !prev[label] }));
 
   return (
-    <div ref={scrollRef} className="flex flex-col h-full bg-[#f0f4fa] border-r border-gray-200 overflow-y-auto">
-      <div className="flex items-center justify-between px-4 py-3.5 border-b border-gray-200 bg-white sticky top-0 z-10">
+    <div ref={scrollRef} className="flex flex-col h-full bg-[#edf3fa] border-r border-slate-200 overflow-y-auto">
+      <div className="sticky top-0 z-10 border-b border-slate-200/80 bg-[#edf3fa]/95 px-3 py-3 backdrop-blur">
+        <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           {onBackToMain && (
             <button
@@ -155,14 +171,26 @@ export default function SubSidebar({ subSidebar, sectionHref, onBackToMain, onCl
               <i className="ti ti-arrow-left text-[17px]" />
             </button>
           )}
-          <i className={`ti ${subSidebar.titleIcon} text-blue-900 text-[16px]`} />
-          <span className="text-[13px] font-bold text-blue-900">{subSidebar.title}</span>
+          <i className={`ti ${subSidebar.titleIcon} text-blue-700 text-[16px]`} />
+          <span className="text-[13px] font-black text-slate-900">{subSidebar.title}</span>
         </div>
         {onClose && (
           <button type="button" onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100">
             <i className="ti ti-x text-gray-400 text-[14px]" />
           </button>
         )}
+        </div>
+        <div className="relative">
+          <i className="ti ti-search absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-slate-400" />
+          <input
+            type="search"
+            placeholder="Search"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            className="h-9 w-full rounded-xl border border-slate-200 bg-white px-9 text-[12px] outline-none transition focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+          />
+          <span className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-400">Ctrl K</span>
+        </div>
       </div>
 
       {currentSectionHref && (
@@ -182,22 +210,22 @@ export default function SubSidebar({ subSidebar, sectionHref, onBackToMain, onCl
         </div>
       )}
 
-      <div className="py-2 px-2 space-y-0.5">
-        {groups.map((group) => {
+      <div className="py-3 px-2 space-y-2">
+        {filteredGroups.map((group) => {
           const isOpen = openGroups[group.label];
           return (
             <div key={group.label}>
               <button
                 type="button"
                 onClick={() => toggle(group.label)}
-                className="w-full flex items-center gap-2 px-2 py-2.5 rounded-lg hover:bg-blue-50 transition-colors"
+                className="w-full flex items-center gap-2 rounded-xl px-2.5 py-2.5 transition-colors hover:bg-white/80"
               >
-                <i className={`ti ${isOpen ? 'ti-chevron-down' : 'ti-chevron-right'} text-orange-400 text-[11px]`} />
-                <i className={`ti ${group.icon} text-blue-800 text-[16px]`} />
-                <span className="text-[12.5px] font-bold text-blue-900 text-left">{group.label}</span>
+                <i className={`ti ${isOpen ? 'ti-chevron-down' : 'ti-chevron-right'} text-amber-500 text-[11px]`} />
+                <i className={`ti ${group.icon} text-blue-700 text-[16px]`} />
+                <span className="text-[12.5px] font-black text-slate-900 text-left">{group.label}</span>
               </button>
               {isOpen && (
-                <div className="ml-4 border-l-2 border-gray-300 pl-2 mt-0.5 mb-1.5 space-y-0.5">
+                <div className="ml-5 border-l border-slate-300 pl-3 mt-0.5 mb-2 space-y-0.5">
                   {group.items.map((item) => {
                     const active =
                       pathname === item.href || pathname.startsWith(item.href + '/');
@@ -207,12 +235,13 @@ export default function SubSidebar({ subSidebar, sectionHref, onBackToMain, onCl
                         href={item.href}
                         ref={active ? activeLinkRef : null}
                         onClick={() => onClose?.()}
-                        className={`block px-2 py-2 rounded-lg text-[12.5px] transition-colors
+                        className={`relative block rounded-xl px-3 py-2 text-[12.5px] transition-all duration-200
                           ${active
-                            ? 'text-orange-500 font-semibold bg-orange-50'
-                            : 'text-gray-600 hover:text-blue-900 hover:bg-blue-50'
+                            ? 'text-blue-700 font-bold bg-white shadow-sm'
+                            : 'text-slate-600 hover:text-blue-900 hover:bg-white/70'
                           }`}
                       >
+                        {active && <span className="absolute -left-[13px] top-1/2 h-5 w-[2px] -translate-y-1/2 rounded-full bg-blue-600" />}
                         {item.label}
                       </Link>
                     );
@@ -222,6 +251,15 @@ export default function SubSidebar({ subSidebar, sectionHref, onBackToMain, onCl
             </div>
           );
         })}
+        {filteredGroups.length === 0 && (
+          <div className="rounded-xl border border-slate-200 bg-white px-3 py-6 text-center text-[12px] font-medium text-slate-400">
+            No menu items found
+          </div>
+        )}
+      </div>
+      <div className="mt-auto border-t border-slate-200/80 px-4 py-3">
+        <p className="text-[18px] font-black leading-none text-blue-700">BillingPro</p>
+        <p className="mt-0.5 text-[10px] font-medium text-slate-400">India's No.1 Business App</p>
       </div>
     </div>
   );

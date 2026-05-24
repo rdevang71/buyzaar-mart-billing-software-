@@ -131,7 +131,12 @@ export async function POST(request) {
         destinationId,
         payload.applyTaxes ?? true,
         payload.addProductsPrefill ?? false,
-        JSON.stringify(payload),
+        JSON.stringify({
+          ...payload,
+          sourceType: payload.sourceType || payload.source_type || 'warehouse',
+          vendorIds: Array.isArray(payload.vendorIds) ? payload.vendorIds : [],
+          vendorNames: Array.isArray(payload.vendorNames) ? payload.vendorNames : [],
+        }),
       ];
       const res = await client.query(insertText, values);
       const id = res.rows[0].id;

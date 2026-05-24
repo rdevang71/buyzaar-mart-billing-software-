@@ -953,7 +953,7 @@ export default function POSPage() {
     try {
       const res = await fetch('/api/sales-order/closing', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: session.sessionId, openingCash: toNumber(openingCash), actualCash: toNumber(actualCash), remarks: closingRemarks }),
+        body: JSON.stringify({ sessionId: session.sessionId, openingCash: toNumber(openingCash), remarks: closingRemarks }),
       });
       const json = await res.json();
       if (json.success) {
@@ -1985,8 +1985,10 @@ export default function POSPage() {
                 ) : null}
                 <div>
                   <label className="text-[10px] font-black text-slate-400 tracking-widest uppercase block mb-1.5">Actual Cash Counted (₹)</label>
-                  <input type="number" value={actualCash} onChange={(e) => setActualCash(e.target.value)}
-                    placeholder="0.00" className={inputCls} />
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                    <p className="text-lg font-black text-emerald-900">{formatCurrency(toNumber(actualCash))}</p>
+                    <p className="mt-1 text-[11px] font-medium text-emerald-700">Bills ke cash payments se calculate hota hai, employee manually edit nahi kar sakta.</p>
+                  </div>
                 </div>
                 <div>
                   <label className="text-[10px] font-black text-slate-400 tracking-widest uppercase block mb-1.5">Remarks (optional)</label>

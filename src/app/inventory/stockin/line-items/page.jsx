@@ -34,6 +34,7 @@ function LineItemsContent() {
   const [cartFilter, setCartFilter] = useState('');
   const [products, setProducts] = useState([]);
   const [vendors, setVendors] = useState([]);
+  const [selectedVendorIds, setSelectedVendorIds] = useState([]);
   const [cart, setCart] = useState([]);
   const [form, setForm] = useState({
     vendor: '',
@@ -45,6 +46,7 @@ function LineItemsContent() {
   const [confirming, setConfirming] = useState(false);
   const isStoreDestination = String(draft?.destinationLocationType || '').toLowerCase() === 'store';
   const isWarehouseDestination = String(draft?.destinationLocationType || 'Warehouse').toLowerCase() === 'warehouse';
+  const sourceType = String(draft?.meta?.sourceType || 'warehouse').toLowerCase();
 
   useEffect(() => {
     if (!id) return;
@@ -57,12 +59,13 @@ function LineItemsContent() {
         setVendors(Array.isArray(v) ? v : []);
         if (d && !d.error) {
           setForm({
-            vendor: d.vendor_name || '',
+            vendor: d.vendor_name || (Array.isArray(d.meta?.vendorNames) ? d.meta.vendorNames.join(', ') : ''),
             invoice_date: d.invoice_date || '',
             invoice_number: d.invoice_number || '',
             other_charges: d.other_charges ?? '',
             remarks: d.remarks || '',
           });
+          setSelectedVendorIds((Array.isArray(d.meta?.vendorIds) ? d.meta.vendorIds : []).map(String));
           if (Array.isArray(d.items) && d.items.length) {
             const warehouseDestination = String(d.destinationLocationType || 'Warehouse').toLowerCase() === 'warehouse';
             setCart(d.items.map((item) => ({
@@ -94,10 +97,14 @@ function LineItemsContent() {
       if (!draft) return;
       setLoadingProducts(true);
       try {
-        const params = new URLSearchParams({ pageSize: '20' });
+        const params = new URLSearchParams({ pageSize: '30' });
         if (searchTerm.trim()) params.set('search', searchTerm.trim());
-        const endpoint = isStoreDestination ? '/api/inventory/products' : '/api/catalog/products';
-        if (isStoreDestination) params.set('warehouse_stock', 'true');
+        const sourceType = String(draft?.meta?.sourceType || 'warehouse').toLowerCase();
+        const endpoint = '/api/inventory/stockin/source-products';
+        params.set('source', sourceType === 'vendor' ? 'vendor' : 'warehouse');
+        if (sourceType === 'vendor') {
+          params.set('vendorIds', selectedVendorIds.join(','));
+        }
 
         const response = await fetch(`${endpoint}?${params.toString()}`, {
           signal: controller.signal,
@@ -117,7 +124,7 @@ function LineItemsContent() {
       controller.abort();
       clearTimeout(t);
     };
-  }, [searchTerm, draft, isStoreDestination]);
+  }, [searchTerm, draft, selectedVendorIds]);
 
   const filteredCart = useMemo(() => {
     if (!cartFilter.trim()) return cart;
@@ -146,7 +153,8 @@ function LineItemsContent() {
       .filter((item) => String(item.product_id) === String(pid))
       .reduce((sum, item) => sum + Number(item.qty || 0), 0);
 
-    if (isStoreDestination && selectedQty >= availableStock) {
+    const sourceType = String(draft?.meta?.sourceType || 'warehouse').toLowerCase();
+    if (sourceType === 'warehouse' && isStoreDestination && selectedQty >= availableStock) {
       alert(`${p.name} has only ${availableStock} quantity available in warehouse`);
       return;
     }
@@ -154,7 +162,7 @@ function LineItemsContent() {
     setCart((c) => {
       const taxRate = Number(p.tax_rate ?? p.taxRate ?? 0);
       const cost = Number(p.cost_price || 0);
-      const remainingQty = isStoreDestination ? Math.max(0, availableStock - selectedQty) : 1;
+      const remainingQty = sourceType === 'warehouse' && isStoreDestination ? Math.max(0, availableStock - selectedQty) : 1;
       return [
         ...c,
         {
@@ -164,9 +172,9 @@ function LineItemsContent() {
           sku: p.sku,
           cost_price: cost,
           tax_value: draft?.applyTaxes ? (cost * taxRate) / 100 : 0,
-          qty: isStoreDestination ? Math.min(1, remainingQty) : 1,
-          max_qty: isStoreDestination ? availableStock : null,
-          batches: isStoreDestination ? [] : [createBatchRow(1)],
+          qty: sourceType === 'warehouse' && isStoreDestination ? Math.min(1, remainingQty) : 1,
+          max_qty: sourceType === 'warehouse' && isStoreDestination ? availableStock : null,
+          batches: sourceType === 'warehouse' && isStoreDestination ? [] : [createBatchRow(1)],
           batch_no: '',
           mfg_date: '',
           expiry_date: '',
@@ -223,7 +231,7 @@ function LineItemsContent() {
           const nextBatches = batches.map((batch, index) => index === 0 ? { ...batch, qty: requestedQty } : batch);
           return { ...it, batches: nextBatches, qty: Math.max(0, sumBatchQty(nextBatches)) };
         }
-        if (!isStoreDestination || !it.max_qty) return { ...it, qty: requestedQty };
+        if (String(draft?.meta?.sourceType || 'warehouse').toLowerCase() !== 'warehouse' || !isStoreDestination || !it.max_qty) return { ...it, qty: requestedQty };
 
         const otherSelectedQty = c
           .filter((item) => item.line_id !== lineId && String(item.product_id) === String(it.product_id))
@@ -253,7 +261,7 @@ function LineItemsContent() {
       const res = await fetch(`/api/inventory/stockin/${encodeURIComponent(id)}/confirm`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ form, items: cart }),
+        body: JSON.stringify({ form: { ...form, vendorIds: selectedVendorIds, sourceType }, items: cart }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed');
@@ -294,7 +302,31 @@ function LineItemsContent() {
           </div>
 
           <div className="mb-4">
+            <label className="block text-[12px] text-gray-500 mb-1">Stock Source</label>
+            <p className="text-[13px] font-semibold text-gray-900">{sourceType === 'vendor' ? 'Direct Vendor' : 'Warehouse'}</p>
+          </div>
+
+          <div className="mb-4">
             <label className="block text-[12px] text-gray-500 mb-1">Vendor Name</label>
+            {sourceType === 'vendor' ? (
+              <select
+                multiple
+                value={selectedVendorIds}
+                onChange={(e) => {
+                  const ids = Array.from(e.target.selectedOptions).map((option) => option.value);
+                  setSelectedVendorIds(ids);
+                  const names = vendors.filter((vendor) => ids.includes(String(vendor.id))).map((vendor) => vendor.name);
+                  setForm({ ...form, vendor: names.join(', ') });
+                }}
+                className="h-28 w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-gray-700 bg-white outline-none focus:border-blue-400"
+              >
+                {vendors.map((vendor) => (
+                  <option key={vendor.id} value={String(vendor.id)}>
+                    {vendor.name}{vendor.company ? ` - ${vendor.company}` : ''}
+                  </option>
+                ))}
+              </select>
+            ) : (
             <div className="relative">
               <input
                 list="vendor-list"
@@ -310,6 +342,7 @@ function LineItemsContent() {
               </datalist>
               <i className="ti ti-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-[14px] pointer-events-none" />
             </div>
+            )}
           </div>
 
           <div className="flex gap-3 mb-4">
@@ -397,9 +430,14 @@ function LineItemsContent() {
                     >
                       <div>
                         <div className="text-[13px] font-medium text-gray-900">{p.name}</div>
-                        {isStoreDestination && (
+                        {sourceType === 'warehouse' && isStoreDestination && (
                           <div className="text-[11px] text-emerald-600 mt-0.5">
                             Warehouse qty: {Number(p.availableStock || 0)}
+                          </div>
+                        )}
+                        {sourceType === 'vendor' && p.vendor_names && (
+                          <div className="text-[11px] text-blue-600 mt-0.5">
+                            Vendor: {p.vendor_names}
                           </div>
                         )}
                         <div className="text-[12px] text-gray-500">SKU: {p.sku || '—'}</div>
@@ -542,12 +580,12 @@ function LineItemsContent() {
                               onChange={(e) => updateQty(it.line_id, e.target.value)}
                               className="w-20 border border-gray-200 rounded px-2 py-1 text-[13px] text-gray-700"
                             />
-                            {isStoreDestination && it.max_qty ? (
+                            {sourceType === 'warehouse' && isStoreDestination && it.max_qty ? (
                               <div className="mt-1 text-[10px] text-gray-500">Max {it.max_qty}</div>
                             ) : null}
                           </td>
-                          <td className="py-3 px-2 text-[12px] text-gray-500">Auto from warehouse</td>
-                          <td className="py-3 px-2 text-[12px] text-gray-500">FEFO</td>
+                          <td className="py-3 px-2 text-[12px] text-gray-500">{sourceType === 'vendor' ? 'Vendor batch' : 'Auto from warehouse'}</td>
+                          <td className="py-3 px-2 text-[12px] text-gray-500">{sourceType === 'vendor' ? 'As invoiced' : 'FEFO'}</td>
                           <td className="py-3 px-2 text-[13px] text-gray-700">{formatCurrency(it.cost_price)}</td>
                           <td className="py-3 px-2">
                             <button

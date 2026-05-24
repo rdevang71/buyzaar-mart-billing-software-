@@ -47,17 +47,18 @@ export default function Sidebar({
       <Link
         href={item.href}
         onClick={(e) => handleClick(e, item)}
-        className="relative block"
+        className="relative block group"
+        title={item.label}
       >
         {/* Desktop */}
         <div className={`
-          hidden md:flex flex-col items-center justify-center gap-1.5 py-4 px-2
-          cursor-pointer transition-all duration-150 border-b border-r border-gray-100
-          ${isActive ? 'bg-orange-50' : 'hover:bg-gray-50'}
+          hidden md:flex h-12 w-12 items-center justify-center rounded-2xl
+          cursor-pointer transition-all duration-200
+          ${isActive ? 'bg-blue-600 text-white shadow-[0_10px_22px_rgba(37,99,235,0.22)]' : 'text-slate-500 hover:bg-blue-50 hover:text-blue-700'}
         `}>
-          {isActive && <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-orange-400 rounded-r" />}
-          <i className={`ti ${item.icon} text-[24px] ${isActive ? 'text-orange-500' : 'text-blue-900'}`} />
-          <span className={`text-[10.5px] font-medium text-center leading-tight ${isActive ? 'text-orange-500' : 'text-gray-600'}`}>
+          {isActive && <span className="absolute -left-2 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-blue-600" />}
+          <i className={`ti ${item.icon} text-[22px]`} />
+          <span className="pointer-events-none absolute left-[58px] z-50 whitespace-nowrap rounded-lg bg-slate-950 px-2.5 py-1.5 text-[11px] font-semibold text-white opacity-0 shadow-xl transition-all duration-150 group-hover:translate-x-1 group-hover:opacity-100">
             {item.label}
           </span>
         </div>
@@ -120,11 +121,21 @@ export default function Sidebar({
         </div>
       </div>
 
-      <aside className="hidden md:block fixed left-0 top-[52px] h-[calc(100vh-52px)] w-[218px] bg-white border-r border-gray-200 z-40 overflow-y-auto">
-        <div className="grid grid-cols-2">
+      <aside className="hidden md:flex fixed left-0 top-[56px] h-[calc(100vh-56px)] w-[64px] flex-col items-center border-r border-slate-200/80 bg-white/95 z-40 shadow-[2px_0_18px_rgba(15,23,42,0.04)]">
+        <div className="flex w-full justify-center border-b border-slate-100 px-2 py-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-[0_10px_22px_rgba(37,99,235,0.2)]">
+            <span className="text-[20px] font-black leading-none">B</span>
+          </div>
+        </div>
+        <div className="flex-1 space-y-2 overflow-y-auto px-2 py-3">
           {items.map((item) => (
             <NavItem key={item.label} item={item} />
           ))}
+        </div>
+        <div className="w-full border-t border-slate-100 px-2 py-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-50 text-amber-600">
+            <i className="ti ti-sparkles text-[20px]" />
+          </div>
         </div>
       </aside>
     </>

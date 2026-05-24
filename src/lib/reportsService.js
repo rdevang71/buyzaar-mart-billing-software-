@@ -145,15 +145,16 @@ function number(value) {
 function isoDate(value) {
   if (!value) return '';
   if (typeof value === 'string') {
-    const match = value.match(/^(\d{4}-\d{2}-\d{2})/);
+    const match = value.match(/^(\d{4}-\d{2}-\d{2})$/);
     if (match) return match[1];
   }
-  return new Date(value).toLocaleDateString('en-CA');
+  return new Date(value).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 }
 
 function displayTime(value) {
   if (!value) return '';
   return new Date(value).toLocaleTimeString('en-IN', {
+    timeZone: 'Asia/Kolkata',
     hour: '2-digit',
     minute: '2-digit',
   });
@@ -247,9 +248,9 @@ function addStoreScope({ conditions, params, user, alias = 'sb', requestedStoreI
 function addSalesFilters({ conditions, params, filters, user, alias = 'sb' }) {
   const range = parseDateRange(filters.date_range);
   params.push(range.from);
-  conditions.push(`DATE(${alias}.created_at) >= $${params.length}`);
+  conditions.push(`DATE(${alias}.created_at AT TIME ZONE 'Asia/Kolkata') >= $${params.length}`);
   params.push(range.to);
-  conditions.push(`DATE(${alias}.created_at) <= $${params.length}`);
+  conditions.push(`DATE(${alias}.created_at AT TIME ZONE 'Asia/Kolkata') <= $${params.length}`);
   addStoreScope({ conditions, params, user, alias, requestedStoreId: filters.store });
 
   if (filters.customer) {
@@ -469,7 +470,7 @@ async function getDailySalesReport(filters, user) {
   const res = await query(
     `SELECT
        COALESCE(s.name, 'Store') AS store,
-       DATE(sb.created_at) AS date,
+       DATE(sb.created_at AT TIME ZONE 'Asia/Kolkata') AS date,
        COUNT(*)::int AS orders,
        COALESCE(SUM(sb.subtotal), 0) AS sales,
        COALESCE(SUM(sb.discount_total), 0) AS discount,
@@ -478,8 +479,8 @@ async function getDailySalesReport(filters, user) {
      FROM sales_bills sb
      LEFT JOIN stores s ON s.id = sb.store_id
      WHERE ${conditions.join(' AND ')}
-     GROUP BY s.name, DATE(sb.created_at)
-     ORDER BY DATE(sb.created_at) DESC, s.name ASC`,
+     GROUP BY s.name, DATE(sb.created_at AT TIME ZONE 'Asia/Kolkata')
+     ORDER BY DATE(sb.created_at AT TIME ZONE 'Asia/Kolkata') DESC, s.name ASC`,
     params
   );
 
@@ -505,7 +506,7 @@ async function getNetSalesReport(filters, user) {
   const res = await query(
     `SELECT
        COALESCE(s.name, 'Store') AS store,
-       DATE(sb.created_at) AS date,
+       DATE(sb.created_at AT TIME ZONE 'Asia/Kolkata') AS date,
        COUNT(*)::int AS orders,
        COALESCE(SUM(sb.subtotal), 0) AS gross_sales,
        COALESCE(SUM(sb.discount_total), 0) AS discount,
@@ -514,8 +515,8 @@ async function getNetSalesReport(filters, user) {
      FROM sales_bills sb
      LEFT JOIN stores s ON s.id = sb.store_id
      WHERE ${conditions.join(' AND ')}
-     GROUP BY s.name, DATE(sb.created_at)
-     ORDER BY DATE(sb.created_at) DESC, s.name ASC`,
+     GROUP BY s.name, DATE(sb.created_at AT TIME ZONE 'Asia/Kolkata')
+     ORDER BY DATE(sb.created_at AT TIME ZONE 'Asia/Kolkata') DESC, s.name ASC`,
     params
   );
 
@@ -539,8 +540,8 @@ async function getMonthlySalesReport(filters, user) {
   const res = await query(
     `SELECT
        COALESCE(s.name, 'Store') AS store,
-       DATE_TRUNC('month', sb.created_at)::date AS month_date,
-       TO_CHAR(DATE_TRUNC('month', sb.created_at), 'Mon YYYY') AS month,
+       DATE_TRUNC('month', sb.created_at AT TIME ZONE 'Asia/Kolkata')::date AS month_date,
+       TO_CHAR(DATE_TRUNC('month', sb.created_at AT TIME ZONE 'Asia/Kolkata'), 'Mon YYYY') AS month,
        COUNT(*)::int AS orders,
        COALESCE(SUM(sb.subtotal), 0) AS sales,
        COALESCE(SUM(sb.discount_total), 0) AS discount,
@@ -549,7 +550,7 @@ async function getMonthlySalesReport(filters, user) {
      FROM sales_bills sb
      LEFT JOIN stores s ON s.id = sb.store_id
      WHERE ${conditions.join(' AND ')}
-     GROUP BY s.name, DATE_TRUNC('month', sb.created_at)
+     GROUP BY s.name, DATE_TRUNC('month', sb.created_at AT TIME ZONE 'Asia/Kolkata')
      ORDER BY month_date DESC, s.name ASC`,
     params
   );
@@ -631,7 +632,7 @@ async function getStockLevelReport(filters, user) {
          WHERE sbi.product_id = p.id
            AND sb.store_id = ps.store_id
            AND sb.status IN ('paid', 'completed')
-           AND DATE(sb.created_at) < $${pFrom}
+           AND DATE(sb.created_at AT TIME ZONE 'Asia/Kolkata') < $${pFrom}
        ), 0) AS opening_stock,
 
        -- Stock In within date range
@@ -662,7 +663,7 @@ async function getStockLevelReport(filters, user) {
          WHERE sbi.product_id = p.id
            AND sb.store_id = ps.store_id
            AND sb.status IN ('paid', 'completed')
-           AND DATE(sb.created_at) BETWEEN $${pFrom} AND $${pTo}
+           AND DATE(sb.created_at AT TIME ZONE 'Asia/Kolkata') BETWEEN $${pFrom} AND $${pTo}
        ), 0) AS stock_out
 
      FROM product_saleability ps
@@ -747,7 +748,7 @@ async function getSalesDimensionReport(reportKey, filters, user) {
     `SELECT
        ${dimensionSql} AS dimension,
        COALESCE(s.name, 'Store') AS store,
-       DATE(sb.created_at) AS date,
+       DATE(sb.created_at AT TIME ZONE 'Asia/Kolkata') AS date,
        COUNT(DISTINCT sb.id)::int AS orders,
        COALESCE(SUM(sbi.qty), 0) AS items,
        COALESCE(SUM(sbi.qty * sbi.selling_price), 0) AS sales,
@@ -762,7 +763,7 @@ async function getSalesDimensionReport(reportKey, filters, user) {
      LEFT JOIN users u ON u.id = sb.user_id
      ${joins}
      WHERE ${conditions.join(' AND ')}
-     GROUP BY ${dimensionSql}, COALESCE(s.name, 'Store'), DATE(sb.created_at)
+     GROUP BY ${dimensionSql}, COALESCE(s.name, 'Store'), DATE(sb.created_at AT TIME ZONE 'Asia/Kolkata')
      ORDER BY gross_bill DESC, date DESC
      LIMIT 1000`,
     params
@@ -809,7 +810,7 @@ async function getDailyPaymentBreakupReport(filters, user) {
     `WITH bill_payments AS (
        SELECT
          sb.id,
-         DATE(sb.created_at) AS date,
+         DATE(sb.created_at AT TIME ZONE 'Asia/Kolkata') AS date,
          COALESCE(s.name, 'Store') AS store,
          COALESCE(NULLIF(sbp.method, ''), NULLIF(sb.payment_mode, ''), 'cash') AS payment_mode,
          COALESCE(sbp.amount, sb.grand_total) AS amount
@@ -842,14 +843,14 @@ async function getStoreHourlySalesReport(filters, user) {
   addSalesFilters({ conditions, params, filters, user, alias: 'sb' });
   const res = await query(
     `SELECT COALESCE(s.name, 'Store') AS store,
-            DATE(sb.created_at) AS date,
-            EXTRACT(HOUR FROM sb.created_at)::int AS hour,
+            DATE(sb.created_at AT TIME ZONE 'Asia/Kolkata') AS date,
+            EXTRACT(HOUR FROM sb.created_at AT TIME ZONE 'Asia/Kolkata')::int AS hour,
             COUNT(*)::int AS orders,
             COALESCE(SUM(sb.grand_total), 0) AS gross_bill
      FROM sales_bills sb
      LEFT JOIN stores s ON s.id = sb.store_id
      WHERE ${conditions.join(' AND ')}
-     GROUP BY s.name, DATE(sb.created_at), EXTRACT(HOUR FROM sb.created_at)
+     GROUP BY s.name, DATE(sb.created_at AT TIME ZONE 'Asia/Kolkata'), EXTRACT(HOUR FROM sb.created_at AT TIME ZONE 'Asia/Kolkata')
      ORDER BY date DESC, store ASC, hour ASC`,
     params
   );
@@ -1201,7 +1202,7 @@ async function getAccountingTaxReport(reportKey, filters, user) {
   const res = await query(
     `SELECT ${groupExpr} AS group_name,
             COALESCE(s.name, 'Store') AS store,
-            DATE(sb.created_at) AS date,
+            DATE(sb.created_at AT TIME ZONE 'Asia/Kolkata') AS date,
             COUNT(DISTINCT sb.id)::int AS orders,
             COALESCE(SUM(sbi.line_total - sbi.tax_amount), 0) AS taxable_amount,
             COALESCE(SUM(sbi.tax_amount), 0) AS tax,
@@ -1212,7 +1213,7 @@ async function getAccountingTaxReport(reportKey, filters, user) {
      LEFT JOIN taxes t ON t.id = p.tax_id
      LEFT JOIN stores s ON s.id = sb.store_id
      WHERE ${conditions.join(' AND ')}
-     GROUP BY ${groupExpr}, s.name, DATE(sb.created_at)
+     GROUP BY ${groupExpr}, s.name, DATE(sb.created_at AT TIME ZONE 'Asia/Kolkata')
      ORDER BY date DESC, tax DESC
      LIMIT 1000`,
     params

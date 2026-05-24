@@ -90,7 +90,10 @@ export default function StockInPage() {
   const [stores, setStores] = useState([]);
   const [loadingStores, setLoadingStores] = useState(false);
   const [activeTab, setActiveTab] = useState('new');
+  const [sourceType, setSourceType] = useState('warehouse');
   const [destination, setDestination] = useState('');
+  const [vendors, setVendors] = useState([]);
+  const [selectedVendorIds, setSelectedVendorIds] = useState([]);
   const [applyTaxes, setApplyTaxes] = useState(true);
   const [addProductsPrefill, setAddProductsPrefill] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -112,9 +115,18 @@ export default function StockInPage() {
   useEffect(() => {
     if (!showModal) return;
     setLoadingStores(true);
-    fetchStores()
-      .then((data) => setStores(Array.isArray(data) ? data : []))
-      .catch(() => setStores([]))
+    Promise.all([
+      fetchStores().catch(() => []),
+      fetch('/api/vendors?pageSize=500').then((r) => r.json()).catch(() => []),
+    ])
+      .then(([storeData, vendorData]) => {
+        setStores(Array.isArray(storeData) ? storeData : []);
+        setVendors(Array.isArray(vendorData) ? vendorData : []);
+      })
+      .catch(() => {
+        setStores([]);
+        setVendors([]);
+      })
       .finally(() => setLoadingStores(false));
   }, [showModal]);
 
@@ -177,11 +189,19 @@ export default function StockInPage() {
 
   const handleNext = async () => {
     if (!destination) return alert('Please select a destination');
+    if (sourceType === 'vendor' && selectedVendorIds.length === 0) {
+      return alert('Please select at least one vendor');
+    }
     setSubmitting(true);
     try {
       const payload = {
         method: activeTab === 'new' ? 'new' : 'purchase_order',
         destination,
+        sourceType,
+        vendorIds: sourceType === 'vendor' ? selectedVendorIds : [],
+        vendorNames: sourceType === 'vendor'
+          ? vendors.filter((vendor) => selectedVendorIds.includes(String(vendor.id))).map((vendor) => vendor.name)
+          : [],
         applyTaxes,
         addProductsPrefill,
       };
@@ -275,6 +295,47 @@ export default function StockInPage() {
 
               {activeTab === 'new' ? (
                 <div>
+                  <div className="mb-5">
+                    <label className="block text-sm text-gray-800 mb-2">Stock Source*</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setSourceType('warehouse')}
+                        className={`rounded-lg border px-4 py-3 text-left ${sourceType === 'warehouse' ? 'border-blue-500 bg-blue-50 text-blue-800' : 'border-gray-200 bg-white text-gray-700'}`}
+                      >
+                        <span className="block text-sm font-bold">Warehouse</span>
+                        <span className="block text-xs text-gray-500">Show available warehouse stock</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSourceType('vendor')}
+                        className={`rounded-lg border px-4 py-3 text-left ${sourceType === 'vendor' ? 'border-blue-500 bg-blue-50 text-blue-800' : 'border-gray-200 bg-white text-gray-700'}`}
+                      >
+                        <span className="block text-sm font-bold">Direct Vendor</span>
+                        <span className="block text-xs text-gray-500">Show products supplied by vendor</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {sourceType === 'vendor' && (
+                    <div className="mb-5">
+                      <label className="block text-sm text-gray-800 mb-2">Vendors*</label>
+                      <select
+                        multiple
+                        value={selectedVendorIds}
+                        onChange={(e) => setSelectedVendorIds(Array.from(e.target.selectedOptions).map((option) => option.value))}
+                        className="h-32 w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-700"
+                      >
+                        {vendors.map((vendor) => (
+                          <option key={vendor.id} value={String(vendor.id)}>
+                            {vendor.name}{vendor.company ? ` - ${vendor.company}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-1 text-xs text-gray-500">Ctrl/Shift press karke multiple vendor select kar sakte ho.</p>
+                    </div>
+                  )}
+
                   <div className="mb-6">
                     <input
                       ref={fileInputRef}

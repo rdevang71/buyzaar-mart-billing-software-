@@ -156,7 +156,6 @@ export async function POST(request) {
 
     const body = await request.json();
     const sessionId = String(body.sessionId || body.session_id || '').trim();
-    const actualCash = toNumber(body.actualCash ?? body.actual_cash ?? 0);
     const requestedOpeningCash = body.openingCash ?? body.opening_cash;
     const remarks = String(body.remarks || '').trim();
 
@@ -204,6 +203,7 @@ export async function POST(request) {
       const totals = mapClosingTotals(totalsResult.rows[0]);
       const cashSales = totals.cashSales;
       const expectedCash = Number((openingCash + cashSales).toFixed(2));
+      const actualCash = expectedCash;
       const variance = Number((actualCash - expectedCash).toFixed(2));
       const paymentBreakup = {
         ...totals,

@@ -150,7 +150,7 @@ export default function Topbar({ onMenuOpen }) {
   };
 
   return (
-    <header className="fixed top-0 left-0 right-0 h-[52px] bg-white border-b border-gray-200 z-50 flex items-center px-3 md:px-5">
+    <header className="fixed top-0 left-0 right-0 h-[56px] bg-white/95 backdrop-blur border-b border-slate-200/80 z-50 flex items-center px-3 md:px-5 shadow-[0_1px_12px_rgba(15,23,42,0.04)]">
 
       {/* Hamburger — mobile only */}
       <button
@@ -162,9 +162,10 @@ export default function Topbar({ onMenuOpen }) {
       </button>
 
       {/* Brand — hidden on mobile (shown in drawer instead) */}
-      <div className="hidden md:block w-[218px] flex-shrink-0">
-        <p className="text-[15px] font-extrabold text-blue-700 leading-tight">BillingPro</p>
-        <p className="text-[9px] text-gray-400 leading-tight">India's No.1 Business App</p>
+      <div className="hidden md:flex w-[64px] flex-shrink-0 items-center justify-center">
+        <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-[0_10px_22px_rgba(37,99,235,0.18)]">
+          <span className="text-[19px] font-black leading-none">B</span>
+        </div>
       </div>
 
       {/* Brand — mobile center */}
@@ -173,8 +174,11 @@ export default function Topbar({ onMenuOpen }) {
       </div>
 
       {/* Page title — desktop */}
-      <div className="hidden md:block flex-1 px-4">
-        <h2 className="text-[15px] font-semibold text-gray-800">{title}</h2>
+      <div className="hidden md:flex flex-1 items-center gap-3 px-4">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Workspace</p>
+          <h2 className="text-[15px] font-bold text-slate-900">{title}</h2>
+        </div>
       </div>
 
       {/* Right Actions */}
@@ -186,7 +190,7 @@ export default function Topbar({ onMenuOpen }) {
               setOpenNotifications((prev) => !prev);
               loadReturnNotifications();
             }}
-            className="relative p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+            className="relative rounded-xl p-2 text-slate-500 transition-colors hover:bg-blue-50 hover:text-blue-700"
             aria-label="Notifications"
           >
             <i className="ti ti-bell text-gray-500 text-[20px]" />
@@ -248,17 +252,17 @@ export default function Topbar({ onMenuOpen }) {
           )}
         </div>
 
-        <button className="hidden sm:block p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
+        <button className="hidden sm:block rounded-xl p-2 text-slate-500 transition-colors hover:bg-blue-50 hover:text-blue-700">
           <i className="ti ti-help-circle text-gray-500 text-[20px]" />
         </button>
 
-        <div ref={profileRef} className="relative flex items-center gap-2 pl-2 md:pl-4 md:border-l border-gray-200">
+        <div ref={profileRef} className="relative flex items-center gap-2 pl-2 md:pl-4 md:border-l border-slate-200">
           <button
             type="button"
             onClick={() => setOpenProfile((prev) => !prev)}
-            className="flex items-center gap-2 rounded-xl px-1.5 py-1 hover:bg-gray-100"
+            className="flex items-center gap-2 rounded-2xl px-1.5 py-1 transition-colors hover:bg-blue-50"
           >
-            <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center flex-shrink-0 shadow-[0_8px_18px_rgba(37,99,235,0.22)]">
               <span className="text-[11px] font-bold text-white">{initials}</span>
             </div>
             <div className="hidden sm:block text-left">
