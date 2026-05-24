@@ -1960,7 +1960,7 @@ export default function POSPage() {
             <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl max-h-[92vh] overflow-auto">
               <div className="px-6 py-5 border-b border-slate-100">
                 <h3 className="text-base font-black text-slate-900">Close POS Session</h3>
-                <p className="text-xs text-slate-500 mt-1">Review today's summary and enter actual cash count.</p>
+                <p className="text-xs text-slate-500 mt-1">Review today's summary before closing the session.</p>
               </div>
               <div className="px-6 py-5 space-y-4">
                 {closingLoading ? (
@@ -1984,10 +1984,10 @@ export default function POSPage() {
                   </div>
                 ) : null}
                 <div>
-                  <label className="text-[10px] font-black text-slate-400 tracking-widest uppercase block mb-1.5">Actual Cash Counted (₹)</label>
+                  <label className="text-[10px] font-black text-slate-400 tracking-widest uppercase block mb-1.5">Collected Cash (auto calculated)</label>
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
                     <p className="text-lg font-black text-emerald-900">{formatCurrency(toNumber(actualCash))}</p>
-                    <p className="mt-1 text-[11px] font-medium text-emerald-700">Bills ke cash payments se calculate hota hai, employee manually edit nahi kar sakta.</p>
+                    <p className="mt-1 text-[11px] font-medium text-emerald-700">Calculated from cash payments in this session. Employees cannot edit this amount.</p>
                   </div>
                 </div>
                 <div>

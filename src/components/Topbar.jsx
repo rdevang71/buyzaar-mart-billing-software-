@@ -24,6 +24,7 @@ export default function Topbar({ onMenuOpen }) {
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [openNotifications, setOpenNotifications] = useState(false);
   const [returnRequests, setReturnRequests] = useState([]);
+  const [lowStockAlerts, setLowStockAlerts] = useState([]);
   const profileRef = useRef(null);
   const notificationRef = useRef(null);
 
@@ -61,7 +62,7 @@ export default function Topbar({ onMenuOpen }) {
 
   const canReviewReturns = user?.role === 'super_admin' || user?.role === 'admin' || user?.permissions?.includes('*');
   const returnNotificationTitle = canReviewReturns ? 'Return Requests' : 'My Return Updates';
-  const emptyReturnNotificationText = canReviewReturns ? 'No pending return requests.' : 'No return updates yet.';
+  const notificationCount = returnRequests.length + lowStockAlerts.length;
 
   const loadReturnNotifications = useCallback(async () => {
     if (!user) {
@@ -81,9 +82,30 @@ export default function Topbar({ onMenuOpen }) {
     }
   }, [canReviewReturns, user]);
 
-  useEffect(() => {
+  const loadLowStockNotifications = useCallback(async () => {
+    if (!user) {
+      setLowStockAlerts([]);
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/notifications/low-stock', { cache: 'no-store' });
+      const json = await response.json();
+      const alerts = json.success && Array.isArray(json.data?.alerts) ? json.data.alerts : [];
+      setLowStockAlerts(alerts);
+    } catch {
+      setLowStockAlerts([]);
+    }
+  }, [user]);
+
+  const loadNotifications = useCallback(() => {
     loadReturnNotifications();
-  }, [loadReturnNotifications, pathname]);
+    loadLowStockNotifications();
+  }, [loadLowStockNotifications, loadReturnNotifications]);
+
+  useEffect(() => {
+    loadNotifications();
+  }, [loadNotifications, pathname]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -188,15 +210,15 @@ export default function Topbar({ onMenuOpen }) {
             type="button"
             onClick={() => {
               setOpenNotifications((prev) => !prev);
-              loadReturnNotifications();
+              loadNotifications();
             }}
             className="relative rounded-xl p-2 text-slate-500 transition-colors hover:bg-blue-50 hover:text-blue-700"
             aria-label="Notifications"
           >
             <i className="ti ti-bell text-gray-500 text-[20px]" />
-            {returnRequests.length > 0 && (
+            {notificationCount > 0 && (
               <span className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-red-500 px-1 text-center text-[10px] font-bold leading-4 text-white">
-                {returnRequests.length}
+                {notificationCount}
               </span>
             )}
           </button>
@@ -204,19 +226,56 @@ export default function Topbar({ onMenuOpen }) {
           {openNotifications && (
             <div className="absolute right-0 top-[40px] w-[340px] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_16px_50px_rgba(15,23,42,0.16)]">
               <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
-                <p className="text-sm font-bold text-gray-900">{returnNotificationTitle}</p>
+                <p className="text-sm font-bold text-gray-900">Notifications</p>
                 <button
                   type="button"
-                  onClick={loadReturnNotifications}
+                  onClick={loadNotifications}
                   className="rounded-lg px-2 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50"
                 >
                   Refresh
                 </button>
               </div>
-              {returnRequests.length === 0 ? (
-                <p className="px-4 py-5 text-sm text-gray-500">{emptyReturnNotificationText}</p>
+              {notificationCount === 0 ? (
+                <p className="px-4 py-5 text-sm text-gray-500">No notifications right now.</p>
               ) : (
                 <div className="max-h-80 overflow-auto py-1">
+                  {lowStockAlerts.length > 0 && (
+                    <div className="border-b border-gray-100">
+                      <p className="px-4 pb-1 pt-3 text-[11px] font-black uppercase tracking-widest text-amber-600">
+                        Inventory Alerts
+                      </p>
+                      {lowStockAlerts.map((alert) => (
+                        <button
+                          key={alert.id}
+                          type="button"
+                          onClick={() => {
+                            setOpenNotifications(false);
+                            router.push('/reports/inventory/low-stock-products');
+                          }}
+                          className="block w-full border-t border-gray-100 px-4 py-3 text-left hover:bg-amber-50"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-gray-900">
+                                {alert.productName} is {alert.severity === 'out_of_stock' ? 'out of stock' : 'running low'}
+                              </p>
+                              <p className="mt-0.5 truncate text-xs text-gray-500">
+                                {alert.storeName || 'Store'}{alert.sku ? ` - ${alert.sku}` : ''}
+                              </p>
+                            </div>
+                            <span className="shrink-0 rounded-full bg-amber-100 px-2 py-1 text-xs font-bold text-amber-700">
+                              {Number(alert.availableQty || 0)} left
+                            </span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {returnRequests.length > 0 && (
+                    <p className="px-4 pb-1 pt-3 text-[11px] font-black uppercase tracking-widest text-blue-600">
+                      {returnNotificationTitle}
+                    </p>
+                  )}
                   {returnRequests.map((request) => (
                     <button
                       key={request.id}
