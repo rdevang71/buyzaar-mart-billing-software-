@@ -180,6 +180,7 @@ export async function GET(request) {
       totalSales: 0,
       todaySales: 0,
       totalRevenue: 0,
+      totalTax: 0,
       todayRevenue: 0,
       weekRevenue: 0,
       avgOrderValue: 0,
@@ -193,13 +194,15 @@ export async function GET(request) {
       const salesScope = scopedCondition('sb', salesParams);
       const salesCountResult = await query(
         `SELECT COUNT(*)::int as count, 
-                COALESCE(SUM(grand_total), 0)::numeric as total_revenue
+                COALESCE(SUM(grand_total), 0)::numeric as total_revenue,
+                COALESCE(SUM(tax_total), 0)::numeric as total_tax
          FROM sales_bills sb
          WHERE sb.status IN ('paid', 'completed')${salesScope}`,
         salesParams
       );
       salesMetrics.totalSales = salesCountResult.rows[0]?.count || 0;
       salesMetrics.totalRevenue = parseFloat(salesCountResult.rows[0]?.total_revenue || 0);
+      salesMetrics.totalTax = parseFloat(salesCountResult.rows[0]?.total_tax || 0);
       salesMetrics.avgOrderValue = salesMetrics.totalSales > 0 ? salesMetrics.totalRevenue / salesMetrics.totalSales : 0;
 
       // Get today's sales

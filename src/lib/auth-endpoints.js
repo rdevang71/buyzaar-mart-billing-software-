@@ -22,9 +22,7 @@ export async function fetchAuthEndpoint(path, options = {}) {
   const normalizedPath = normalizePath(path);
 
   const localResponse = await fetchAuthResponse(normalizedPath, options);
-  const localContentType = localResponse.headers.get('content-type') || '';
-
-  if (localResponse.status !== 404 && localContentType.includes('application/json')) {
+  if (localResponse.status !== 404) {
     return localResponse;
   }
 
