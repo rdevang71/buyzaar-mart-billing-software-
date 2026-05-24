@@ -4,6 +4,8 @@ import { ensureStockInSchema } from '@/lib/stockInSchema';
 import { ensureInventoryBatchSchema, receiveBatchStock } from '@/lib/inventoryBatching';
 import { ensureStoresSchema } from '@/lib/storesSchema';
 import { requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
+import { ensureVendorInvoicesSchema } from '@/lib/vendorInvoicesSchema';
+import { ensureVendorsSchema } from '@/lib/vendorsSchema';
 
 function toNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -50,6 +52,14 @@ function normalizeBatchRows(item) {
       expiryDate: batch.expiry_date || batch.expiryDate || null,
     }))
     .filter((batch) => batch.qty > 0);
+}
+
+function generateVendorInvoiceNumber() {
+  const now = new Date();
+  const date = now.toISOString().slice(0, 10).replace(/-/g, '');
+  const time = now.toTimeString().slice(0, 8).replace(/:/g, '');
+  const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
+  return `VINV-${date}-${time}-${suffix}`;
 }
 
 async function allocateWarehouseBatchStock(client, {
@@ -137,6 +147,8 @@ export async function POST(request, { params }) {
       await ensureStockInSchema();
       await ensureInventoryBatchSchema();
       await ensureStoresSchema();
+      await ensureVendorsSchema();
+      await ensureVendorInvoicesSchema();
       const auth = await requireAuth(request);
       if (auth.error) return auth.error;
 
@@ -170,7 +182,8 @@ export async function POST(request, { params }) {
 
     // ── 2. Fetch destination store (needed for product_saleability upsert) ───
     const stockInRow = await query(
-      `SELECT si.id, si.status, si.destination_id, si.reference_type, si.vendor_id, si.vendor_name, stores.meta AS destination_meta
+      `SELECT si.id, si.transaction_id, si.status, si.destination_id, si.reference_type, si.reference_id,
+              si.vendor_id, si.vendor_name, si.invoice_number, stores.meta AS destination_meta
        FROM stock_in si
        LEFT JOIN stores ON stores.id = si.destination_id
        WHERE si.id = $1`,
@@ -433,6 +446,103 @@ export async function POST(request, { params }) {
           id,
         ]
       );
+
+      const stockIn = stockInRow.rows[0];
+      const vendorLookupName = String(form.vendor || stockIn.vendor_name || '').trim();
+      let vendorId = Number(stockIn.vendor_id || 0) || null;
+      if (!vendorId && vendorLookupName) {
+        const vendorRes = await client.query(
+          `SELECT id FROM vendors WHERE LOWER(name) = LOWER($1) LIMIT 1`,
+          [vendorLookupName]
+        );
+        vendorId = Number(vendorRes.rows[0]?.id || 0) || null;
+      }
+
+      if (vendorId && (stockIn.reference_type === 'purchase_order' || vendorLookupName)) {
+        const grossInvoiceAmount = Math.max(0, totalCost + totalTax);
+        const purchaseOrderId = /^\d+$/.test(String(stockIn.reference_id || ''))
+          ? Number(stockIn.reference_id)
+          : null;
+        const invoiceNumber = String(form.invoice_number || stockIn.invoice_number || '').trim() || generateVendorInvoiceNumber();
+        const invoiceDate = normalizedInvoiceDate || new Date().toISOString().slice(0, 10);
+        const existingInvoiceRes = await client.query(
+          `SELECT id, amount_paid
+           FROM vendor_invoices
+           WHERE stock_in_id = $1
+           FOR UPDATE`,
+          [Number(id)]
+        );
+
+        if (existingInvoiceRes.rows[0]) {
+          const existing = existingInvoiceRes.rows[0];
+          const amountPaid = toNumber(existing.amount_paid);
+          const status = amountPaid >= grossInvoiceAmount && grossInvoiceAmount > 0
+            ? 'Paid'
+            : amountPaid > 0
+              ? 'Partial'
+              : 'Pending';
+          await client.query(
+            `UPDATE vendor_invoices
+             SET vendor_id = $2,
+                 purchase_order_id = $3,
+                 invoice_number = $4,
+                 total_amount = $5,
+                 invoice_date = $6,
+                 created_by = $7,
+                 remarks = $8,
+                 status = $9,
+                 meta = COALESCE(meta, '{}'::jsonb) || $10::jsonb,
+                 updated_at = NOW()
+             WHERE id = $1`,
+            [
+              existing.id,
+              vendorId,
+              purchaseOrderId,
+              invoiceNumber,
+              grossInvoiceAmount,
+              invoiceDate,
+              auth.user?.name || auth.user?.email || 'System',
+              form.remarks || null,
+              status,
+              JSON.stringify({
+                source: 'auto-grn-confirm',
+                stockInId: Number(id),
+                stockInTransactionId: stockIn.transaction_id,
+                purchaseOrderId,
+              }),
+            ]
+          );
+        } else {
+          const invoiceRes = await client.query(
+            `INSERT INTO vendor_invoices (
+              vendor_id, purchase_order_id, stock_in_id, invoice_number, total_amount, amount_paid,
+              invoice_date, created_by, remarks, status, meta, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, 0, $6, $7, $8, 'Pending', $9::jsonb, NOW(), NOW())
+            RETURNING id`,
+            [
+              vendorId,
+              purchaseOrderId,
+              Number(id),
+              invoiceNumber,
+              grossInvoiceAmount,
+              invoiceDate,
+              auth.user?.name || auth.user?.email || 'System',
+              form.remarks || null,
+              JSON.stringify({
+                source: 'auto-grn-confirm',
+                stockInId: Number(id),
+                stockInTransactionId: stockIn.transaction_id,
+                purchaseOrderId,
+              }),
+            ]
+          );
+          const vendorInvoiceId = invoiceRes.rows[0]?.id;
+          await client.query(
+            `UPDATE vendor_invoices SET transaction_id = $1 WHERE id = $2`,
+            [`VINV-${String(vendorInvoiceId).padStart(4, '0')}`, vendorInvoiceId]
+          );
+        }
+      }
 
       await client.query('COMMIT');
       return NextResponse.json({ success: true, id, totalItems, totalCost, totalTax });

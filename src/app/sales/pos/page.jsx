@@ -379,6 +379,30 @@ export default function POSPage() {
     if (barcodeRef.current) barcodeRef.current.focus();
   }, [loadAuth]);
 
+  const loadHeldBills = useCallback(async () => {
+    const activeStoreId = session?.storeId || selectedStoreId;
+    if (!activeStoreId) {
+      setHeldBills(readStorage(STORAGE_KEYS.HELD_BILLS, []));
+      return;
+    }
+    try {
+      const params = new URLSearchParams({ store_id: String(activeStoreId), limit: '100' });
+      const res = await fetch(`/api/pos/held-bills?${params.toString()}`, { cache: 'no-store' });
+      const json = await res.json();
+      if (json.success) {
+        const serverHeld = Array.isArray(json.data?.heldBills) ? json.data.heldBills : [];
+        setHeldBills(serverHeld);
+        writeStorage(STORAGE_KEYS.HELD_BILLS, serverHeld);
+        return;
+      }
+    } catch {}
+    setHeldBills(readStorage(STORAGE_KEYS.HELD_BILLS, []));
+  }, [selectedStoreId, session?.storeId]);
+
+  useEffect(() => {
+    loadHeldBills();
+  }, [loadHeldBills]);
+
   // Online / Offline event listeners
   useEffect(() => {
     const handleOnline = () => {
@@ -548,21 +572,57 @@ export default function POSPage() {
 
   const saveHeldBills = (next) => { setHeldBills(next); writeStorage(STORAGE_KEYS.HELD_BILLS, next); };
 
+  const saveHeldBillToServer = async (heldBill) => {
+    const activeStoreId = session?.storeId || selectedStoreId;
+    if (!activeStoreId || isOffline || (typeof navigator !== 'undefined' && !navigator.onLine)) return null;
+    try {
+      const res = await fetch('/api/pos/held-bills', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...heldBill,
+          storeId: activeStoreId,
+          sessionId: session?.sessionId || null,
+          deviceUid,
+          counterUid: deviceUid,
+          counterName: session?.counterName || counterName,
+        }),
+      });
+      const json = await res.json();
+      if (json.success && json.data?.heldBill) return json.data.heldBill;
+    } catch {}
+    return null;
+  };
+
+  const removeHeldBillFromServer = async (id) => {
+    if (!id || isOffline || (typeof navigator !== 'undefined' && !navigator.onLine)) return;
+    try {
+      await fetch(`/api/pos/held-bills?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+    } catch {}
+  };
+
   const buildHeldBill = () => ({
     id: `HOLD-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`,
     heldAt: new Date().toISOString(),
+    storeId: session?.storeId || selectedStoreId,
+    sessionId: session?.sessionId || null,
     cart, customerName, customerMobile, orderDiscount, roundOff, paymentMode, payments, totals: cartTotals,
   });
 
-  const holdCurrentBill = () => {
+  const holdCurrentBill = async () => {
     if (cart.length === 0) { showToast('Add products before holding bill', 'error'); return; }
     const heldBill = buildHeldBill();
     saveHeldBills([heldBill, ...heldBills].slice(0, 25));
     clearCart();
+    const serverHeld = await saveHeldBillToServer(heldBill);
+    if (serverHeld) {
+      const next = [serverHeld, ...heldBills.filter((b) => b.id !== heldBill.id)].slice(0, 100);
+      saveHeldBills(next);
+    }
     showToast(`Bill held for ${heldBill.customerName || 'Walk-in Customer'}`);
   };
 
-  const resumeHeldBill = (heldBill) => {
+  const resumeHeldBill = async (heldBill) => {
     if (cart.length > 0) { showToast('Hold or clear current bill before resuming', 'error'); return; }
     setCart(heldBill.cart || []);
     setCustomerName(heldBill.customerName || '');
@@ -572,12 +632,17 @@ export default function POSPage() {
     setPaymentMode(heldBill.paymentMode || 'cash');
     setPayments(Array.isArray(heldBill.payments) && heldBill.payments.length ? heldBill.payments : [emptyPayment()]);
     saveHeldBills(heldBills.filter((b) => b.id !== heldBill.id));
+    await removeHeldBillFromServer(heldBill.id);
     setHoldDetectModal(false); setDetectedHeldBills([]);
     showToast('Held bill resumed');
     if (barcodeRef.current) barcodeRef.current.focus();
   };
 
-  const removeHeldBill = (id) => { saveHeldBills(heldBills.filter((b) => b.id !== id)); showToast('Held bill removed', 'info'); };
+  const removeHeldBill = async (id) => {
+    saveHeldBills(heldBills.filter((b) => b.id !== id));
+    await removeHeldBillFromServer(id);
+    showToast('Held bill removed', 'info');
+  };
 
   const checkForHeldBills = (mobile) => {
     if (!mobile || mobile.length < 10) return;
@@ -587,10 +652,18 @@ export default function POSPage() {
     if (matches.length > 0) { setDetectedHeldBills(matches); setHoldDetectModal(true); }
   };
 
-  const holdCurrentAndResume = (heldBill) => {
+  const holdCurrentAndResume = async (heldBill) => {
     const withoutTarget = heldBills.filter((b) => b.id !== heldBill.id);
     let nextHeldBills = withoutTarget;
-    if (cart.length > 0) { const currentHeld = buildHeldBill(); nextHeldBills = [currentHeld, ...withoutTarget].slice(0, 25); }
+    if (cart.length > 0) {
+      const currentHeld = buildHeldBill();
+      nextHeldBills = [currentHeld, ...withoutTarget].slice(0, 25);
+      saveHeldBillToServer(currentHeld).then((serverHeld) => {
+        if (serverHeld) {
+          saveHeldBills([serverHeld, ...withoutTarget].slice(0, 100));
+        }
+      });
+    }
     setCart(heldBill.cart || []);
     setCustomerName(heldBill.customerName || '');
     setCustomerMobile(heldBill.customerMobile ? String(heldBill.customerMobile).replace(/\D/g, '').slice(0, 10) : '');
@@ -599,6 +672,7 @@ export default function POSPage() {
     setPaymentMode(heldBill.paymentMode || 'cash');
     setPayments(Array.isArray(heldBill.payments) && heldBill.payments.length ? heldBill.payments : [emptyPayment()]);
     saveHeldBills(nextHeldBills);
+    await removeHeldBillFromServer(heldBill.id);
     setHoldDetectModal(false); setDetectedHeldBills([]);
     showToast(cart.length > 0 ? `Current cart held · Resumed ${heldBill.customerName || 'held bill'}` : `Resumed ${heldBill.customerName || 'held bill'}`);
     if (barcodeRef.current) barcodeRef.current.focus();

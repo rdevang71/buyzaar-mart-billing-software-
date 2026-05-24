@@ -2,6 +2,7 @@ import { getClient, query } from '@/lib/db';
 import { successResponse, errorResponse } from '@/lib/api-response';
 import { ensureCatalogExtrasSchema } from '@/lib/catalogExtrasSchema';
 import { ensureStockInSchema } from '@/lib/stockInSchema';
+import { requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 async function ensureProductDiscountSchema() {
   await query(`
@@ -71,11 +72,25 @@ function parseStoreSaleabilityFromRow(row = {}) {
   }));
 }
 
-async function insertProductWithIntegrations(client, row) {
+function validateMoneyField(row, field, label, errors) {
+  const value = row[field];
+  if (value === '' || value === null || value === undefined) return;
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 0) errors.push(`${label} must be a valid positive number`);
+}
+
+async function insertProductWithIntegrations(client, row, user) {
   const name = normalizeText(row.name);
   if (!name) {
     throw new Error('name is required');
   }
+
+  const rowErrors = [];
+  validateMoneyField(row, 'mrp', 'MRP', rowErrors);
+  validateMoneyField(row, 'selling_price', 'Selling price', rowErrors);
+  validateMoneyField(row, 'cost_price', 'Cost price', rowErrors);
+  validateMoneyField(row, 'opening_stock_qty', 'Opening stock quantity', rowErrors);
+  if (rowErrors.length) throw new Error(rowErrors.join(', '));
 
   const categoryId = await resolveIdByName(client, 'categories', row.category_name);
   const subCategoryId = await resolveIdByName(client, 'sub_categories', row.sub_category_name, { categoryId });
@@ -84,6 +99,22 @@ async function insertProductWithIntegrations(client, row) {
   const departmentId = await resolveIdByName(client, 'departments', row.department_name);
   const taxId = await resolveIdByName(client, 'taxes', row.tax_name);
   const inventoryStoreId = await resolveIdByName(client, 'stores', row.inventory_store_name);
+
+  const referenceErrors = [];
+  if (normalizeText(row.category_name) && !categoryId) referenceErrors.push(`Category "${row.category_name}" not found`);
+  if (normalizeText(row.sub_category_name) && !subCategoryId) referenceErrors.push(`Sub-category "${row.sub_category_name}" not found`);
+  if (normalizeText(row.brand_name) && !brandId) referenceErrors.push(`Brand "${row.brand_name}" not found`);
+  if (normalizeText(row.manufacturer_name) && !manufacturerId) referenceErrors.push(`Manufacturer "${row.manufacturer_name}" not found`);
+  if (normalizeText(row.department_name) && !departmentId) referenceErrors.push(`Department "${row.department_name}" not found`);
+  if (normalizeText(row.tax_name) && !taxId) referenceErrors.push(`Tax "${row.tax_name}" not found`);
+  if (toNumber(row.opening_stock_qty, 0) > 0 && !inventoryStoreId) {
+    referenceErrors.push('Inventory store name is required for opening stock');
+  }
+  if (inventoryStoreId) {
+    const storeCheck = requireStore(user, inventoryStoreId);
+    if (storeCheck.error) referenceErrors.push(`No access to inventory store "${row.inventory_store_name}"`);
+  }
+  if (referenceErrors.length) throw new Error(referenceErrors.join(', '));
 
   const insert = await client.query(
     `INSERT INTO products (
@@ -236,10 +267,17 @@ async function insertProductWithIntegrations(client, row) {
 
 export async function POST(request) {
   try {
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_CATALOG');
+    if (permissionCheck.error) return permissionCheck.error;
+
     const body = await request.json();
     const { type, rows } = body; // type: 'categories' | 'sub-categories' | 'products'
 
     if (!rows?.length) return errorResponse('No data to import');
+    if (rows.length > 5000) return errorResponse('Import limit is 5000 rows at a time');
 
     if (type === 'products') {
       await Promise.all([ensureStockInSchema(), ensureCatalogExtrasSchema(), ensureProductDiscountSchema()]);
@@ -252,10 +290,24 @@ export async function POST(request) {
     let inserted = 0;
     let skipped  = 0;
     const errors = [];
+    const seenProductKeys = new Set();
 
     for (let index = 0; index < rows.length; index++) {
       const row = rows[index];
       try {
+        if (type === 'products') {
+          const duplicateKeys = ['product_id', 'sku', 'barcode']
+            .map((field) => [field, normalizeText(row[field]).toLowerCase()])
+            .filter(([, value]) => value);
+          for (const [field, value] of duplicateKeys) {
+            const key = `${field}:${value}`;
+            if (seenProductKeys.has(key)) {
+              throw new Error(`Duplicate ${field.replace('_', ' ')} in import file`);
+            }
+            seenProductKeys.add(key);
+          }
+        }
+
         if (type === 'categories') {
           if (!row.name?.trim()) { skipped++; continue; }
           await query(
@@ -287,7 +339,7 @@ export async function POST(request) {
           const client = await getClient();
           try {
             await client.query('BEGIN');
-            await insertProductWithIntegrations(client, row);
+            await insertProductWithIntegrations(client, row, auth.user);
             await client.query('COMMIT');
             inserted++;
           } catch (err) {

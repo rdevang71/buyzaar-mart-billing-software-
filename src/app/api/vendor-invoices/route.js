@@ -3,6 +3,7 @@ import { getClient, query } from '@/lib/db';
 import { ensureVendorsSchema } from '@/lib/vendorsSchema';
 import { ensurePurchaseOrderSchema } from '@/lib/purchaseOrderSchema';
 import { ensureVendorInvoicesSchema } from '@/lib/vendorInvoicesSchema';
+import { ensureStockInSchema } from '@/lib/stockInSchema';
 
 function mapRow(row) {
   const totalAmount = Number(row.total_amount || 0);
@@ -14,6 +15,8 @@ function mapRow(row) {
     vendorId: row.vendor_id,
     vendorName: row.vendor_name || '—',
     poId: row.purchase_order_transaction_id || row.purchase_order_id || null,
+    stockInId: row.stock_in_id || null,
+    grnId: row.stock_in_transaction_id || row.stock_in_id || null,
     invoiceNumber: row.invoice_number,
     totalAmount,
     amountPaid,
@@ -48,6 +51,7 @@ export async function GET(request) {
   try {
     await ensureVendorsSchema();
     await ensurePurchaseOrderSchema();
+    await ensureStockInSchema();
     await ensureVendorInvoicesSchema();
 
     const { searchParams } = new URL(request.url);
@@ -77,15 +81,17 @@ export async function GET(request) {
 
     const res = await query(
       `SELECT vi.id, vi.transaction_id, vi.vendor_id, vi.purchase_order_id, vi.invoice_number, vi.total_amount, vi.amount_paid,
-              vi.due_date, vi.invoice_date, vi.created_by, vi.remarks, vi.status, vi.created_at,
+              vi.stock_in_id, vi.due_date, vi.invoice_date, vi.created_by, vi.remarks, vi.status, vi.created_at,
               v.name AS vendor_name,
               po.transaction_id AS purchase_order_transaction_id,
+              si.transaction_id AS stock_in_transaction_id,
               COALESCE(settlement_stats.settlement_count, 0) AS settlement_count,
               settlement_stats.last_payment_date,
               COALESCE(settlement_stats.payments, '[]'::jsonb) AS payments
        FROM vendor_invoices vi
        LEFT JOIN vendors v ON v.id = vi.vendor_id
        LEFT JOIN purchase_orders po ON po.id = vi.purchase_order_id
+       LEFT JOIN stock_in si ON si.id = vi.stock_in_id
        LEFT JOIN LATERAL (
          SELECT
            COUNT(*)::int AS settlement_count,
@@ -123,6 +129,7 @@ export async function POST(request) {
   try {
     await ensureVendorsSchema();
     await ensurePurchaseOrderSchema();
+    await ensureStockInSchema();
     await ensureVendorInvoicesSchema();
 
     const body = await request.json();
@@ -141,13 +148,14 @@ export async function POST(request) {
       await client.query('BEGIN');
       const res = await client.query(
         `INSERT INTO vendor_invoices (
-          vendor_id, purchase_order_id, invoice_number, total_amount, amount_paid,
+          vendor_id, purchase_order_id, stock_in_id, invoice_number, total_amount, amount_paid,
           due_date, invoice_date, created_by, remarks, status, meta, created_at, updated_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW(),NOW())
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),NOW())
         RETURNING id`,
         [
           vendorId,
           purchaseOrderId,
+          Number(body.stock_in_id || body.stockInId || 0) || null,
           invoiceNumber,
           totalAmount,
           amountPaid,
@@ -198,6 +206,7 @@ export async function PUT(request) {
   try {
     await ensureVendorsSchema();
     await ensurePurchaseOrderSchema();
+    await ensureStockInSchema();
     await ensureVendorInvoicesSchema();
 
     const body = await request.json();

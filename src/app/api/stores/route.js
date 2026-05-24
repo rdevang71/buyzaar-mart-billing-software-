@@ -5,12 +5,10 @@ import { appendStoreScope, requireAuth, requirePermission } from '@/lib/api-prot
 
 function buildStoreMeta(body = {}) {
   return {
-    importAddress: body.importAddress || '',
     locationType: body.locationType || 'Store',
     latitude: body.latitude || '',
     longitude: body.longitude || '',
     panNumber: body.panNumber || '',
-    storeCapacity: body.storeCapacity || '',
     defaultCustomerGroup: body.defaultCustomerGroup || '',
     storeGuid: body.storeGuid || '',
     shortCode: body.shortCode || '',
@@ -31,7 +29,6 @@ function buildStoreMeta(body = {}) {
     ncCustomStoreOrderPrefix: body.ncCustomStoreOrderPrefix || '',
     ncRefundCustomStoreOrderPrefix: body.ncRefundCustomStoreOrderPrefix || '',
     rwiCustomStoreOrderPrefix: body.rwiCustomStoreOrderPrefix || '',
-    users: body.users || '',
   };
 }
 
@@ -118,8 +115,24 @@ export async function POST(request) {
 
     const body = await request.json().catch(() => ({}));
     const name = String(body.name || '').trim();
-    if (!name) {
-      return validationError([{ field: 'name', message: 'Store name is required' }]);
+    const locationType = String(body.locationType || '').trim();
+    const addressLine1 = String(body.addressLine1 || '').trim();
+    const addressLine2 = String(body.addressLine2 || '').trim();
+    const city = String(body.city || '').trim();
+    const state = String(body.state || '').trim();
+    const pincode = String(body.pincode || '').trim();
+    const country = String(body.country || '').trim() || 'India';
+    const requiredErrors = [];
+    if (!name) requiredErrors.push({ field: 'name', message: 'Store name is required' });
+    if (!locationType) requiredErrors.push({ field: 'locationType', message: 'Location type is required' });
+    if (!addressLine1) requiredErrors.push({ field: 'addressLine1', message: 'Address line 1 is required' });
+    if (!city) requiredErrors.push({ field: 'city', message: 'City is required' });
+    if (!state) requiredErrors.push({ field: 'state', message: 'State is required' });
+    if (!pincode) requiredErrors.push({ field: 'pincode', message: 'Pincode is required' });
+    else if (!/^\d{6}$/.test(pincode)) requiredErrors.push({ field: 'pincode', message: 'Pincode must be 6 digits' });
+    if (!country) requiredErrors.push({ field: 'country', message: 'Country is required' });
+    if (requiredErrors.length) {
+      return validationError(requiredErrors);
     }
     const managerMobile = String(body.managerMobile || '').replace(/\D/g, '');
     const managerEmail = String(body.managerEmail || '').trim().toLowerCase();
@@ -141,12 +154,12 @@ export async function POST(request) {
                  manager_name, manager_mobile, manager_email, opening_time, closing_time, is_active, meta, created_at, updated_at`,
       [
         name,
-        body.addressLine1 || null,
-        body.addressLine2 || null,
-        body.city || null,
-        body.state || null,
-        body.pincode || null,
-        body.country || 'India',
+        addressLine1,
+        addressLine2 || null,
+        city,
+        state,
+        pincode,
+        country,
         body.managerName || null,
         managerMobile || null,
         managerEmail || null,

@@ -79,6 +79,31 @@ const CREATE_CASHIER_CLOSINGS_SQL = `
   );
 `;
 
+const CREATE_POS_HELD_BILLS_SQL = `
+  CREATE TABLE IF NOT EXISTS pos_held_bills (
+    id BIGSERIAL PRIMARY KEY,
+    client_hold_id VARCHAR(120) UNIQUE,
+    user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    store_id BIGINT REFERENCES stores(id) ON DELETE CASCADE,
+    session_id VARCHAR(120),
+    customer_name VARCHAR(190),
+    customer_mobile VARCHAR(40),
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    totals JSONB NOT NULL DEFAULT '{}'::jsonb,
+    status VARCHAR(20) NOT NULL DEFAULT 'held',
+    held_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    resumed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_pos_held_bills_store_status
+    ON pos_held_bills(store_id, status, held_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_pos_held_bills_customer_mobile
+    ON pos_held_bills(customer_mobile)
+    WHERE customer_mobile IS NOT NULL;
+`;
+
 const MIGRATE_SALES_BILLING_SQL = `
   CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
@@ -153,6 +178,25 @@ const MIGRATE_SALES_BILLING_SQL = `
     ADD COLUMN IF NOT EXISTS reference_no VARCHAR(120),
     ADD COLUMN IF NOT EXISTS meta JSONB NOT NULL DEFAULT '{}'::jsonb,
     ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+  ALTER TABLE pos_held_bills
+    ADD COLUMN IF NOT EXISTS client_hold_id VARCHAR(120),
+    ADD COLUMN IF NOT EXISTS user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS store_id BIGINT REFERENCES stores(id) ON DELETE CASCADE,
+    ADD COLUMN IF NOT EXISTS session_id VARCHAR(120),
+    ADD COLUMN IF NOT EXISTS customer_name VARCHAR(190),
+    ADD COLUMN IF NOT EXISTS customer_mobile VARCHAR(40),
+    ADD COLUMN IF NOT EXISTS payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    ADD COLUMN IF NOT EXISTS totals JSONB NOT NULL DEFAULT '{}'::jsonb,
+    ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'held',
+    ADD COLUMN IF NOT EXISTS held_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ADD COLUMN IF NOT EXISTS resumed_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+  CREATE UNIQUE INDEX IF NOT EXISTS pos_held_bills_client_hold_id_unique_idx
+    ON pos_held_bills(client_hold_id)
+    WHERE client_hold_id IS NOT NULL;
 `;
 
 const CREATE_OFFLINE_SYNC_SQL = `
@@ -198,6 +242,7 @@ export async function ensureSalesBillingSchema() {
       await query(CREATE_SALES_BILL_ITEMS_SQL);
       await query(CREATE_SALES_BILL_PAYMENTS_SQL);
       await query(CREATE_CASHIER_CLOSINGS_SQL);
+      await query(CREATE_POS_HELD_BILLS_SQL);
       await query(MIGRATE_SALES_BILLING_SQL);
       await query(CREATE_OFFLINE_SYNC_SQL);
     })().catch((err) => {

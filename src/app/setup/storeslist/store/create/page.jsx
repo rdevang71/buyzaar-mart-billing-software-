@@ -6,7 +6,6 @@ import MainLayout from '@/components/MainLayout';
 
 const initialForm = {
   name: '',
-  importAddress: '',
   locationType: 'Store',
   addressLine1: '',
   addressLine2: '',
@@ -22,8 +21,6 @@ const initialForm = {
   managerEmail: '',
   openingTime: '10:00 am',
   closingTime: '10:00 pm',
-  users: '',
-  storeCapacity: '',
   defaultCustomerGroup: 'None',
   storeGuid: '',
   shortCode: '',
@@ -51,6 +48,7 @@ export default function CreateStorePage() {
   const [form, setForm] = useState(initialForm);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [errors, setErrors] = useState({});
   const [savedStore, setSavedStore] = useState(null);
 
   const onChange = (e) => {
@@ -58,18 +56,39 @@ export default function CreateStorePage() {
       ? e.target.value.replace(/\D/g, '').slice(0, 10)
       : e.target.value;
     setForm((p) => ({ ...p, [e.target.name]: value }));
+    if (errors[e.target.name]) {
+      setErrors((p) => ({ ...p, [e.target.name]: '' }));
+    }
   };
   const onCheck = (e) => setForm((p) => ({ ...p, [e.target.name]: e.target.checked }));
+
+  const inputClass = (field) => `input ${errors[field] ? 'input-error' : ''}`;
+
+  const validate = () => {
+    const next = {};
+    if (!form.name.trim()) next.name = 'Store name is required';
+    if (!form.locationType) next.locationType = 'Location type is required';
+    if (!form.addressLine1.trim()) next.addressLine1 = 'Address line 1 is required';
+    if (!form.city.trim()) next.city = 'City is required';
+    if (!form.state.trim()) next.state = 'State is required';
+    if (!form.pincode.trim()) next.pincode = 'Pincode is required';
+    else if (!/^\d{6}$/.test(form.pincode.trim())) next.pincode = 'Pincode must be 6 digits';
+    if (!form.country.trim()) next.country = 'Country is required';
+    if (form.managerMobile && !/^\d{10}$/.test(form.managerMobile)) {
+      next.managerMobile = 'Mobile number must be exactly 10 digits';
+    }
+    if (form.managerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.managerEmail.trim())) {
+      next.managerEmail = 'Enter a valid e-mail address';
+    }
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    if (!/^\d{10}$/.test(form.managerMobile)) {
-      setError('Mobile number must be exactly 10 digits');
-      return;
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.managerEmail.trim())) {
-      setError('Enter a valid e-mail address');
+    if (!validate()) {
+      setError('Please fix the highlighted fields');
       return;
     }
     setLoading(true);
@@ -97,7 +116,7 @@ export default function CreateStorePage() {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-xl font-bold text-gray-900">Create Store</h2>
-          <p className="text-sm text-gray-500">Create a store with the same fields as the reference screen.</p>
+          <p className="text-sm text-gray-500">Add store address, contact and billing settings.</p>
         </div>
         <div className="flex items-center gap-2">
           <button type="button" onClick={() => router.push('/settings/stores')} className="px-4 py-2 border rounded-lg bg-white hover:bg-gray-50">Back</button>
@@ -149,8 +168,6 @@ export default function CreateStorePage() {
               ['E-mail Address', savedStore.manager_email || form.managerEmail],
               ['Opening Time', savedStore.opening_time || form.openingTime],
               ['Closing Time', savedStore.closing_time || form.closingTime],
-              ['Users', savedStore.meta?.users || form.users],
-              ['Store Capacity', savedStore.meta?.storeCapacity || form.storeCapacity],
               ['Default Customer Group', savedStore.meta?.defaultCustomerGroup || form.defaultCustomerGroup],
               ['Store GUID', savedStore.meta?.storeGuid || form.storeGuid],
               ['Short Code', savedStore.meta?.shortCode || form.shortCode],
@@ -200,33 +217,25 @@ export default function CreateStorePage() {
         <section className="bg-white border border-gray-200 rounded-xl p-5">
           <h3 className="text-[15px] font-semibold text-blue-700 mb-4">Basic Information</h3>
           <div className="space-y-4">
-            <Field label="Store Name *">
-              <input name="name" value={form.name} onChange={onChange} required className="input" placeholder="Noida Store" />
-            </Field>
-
-            <Field label="Import Address">
-              <select name="importAddress" value={form.importAddress} onChange={onChange} className="input">
-                <option value="">Select Address ...</option>
-                <option value="address-1">Address 1</option>
-                <option value="address-2">Address 2</option>
-              </select>
+            <Field label="Store Name *" error={errors.name}>
+              <input name="name" value={form.name} onChange={onChange} className={inputClass('name')} placeholder="Noida Store" />
             </Field>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Location Type">
-                <select name="locationType" value={form.locationType} onChange={onChange} className="input">
+              <Field label="Location Type *" error={errors.locationType}>
+                <select name="locationType" value={form.locationType} onChange={onChange} className={inputClass('locationType')}>
                   <option value="Store">Store</option>
                   <option value="Warehouse">Warehouse</option>
                   <option value="Outlet">Outlet</option>
                 </select>
               </Field>
-              <Field label="State">
-                <input name="state" value={form.state} onChange={onChange} className="input" placeholder="Uttar Pradesh" />
+              <Field label="State *" error={errors.state}>
+                <input name="state" value={form.state} onChange={onChange} className={inputClass('state')} placeholder="Uttar Pradesh" />
               </Field>
             </div>
 
-            <Field label="Address Line 1">
-              <input name="addressLine1" value={form.addressLine1} onChange={onChange} className="input" placeholder="6th floor, C55, Priska Tower" />
+            <Field label="Address Line 1 *" error={errors.addressLine1}>
+              <input name="addressLine1" value={form.addressLine1} onChange={onChange} className={inputClass('addressLine1')} placeholder="6th floor, C55, Priska Tower" />
             </Field>
 
             <Field label="Address Line 2">
@@ -234,17 +243,17 @@ export default function CreateStorePage() {
             </Field>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label="City">
-                <input name="city" value={form.city} onChange={onChange} className="input" placeholder="Noida" />
+              <Field label="City *" error={errors.city}>
+                <input name="city" value={form.city} onChange={onChange} className={inputClass('city')} placeholder="Noida" />
               </Field>
-              <Field label="Pincode">
-                <input name="pincode" value={form.pincode} onChange={onChange} className="input" placeholder="201309" />
+              <Field label="Pincode *" error={errors.pincode}>
+                <input name="pincode" value={form.pincode} onChange={onChange} className={inputClass('pincode')} placeholder="201309" />
               </Field>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Country">
-                <input name="country" value={form.country} onChange={onChange} className="input" />
+              <Field label="Country *" error={errors.country}>
+                <input name="country" value={form.country} onChange={onChange} className={inputClass('country')} />
               </Field>
               <Field label="Latitude">
                 <input name="latitude" value={form.latitude} onChange={onChange} className="input" placeholder="28.61" />
@@ -263,18 +272,18 @@ export default function CreateStorePage() {
         </section>
 
         <section className="bg-white border border-gray-200 rounded-xl p-5">
-          <h3 className="text-[15px] font-semibold text-blue-700 mb-4">Store Information</h3>
+          <h3 className="text-[15px] font-semibold text-blue-700 mb-4">Store Contact & Operations</h3>
           <div className="space-y-4">
-            <Field label="Manager Name">
+            <Field label="Store Contact Name">
               <input name="managerName" value={form.managerName} onChange={onChange} className="input" placeholder="John Doe" />
             </Field>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Mobile Number *">
-                <input name="managerMobile" type="tel" inputMode="numeric" pattern="[0-9]{10}" maxLength={10} value={form.managerMobile} onChange={onChange} required className="input" placeholder="9958160899" />
+              <Field label="Contact Mobile" error={errors.managerMobile}>
+                <input name="managerMobile" type="tel" inputMode="numeric" maxLength={10} value={form.managerMobile} onChange={onChange} className={inputClass('managerMobile')} placeholder="9958160899" />
               </Field>
-              <Field label="E-mail Address *">
-                <input name="managerEmail" type="email" value={form.managerEmail} onChange={onChange} required className="input" placeholder="contact@queuebuster.co" />
+              <Field label="Contact E-mail" error={errors.managerEmail}>
+                <input name="managerEmail" type="email" value={form.managerEmail} onChange={onChange} className={inputClass('managerEmail')} placeholder="contact@queuebuster.co" />
               </Field>
             </div>
 
@@ -284,19 +293,6 @@ export default function CreateStorePage() {
               </Field>
               <Field label="Closing Time">
                 <input name="closingTime" value={form.closingTime} onChange={onChange} className="input" placeholder="10:00 pm" />
-              </Field>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Users">
-                <select name="users" value={form.users} onChange={onChange} className="input">
-                  <option value="">select</option>
-                  <option value="1">Admin</option>
-                  <option value="2">Cashier</option>
-                </select>
-              </Field>
-              <Field label="Store Capacity">
-                <input name="storeCapacity" value={form.storeCapacity} onChange={onChange} className="input" placeholder="0" />
               </Field>
             </div>
 
@@ -410,18 +406,27 @@ export default function CreateStorePage() {
           border-color: #2563eb;
           box-shadow: 0 0 0 1px #2563eb;
         }
+        .input-error {
+          border-color: #ef4444;
+          background: #fff7f7;
+        }
+        .input-error:focus {
+          border-color: #ef4444;
+          box-shadow: 0 0 0 1px #ef4444;
+        }
       `}</style>
     </MainLayout>
   );
 }
 
-function Field({ label, children }) {
+function Field({ label, children, error }) {
   const isRequired = String(label || '').trim().endsWith('*');
   const displayLabel = isRequired ? String(label).replace(/\s*\*$/, '') : label;
   return (
     <label className="block">
       <span className="mb-1 block text-sm font-medium text-gray-700">{displayLabel}{isRequired ? <span className="text-red-500"> *</span> : null}</span>
       {children}
+      {error ? <span className="mt-1 block text-xs font-medium text-red-600">{error}</span> : null}
     </label>
   );
 }

@@ -261,8 +261,12 @@ export default function VendorsPage() {
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
-                    <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="Email Address" className="rounded-lg border border-gray-300 px-3 py-2 text-[13px] text-gray-800 bg-white placeholder:text-gray-400 focus:outline-none focus:border-blue-500" />
+                    <div>
+                      <label className="text-[12px] text-gray-700">Email Address <span className="text-red-500">*</span></label>
+                      <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="Email Address" className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-[13px] text-gray-800 bg-white placeholder:text-gray-400 focus:outline-none focus:border-blue-500" />
+                    </div>
                     <div className="flex flex-col">
+                      <label className="text-[12px] text-gray-700">Mobile Number <span className="text-red-500">*</span></label>
                       <input 
                         value={form.mobile_number} 
                         onChange={(e) => {
@@ -271,7 +275,7 @@ export default function VendorsPage() {
                         }}
                         placeholder="Mobile Number (10 digits)" 
                         maxLength="10"
-                        className="rounded-lg border border-gray-300 px-3 py-2 text-[13px] text-gray-800 bg-white placeholder:text-gray-400 focus:outline-none focus:border-blue-500" 
+                        className="mt-1 rounded-lg border border-gray-300 px-3 py-2 text-[13px] text-gray-800 bg-white placeholder:text-gray-400 focus:outline-none focus:border-blue-500" 
                       />
                       {form.mobile_number && !validatePhoneNumber(form.mobile_number).isValid && (
                         <p className="text-[11px] text-red-600 mt-0.5">{validatePhoneNumber(form.mobile_number).error}</p>

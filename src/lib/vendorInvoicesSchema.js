@@ -10,6 +10,7 @@ export async function ensureVendorInvoicesSchema() {
       transaction_id VARCHAR(50) UNIQUE,
       vendor_id INTEGER NOT NULL REFERENCES vendors(id),
       purchase_order_id INTEGER REFERENCES purchase_orders(id),
+      stock_in_id INTEGER,
       invoice_number VARCHAR(100) NOT NULL,
       total_amount NUMERIC(14, 2) NOT NULL DEFAULT 0,
       amount_paid NUMERIC(14, 2) NOT NULL DEFAULT 0,
@@ -27,6 +28,7 @@ export async function ensureVendorInvoicesSchema() {
       ADD COLUMN IF NOT EXISTS transaction_id VARCHAR(50),
       ADD COLUMN IF NOT EXISTS vendor_id INTEGER,
       ADD COLUMN IF NOT EXISTS purchase_order_id INTEGER,
+      ADD COLUMN IF NOT EXISTS stock_in_id INTEGER,
       ADD COLUMN IF NOT EXISTS invoice_number VARCHAR(100),
       ADD COLUMN IF NOT EXISTS total_amount NUMERIC(14, 2) NOT NULL DEFAULT 0,
       ADD COLUMN IF NOT EXISTS amount_paid NUMERIC(14, 2) NOT NULL DEFAULT 0,
@@ -63,8 +65,12 @@ export async function ensureVendorInvoicesSchema() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_vendor_invoices_vendor_id ON vendor_invoices(vendor_id);
+    CREATE INDEX IF NOT EXISTS idx_vendor_invoices_stock_in_id ON vendor_invoices(stock_in_id);
     CREATE INDEX IF NOT EXISTS idx_vendor_invoices_status ON vendor_invoices(status);
     CREATE INDEX IF NOT EXISTS idx_vendor_invoices_invoice_number ON vendor_invoices(invoice_number);
+    CREATE UNIQUE INDEX IF NOT EXISTS vendor_invoices_stock_in_unique_idx
+      ON vendor_invoices(stock_in_id)
+      WHERE stock_in_id IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_vendor_invoice_settlements_invoice_id ON vendor_invoice_settlements(vendor_invoice_id);
     CREATE INDEX IF NOT EXISTS idx_vendor_invoice_settlements_date ON vendor_invoice_settlements(settlement_date);
   `);
