@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import MainLayout from '@/components/MainLayout';
 
 async function fetchVendors() {
-  const res = await fetch('/api/vendors');
+  const res = await fetch('/api/vendors', { cache: 'no-store' });
   if (!res.ok) throw new Error('Failed to fetch vendors');
   return res.json();
 }
@@ -29,8 +29,12 @@ export default function CreateVendorInvoicePage() {
   const [form, setForm] = useState({
     invoice_number: '',
     total_amount: '',
+    amount_paid: '',
     vendor: '',
+    invoice_date: new Date().toISOString().slice(0, 10),
     due_date: '',
+    payment_mode: 'Cash',
+    reference_no: '',
     remarks: '',
   });
 
@@ -53,8 +57,12 @@ export default function CreateVendorInvoicePage() {
       await createVendorInvoice({
         invoice_number: form.invoice_number,
         total_amount: Number(form.total_amount),
+        amount_paid: Number(form.amount_paid || 0),
         vendor: form.vendor,
+        invoice_date: form.invoice_date,
         due_date: form.due_date,
+        payment_mode: form.payment_mode,
+        reference_no: form.reference_no,
         remarks: form.remarks,
       });
       router.push('/purchase/vendor-invoices');
@@ -116,6 +124,17 @@ export default function CreateVendorInvoicePage() {
             </div>
 
             <div>
+              <label className="text-[12px] text-gray-700 font-medium">Amount Paid</label>
+              <input
+                type="number"
+                value={form.amount_paid}
+                onChange={(e) => setForm({ ...form, amount_paid: e.target.value })}
+                placeholder="Enter paid amount"
+                className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-[13px] text-gray-800 bg-white placeholder:text-gray-400 focus:outline-none focus:border-blue-500"
+              />
+            </div>
+
+            <div>
               <label className="text-[12px] text-gray-700 font-medium">Vendor</label>
               <select
                 value={form.vendor}
@@ -136,6 +155,16 @@ export default function CreateVendorInvoicePage() {
             </div>
 
             <div>
+              <label className="text-[12px] text-gray-700 font-medium">Invoice Date</label>
+              <input
+                type="date"
+                value={form.invoice_date}
+                onChange={(e) => setForm({ ...form, invoice_date: e.target.value })}
+                className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-[13px] text-gray-800 bg-white focus:outline-none focus:border-blue-500"
+              />
+            </div>
+
+            <div>
               <label className="text-[12px] text-gray-700 font-medium">Invoice Due Date *</label>
               <input
                 type="date"
@@ -144,6 +173,34 @@ export default function CreateVendorInvoicePage() {
                 className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-[13px] text-gray-800 bg-white focus:outline-none focus:border-blue-500"
               />
             </div>
+
+            {Number(form.amount_paid || 0) > 0 && (
+              <>
+                <div>
+                  <label className="text-[12px] text-gray-700 font-medium">Payment Mode</label>
+                  <select
+                    value={form.payment_mode}
+                    onChange={(e) => setForm({ ...form, payment_mode: e.target.value })}
+                    className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-[13px] text-gray-800 bg-white focus:outline-none focus:border-blue-500"
+                  >
+                    <option>Cash</option>
+                    <option>UPI</option>
+                    <option>Card</option>
+                    <option>Bank Transfer</option>
+                    <option>Cheque</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[12px] text-gray-700 font-medium">Reference No.</label>
+                  <input
+                    value={form.reference_no}
+                    onChange={(e) => setForm({ ...form, reference_no: e.target.value })}
+                    placeholder="Payment reference"
+                    className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-[13px] text-gray-800 bg-white placeholder:text-gray-400 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+              </>
+            )}
 
             <div className="col-span-2">
               <label className="text-[12px] text-gray-700 font-medium">Remarks</label>
