@@ -24,7 +24,7 @@ export default function AssignProductGroupsToStorePage() {
       try {
         const res = await fetch('/api/stores');
         const json = await res.json();
-        if (json.success) setStoresList(json.data.records || []);
+        if (json.success) setStoresList(json.data.records || json.data.stores || []);
       } catch (e) { }
     })();
   }, []);

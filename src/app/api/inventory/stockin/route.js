@@ -16,6 +16,35 @@ export async function GET(request) {
     const whereClauses = [`s.status = 'confirmed'`];
     const scope = appendStoreScope(whereClauses, params, 's.destination_id', auth.user);
     if (scope.error) return scope.error;
+    const { searchParams } = new URL(request.url);
+    const search = String(searchParams.get('search') || '').trim();
+    const dateFrom = String(searchParams.get('date_from') || '').trim();
+    const dateTo = String(searchParams.get('date_to') || '').trim();
+    const source = String(searchParams.get('source') || '').trim();
+
+    if (search) {
+      params.push(`%${search}%`);
+      whereClauses.push(`(
+        s.transaction_id ILIKE $${params.length}
+        OR s.invoice_number ILIKE $${params.length}
+        OR s.vendor_name ILIKE $${params.length}
+        OR st.name ILIKE $${params.length}
+        OR s.reference_type ILIKE $${params.length}
+        OR s.reference_id ILIKE $${params.length}
+      )`);
+    }
+    if (dateFrom) {
+      params.push(dateFrom);
+      whereClauses.push(`COALESCE(s.invoice_date::date, s.created_at::date) >= $${params.length}::date`);
+    }
+    if (dateTo) {
+      params.push(dateTo);
+      whereClauses.push(`COALESCE(s.invoice_date::date, s.created_at::date) <= $${params.length}::date`);
+    }
+    if (source) {
+      params.push(source);
+      whereClauses.push(`COALESCE(s.reference_type, '') = $${params.length}`);
+    }
 
     const res = await query(
       `SELECT

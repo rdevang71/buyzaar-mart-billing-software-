@@ -52,6 +52,7 @@ export default function StockRequisitionPage() {
   const [showModal, setShowModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
+  const [fulfillmentSources, setFulfillmentSources] = useState({});
   const [form, setForm] = useState({
     sourceId: '',
     destinationId: '',
@@ -163,6 +164,25 @@ export default function StockRequisitionPage() {
     }
   };
 
+  const fulfillByTransfer = async (row) => {
+    const sourceId = fulfillmentSources[row.id] || row.sourceId;
+    if (!sourceId) return alert('Select fulfillment source first');
+    try {
+      const res = await fetch('/api/inventory/stocktransfer/from-requisition', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ requisitionId: row.id, sourceId }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || 'Fulfillment failed');
+      alert(`Stock transfer ${data.transactionId} created and stock moved.`);
+      await loadRecords();
+    } catch (err) {
+      alert(err.message || 'Fulfillment failed');
+    }
+  };
+
   const tableData = filteredRecords.map((row) => ({
     'Fulfillment Center': row.sourceName || '-',
     'Destination': row.destinationName || '-',
@@ -184,8 +204,23 @@ export default function StockRequisitionPage() {
           </>
         )}
         {row.approvalStatus === 'approved' && row.fulfillmentStatus !== 'completed' && (
-          <button onClick={() => updateStatus(row.id, 'fulfill')} className="rounded border border-blue-200 px-2 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-50">Mark Fulfilled</button>
+          <>
+            <select
+              value={fulfillmentSources[row.id] || row.sourceId || ''}
+              onChange={(e) => setFulfillmentSources((current) => ({ ...current, [row.id]: e.target.value }))}
+              className="rounded border border-gray-200 px-2 py-1 text-[11px] text-gray-700"
+            >
+              <option value="">Source</option>
+              {stores
+                .filter((store) => String(store.id) !== String(row.destinationId))
+                .map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}
+            </select>
+            <button onClick={() => fulfillByTransfer(row)} className="rounded border border-blue-200 px-2 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-50">Fulfill Transfer</button>
+          </>
         )}
+        {row.fulfillmentStatus === 'completed' && row.stockTransferId ? (
+          <span className="text-[11px] font-semibold text-green-700">Transfer #{row.stockTransferId}</span>
+        ) : null}
       </div>
     ),
   }));
@@ -233,7 +268,7 @@ export default function StockRequisitionPage() {
                 </label>
                 <label className="block">
                   <span className="mb-1 block text-xs font-semibold text-gray-600">Requested By</span>
-                  <input value={form.requestedBy} onChange={(event) => setForm({ ...form, requestedBy: event.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+                  <input value={form.requestedBy} onChange={(event) => setForm({ ...form, requestedBy: event.target.value })} placeholder="Auto-filled from logged-in user if blank" className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
                 </label>
                 <label className="block">
                   <span className="mb-1 block text-xs font-semibold text-gray-600">Mail To</span>

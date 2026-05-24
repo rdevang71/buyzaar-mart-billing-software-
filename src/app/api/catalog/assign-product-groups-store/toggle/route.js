@@ -1,15 +1,25 @@
 import { getClient, query } from '@/lib/db';
 import { successResponse, errorResponse } from '@/lib/apiResponse';
+import { ensureCatalogExtrasSchema } from '@/lib/catalogExtrasSchema';
+import { requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 export async function POST(req) {
   let client;
   try {
+    await ensureCatalogExtrasSchema();
+    const auth = await requireAuth(req);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_CATALOG');
+    if (permissionCheck.error) return permissionCheck.error;
+
     const body = await req.json();
     const groupId = body.groupId;
     const storeId = body.storeId;
     const assign = body.assign === true;
 
     if (!groupId || !storeId) return errorResponse('groupId and storeId required', 400);
+    const storeCheck = requireStore(auth.user, Number(storeId));
+    if (storeCheck.error) return storeCheck.error;
 
     client = await getClient();
     await client.query('BEGIN');

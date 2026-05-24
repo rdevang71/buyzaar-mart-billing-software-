@@ -6,7 +6,6 @@ import MainLayout from '@/components/MainLayout';
 
 const initialForm = {
   name: '',
-  importAddress: '',
   locationType: 'Store',
   addressLine1: '',
   addressLine2: '',
@@ -22,8 +21,6 @@ const initialForm = {
   managerEmail: '',
   openingTime: '10:00 am',
   closingTime: '10:00 pm',
-  users: '',
-  storeCapacity: '',
   defaultCustomerGroup: 'None',
   storeGuid: '',
   shortCode: '',
@@ -86,13 +83,10 @@ export default function EditStorePage() {
           managerEmail: store.manager_email || '',
           openingTime: store.opening_time || '10:00 am',
           closingTime: store.closing_time || '10:00 pm',
-          importAddress: meta.importAddress || '',
           locationType: meta.locationType || 'Store',
           latitude: meta.latitude || '',
           longitude: meta.longitude || '',
           panNumber: meta.panNumber || '',
-          users: meta.users || '',
-          storeCapacity: meta.storeCapacity || '',
           defaultCustomerGroup: meta.defaultCustomerGroup || 'None',
           storeGuid: meta.storeGuid || '',
           shortCode: meta.shortCode || '',
@@ -127,6 +121,8 @@ export default function EditStorePage() {
   const onChange = (e) => {
     const value = e.target.name === 'managerMobile'
       ? e.target.value.replace(/\D/g, '').slice(0, 10)
+      : e.target.name === 'pincode'
+      ? e.target.value.replace(/\D/g, '').slice(0, 6)
       : e.target.value;
     setForm((p) => ({ ...p, [e.target.name]: value }));
   };
@@ -136,11 +132,29 @@ export default function EditStorePage() {
     e.preventDefault();
     setError('');
     setSuccess('');
-    if (!/^\d{10}$/.test(form.managerMobile)) {
+    const requiredFields = [
+      ['name', 'Store name is required'],
+      ['locationType', 'Location type is required'],
+      ['addressLine1', 'Address line 1 is required'],
+      ['city', 'City is required'],
+      ['state', 'State is required'],
+      ['pincode', 'Pincode is required'],
+      ['country', 'Country is required'],
+    ];
+    const missing = requiredFields.find(([key]) => !String(form[key] || '').trim());
+    if (missing) {
+      setError(missing[1]);
+      return;
+    }
+    if (!/^\d{6}$/.test(String(form.pincode || '').trim())) {
+      setError('Pincode must be 6 digits');
+      return;
+    }
+    if (form.managerMobile && !/^\d{10}$/.test(form.managerMobile)) {
       setError('Mobile number must be exactly 10 digits');
       return;
     }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.managerEmail.trim())) {
+    if (form.managerEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.managerEmail.trim())) {
       setError('Enter a valid e-mail address');
       return;
     }
@@ -196,12 +210,12 @@ export default function EditStorePage() {
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Store Name *"><input name="name" value={form.name} onChange={onChange} required className="input" /></Field>
             <Field label="Location Type"><input name="locationType" value={form.locationType} onChange={onChange} className="input" /></Field>
-            <Field label="Address Line 1"><input name="addressLine1" value={form.addressLine1} onChange={onChange} className="input" /></Field>
+            <Field label="Address Line 1 *"><input name="addressLine1" value={form.addressLine1} onChange={onChange} required className="input" /></Field>
             <Field label="Address Line 2"><input name="addressLine2" value={form.addressLine2} onChange={onChange} className="input" /></Field>
-            <Field label="City"><input name="city" value={form.city} onChange={onChange} className="input" /></Field>
-            <Field label="State"><input name="state" value={form.state} onChange={onChange} className="input" /></Field>
-            <Field label="Pincode"><input name="pincode" value={form.pincode} onChange={onChange} className="input" /></Field>
-            <Field label="Country"><input name="country" value={form.country} onChange={onChange} className="input" /></Field>
+            <Field label="City *"><input name="city" value={form.city} onChange={onChange} required className="input" /></Field>
+            <Field label="State *"><input name="state" value={form.state} onChange={onChange} required className="input" /></Field>
+            <Field label="Pincode *"><input name="pincode" value={form.pincode} onChange={onChange} required maxLength={6} inputMode="numeric" className="input" /></Field>
+            <Field label="Country *"><input name="country" value={form.country} onChange={onChange} required className="input" /></Field>
           </div>
         </section>
 
@@ -209,8 +223,8 @@ export default function EditStorePage() {
           <h3 className="text-[15px] font-semibold text-blue-700 mb-4">Store Information</h3>
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Manager Name"><input name="managerName" value={form.managerName} onChange={onChange} className="input" /></Field>
-            <Field label="Mobile Number *"><input name="managerMobile" type="tel" inputMode="numeric" pattern="[0-9]{10}" maxLength={10} value={form.managerMobile} onChange={onChange} required className="input" /></Field>
-            <Field label="E-mail Address *"><input name="managerEmail" type="email" value={form.managerEmail} onChange={onChange} required className="input" /></Field>
+            <Field label="Mobile Number"><input name="managerMobile" type="tel" inputMode="numeric" pattern="[0-9]{10}" maxLength={10} value={form.managerMobile} onChange={onChange} className="input" /></Field>
+            <Field label="E-mail Address"><input name="managerEmail" type="email" value={form.managerEmail} onChange={onChange} className="input" /></Field>
             <Field label="Opening Time"><input name="openingTime" value={form.openingTime} onChange={onChange} className="input" /></Field>
             <Field label="Closing Time"><input name="closingTime" value={form.closingTime} onChange={onChange} className="input" /></Field>
             <Field label="Store GUID"><input name="storeGuid" value={form.storeGuid} onChange={onChange} className="input" /></Field>

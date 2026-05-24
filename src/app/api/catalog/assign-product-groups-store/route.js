@@ -1,12 +1,22 @@
 import { query } from '@/lib/db';
 import { successResponse, errorResponse } from '@/lib/apiResponse';
+import { ensureCatalogExtrasSchema } from '@/lib/catalogExtrasSchema';
+import { requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 export async function GET(request) {
   try {
+    await ensureCatalogExtrasSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'VIEW_CATALOG', 'MANAGE_CATALOG');
+    if (permissionCheck.error) return permissionCheck.error;
+
     const { searchParams } = new URL(request.url);
     const storeId = searchParams.get('storeId');
 
     if (!storeId) return errorResponse('storeId is required', 400);
+    const storeCheck = requireStore(auth.user, Number(storeId));
+    if (storeCheck.error) return storeCheck.error;
 
     const res = await query(
       `SELECT pg.id, pg.name, pg.description,

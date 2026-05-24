@@ -14,42 +14,15 @@ const filters = [
 ];
 
 const columns = [
-  {
-    "key": "product",
-    "label": "Product"
-  },
-  {
-    "key": "sku",
-    "label": "SKU"
-  },
-  {
-    "key": "store",
-    "label": "Store"
-  },
-  {
-    "key": "opening_stock",
-    "label": "Opening Stock"
-  },
-  {
-    "key": "stock_in",
-    "label": "Stock In"
-  },
-  {
-    "key": "stock_out",
-    "label": "Stock Out"
-  },
-  {
-    "key": "current_stock",
-    "label": "Current Stock"
-  },
-  {
-    "key": "unit",
-    "label": "Unit"
-  },
-  {
-    "key": "status",
-    "label": "Status"
-  }
+  { "key": "transfer_id", "label": "Transfer ID" },
+  { "key": "date", "label": "Date" },
+  { "key": "source", "label": "Source" },
+  { "key": "destination", "label": "Destination" },
+  { "key": "product", "label": "Product" },
+  { "key": "sku", "label": "SKU" },
+  { "key": "requested_qty", "label": "Qty" },
+  { "key": "pending_qty", "label": "Pending Qty" },
+  { "key": "status", "label": "Status" }
 ];
 
 export default function InventoryUnfulfilledStockTransfersPage() {

@@ -72,12 +72,32 @@ function formatPaymentBreakup(payments, fallbackMode = 'cash') {
   return `Split: ${rows.map((payment) => `${formatPaymentMethod(payment.method)} ${formatCurrency(payment.amount)}`).join(' + ')}`;
 }
 
-const PAYMENT_OPTIONS = [
+const DEFAULT_PAYMENT_OPTIONS = [
   { value: 'cash', label: 'Cash', icon: 'ti-cash' },
   { value: 'card', label: 'Card', icon: 'ti-credit-card' },
   { value: 'upi', label: 'UPI', icon: 'ti-qrcode' },
   { value: 'credit', label: 'Credit', icon: 'ti-file-invoice' },
 ];
+
+const PAYMENT_ICON_BY_CODE = {
+  cash: 'ti-cash',
+  card: 'ti-credit-card',
+  upi: 'ti-qrcode',
+  credit: 'ti-file-invoice',
+  wallet: 'ti-wallet',
+};
+
+function normalizePaymentOptions(modes = []) {
+  const mapped = (Array.isArray(modes) ? modes : [])
+    .map((mode) => {
+      const value = String(mode.code || mode.value || mode.paymentMode || mode.name || '').trim().toLowerCase();
+      if (!value) return null;
+      const label = mode.name || mode.label || value.charAt(0).toUpperCase() + value.slice(1);
+      return { value, label, icon: PAYMENT_ICON_BY_CODE[value] || 'ti-credit-card' };
+    })
+    .filter(Boolean);
+  return mapped.length ? mapped : DEFAULT_PAYMENT_OPTIONS;
+}
 
 const inputClassName = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500 focus:ring-2 focus:ring-blue-400 outline-none';
 const DEFAULT_RECEIPT_CONFIG = {
@@ -140,13 +160,26 @@ function writeStorage(key, value) {
 
 async function loadReceiptConfig() {
   try {
-    const res = await fetch('/api/settings/customize-receipt-print?pageSize=1&isActive=true', {
-      cache: 'no-store',
-      credentials: 'include',
-    });
-    const json = await res.json();
-    const config = json.data?.records?.[0]?.config || {};
-    return { ...DEFAULT_RECEIPT_CONFIG, ...config };
+    const [receiptRes, businessRes] = await Promise.all([
+      fetch('/api/settings/customize-receipt-print?pageSize=1&isActive=true', {
+        cache: 'no-store',
+        credentials: 'include',
+      }),
+      fetch('/api/settings/business-info?pageSize=1&isActive=true', {
+        cache: 'no-store',
+        credentials: 'include',
+      }),
+    ]);
+    const receiptJson = await receiptRes.json();
+    const businessJson = await businessRes.json();
+    const config = receiptJson.data?.records?.[0]?.config || {};
+    const business = businessJson.data?.records?.[0]?.config || {};
+    return {
+      ...DEFAULT_RECEIPT_CONFIG,
+      ...config,
+      businessName: config.businessName || business.legalName || DEFAULT_RECEIPT_CONFIG.businessName,
+      headerText: config.headerText || business.address || '',
+    };
   } catch {
     return DEFAULT_RECEIPT_CONFIG;
   }
@@ -188,6 +221,7 @@ export default function POSPage() {
   const [roundOff, setRoundOff] = useState('0');
   const [paymentMode, setPaymentMode] = useState('cash');
   const [payments, setPayments] = useState([emptyPayment()]);
+  const [paymentOptions, setPaymentOptions] = useState(DEFAULT_PAYMENT_OPTIONS);
   const [isOffline, setIsOffline] = useState(false);
   const [pendingQueueCount, setPendingQueueCount] = useState(0);
   const [toast, setToast] = useState(null);
@@ -248,6 +282,7 @@ export default function POSPage() {
         setFilteredProducts(mappedProducts);
         setStores(json.data.stores || []);
         setRecentBills(json.data.recentBills || []);
+        setPaymentOptions(normalizePaymentOptions(json.data.paymentModes));
         if (json.data.session?.sessionId) {
           setSession(json.data.session);
           setSelectedStoreId(String(json.data.session.storeId || ''));
@@ -261,6 +296,7 @@ export default function POSPage() {
           products: mappedProducts,
           stores: json.data.stores || [],
           recentBills: json.data.recentBills || [],
+          paymentOptions: normalizePaymentOptions(json.data.paymentModes),
         });
       }
     } catch {
@@ -270,6 +306,7 @@ export default function POSPage() {
         setFilteredProducts(cached.products);
         setStores(cached.stores || []);
         setRecentBills(cached.recentBills || []);
+        setPaymentOptions(normalizePaymentOptions(cached.paymentOptions));
       }
     } finally {
       setLoading(false);
@@ -402,6 +439,15 @@ export default function POSPage() {
   useEffect(() => {
     loadHeldBills();
   }, [loadHeldBills]);
+
+  useEffect(() => {
+    if (paymentOptions.some((option) => option.value === paymentMode)) return;
+    const nextMode = paymentOptions[0]?.value || 'cash';
+    setPaymentMode(nextMode);
+    setPayments((current) =>
+      current.map((payment) => ({ ...payment, method: payment.method || nextMode }))
+    );
+  }, [paymentMode, paymentOptions]);
 
   // Online / Offline event listeners
   useEffect(() => {
@@ -1488,19 +1534,14 @@ export default function POSPage() {
                 <div>
                   <p className="text-[10px] font-black text-slate-400 tracking-widest uppercase mb-1.5">Payment Method</p>
                   <div className="grid grid-cols-4 gap-1.5">
-                    {[
-                      { value: 'cash', label: 'Cash', icon: '💵' },
-                      { value: 'card', label: 'Card', icon: '💳' },
-                      { value: 'upi', label: 'UPI', icon: '📱' },
-                      { value: 'credit', label: 'Credit', icon: '📋' },
-                    ].map((mode) => (
+                    {paymentOptions.map((mode) => (
                       <button key={mode.value} onClick={() => setPaymentMode(mode.value)}
                         className={`flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl border text-[10px] font-bold transition-all ${
                           paymentMode === mode.value
                             ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-200'
                             : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-indigo-50'
                         }`}>
-                        <span className="text-base leading-none">{mode.icon}</span>
+                        <i className={`ti ${mode.icon} text-base leading-none`} />
                         {mode.label}
                       </button>
                     ))}
@@ -1515,7 +1556,7 @@ export default function POSPage() {
                   {payments.map((payment, index) => (
                     <div key={index} className="grid grid-cols-[1fr_1fr_auto] gap-2">
                       <select value={payment.method || 'cash'} onChange={(e) => updatePayment(index, 'method', e.target.value)} className={inputCls} style={{ fontSize: '12px' }}>
-                        {PAYMENT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                        {paymentOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                       </select>
                       <input type="number" min="0" step="0.01" value={payment.amount} onChange={(e) => updatePayment(index, 'amount', e.target.value)} placeholder="Amount" className={inputCls} style={{ fontSize: '12px' }} />
                       <button type="button" onClick={() => removePaymentRow(index)} disabled={payments.length <= 1} className="h-9 w-9 rounded-lg border border-slate-200 bg-white text-slate-500 disabled:opacity-40" title="Remove payment">

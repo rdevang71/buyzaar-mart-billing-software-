@@ -12,8 +12,14 @@ async function fetchStores() {
   return json.data?.records || json.data?.stores || json.stores || [];
 }
 
-async function fetchStockInList() {
-  const res = await fetch('/api/inventory/stockin');
+async function fetchStockInList(filters = {}) {
+  const params = new URLSearchParams();
+  if (filters.search) params.set('search', filters.search);
+  if (filters.dateFrom) params.set('date_from', filters.dateFrom);
+  if (filters.dateTo) params.set('date_to', filters.dateTo);
+  if (filters.source) params.set('source', filters.source);
+  const qs = params.toString();
+  const res = await fetch(`/api/inventory/stockin${qs ? `?${qs}` : ''}`);
   if (!res.ok) throw new Error('Failed to fetch stock in records');
   return res.json();
 }
@@ -64,6 +70,21 @@ function mapRecordsToTable(records) {
   }));
 }
 
+function downloadCsv(rows) {
+  const headers = tableHeaders;
+  const csv = [
+    headers.join(','),
+    ...rows.map((row) => headers.map((header) => `"${String(row[header] ?? '').replace(/"/g, '""')}"`).join(',')),
+  ].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `stock-in-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function StockInPage() {
   const [showModal, setShowModal] = useState(false);
   const [stores, setStores] = useState([]);
@@ -76,16 +97,17 @@ export default function StockInPage() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [tableData, setTableData] = useState([]);
   const [loadingList, setLoadingList] = useState(true);
+  const [filters, setFilters] = useState({ search: '', dateFrom: '', dateTo: '', source: '' });
   const fileInputRef = useRef(null);
   const router = useRouter();
 
   useEffect(() => {
     setLoadingList(true);
-    fetchStockInList()
+    fetchStockInList(filters)
       .then((data) => setTableData(mapRecordsToTable(data)))
       .catch(() => setTableData([]))
       .finally(() => setLoadingList(false));
-  }, []);
+  }, [filters]);
 
   useEffect(() => {
     if (!showModal) return;
@@ -140,7 +162,7 @@ export default function StockInPage() {
       }
 
       setLoadingList(true);
-      fetchStockInList()
+      fetchStockInList(filters)
         .then((data) => setTableData(mapRecordsToTable(data)))
         .catch(() => setTableData([]))
         .finally(() => setLoadingList(false));
@@ -183,7 +205,44 @@ export default function StockInPage() {
         subtitle="Stock In transaction history of last 7 days. Need Help?"
         actions={[{ label: 'Add In Bulk (Excel)', onClick: handleBulkImport }, { label: 'Add Stock', primary: true, onClick: handleOpen }]}
         searchPlaceholder="Search"
-        filters={['Date Range', 'Select Source']}
+        searchValue={filters.search}
+        onSearchChange={(value) => setFilters((current) => ({ ...current, search: value }))}
+        filters={(
+          <>
+            <input
+              type="date"
+              value={filters.dateFrom}
+              onChange={(e) => setFilters((current) => ({ ...current, dateFrom: e.target.value }))}
+              className="rounded-lg border border-gray-200 px-3 py-2 text-[12.5px] text-gray-700"
+              title="From date"
+            />
+            <input
+              type="date"
+              value={filters.dateTo}
+              onChange={(e) => setFilters((current) => ({ ...current, dateTo: e.target.value }))}
+              className="rounded-lg border border-gray-200 px-3 py-2 text-[12.5px] text-gray-700"
+              title="To date"
+            />
+            <select
+              value={filters.source}
+              onChange={(e) => setFilters((current) => ({ ...current, source: e.target.value }))}
+              className="rounded-lg border border-gray-200 px-3 py-2 text-[12.5px] text-gray-700"
+            >
+              <option value="">All Sources</option>
+              <option value="product">Product</option>
+              <option value="purchase_order">Purchase Order</option>
+              <option value="grn">GRN</option>
+            </select>
+            <button
+              type="button"
+              onClick={() => setFilters({ search: '', dateFrom: '', dateTo: '', source: '' })}
+              className="rounded-lg border border-gray-200 px-3 py-2 text-[12.5px] text-gray-600 hover:bg-gray-50"
+            >
+              Clear
+            </button>
+          </>
+        )}
+        onDownload={() => downloadCsv(tableData)}
         tableHeaders={tableHeaders}
         tableData={loadingList ? [] : tableData}
         emptyMessage={loadingList ? 'Loading records…' : 'No Records Found'}

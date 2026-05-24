@@ -14,46 +14,15 @@ const filters = [
 ];
 
 const columns = [
-  {
-    "key": "pi_number",
-    "label": "PI Number"
-  },
-  {
-    "key": "store",
-    "label": "Store"
-  },
-  {
-    "key": "customer",
-    "label": "Customer"
-  },
-  {
-    "key": "date",
-    "label": "Date"
-  },
-  {
-    "key": "sales",
-    "label": "Sales"
-  },
-  {
-    "key": "discount",
-    "label": "Discount"
-  },
-  {
-    "key": "net_bill",
-    "label": "Net Bill"
-  },
-  {
-    "key": "taxes",
-    "label": "Taxes"
-  },
-  {
-    "key": "gross_bill",
-    "label": "Gross Bill"
-  },
-  {
-    "key": "status",
-    "label": "Status"
-  }
+  { "key": "pi_number", "label": "PI Number" },
+  { "key": "store", "label": "Store" },
+  { "key": "customer", "label": "Customer" },
+  { "key": "date", "label": "PI Date" },
+  { "key": "payment_mode", "label": "Payment Mode" },
+  { "key": "amount", "label": "Payment Amount" },
+  { "key": "reference_no", "label": "Reference No" },
+  { "key": "gross_bill", "label": "Gross Bill" },
+  { "key": "status", "label": "Status" }
 ];
 
 export default function ProformaInvoicesPiPaymentBreakupPage() {

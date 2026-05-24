@@ -14,46 +14,16 @@ const filters = [
 ];
 
 const columns = [
-  {
-    "key": "pi_number",
-    "label": "PI Number"
-  },
-  {
-    "key": "store",
-    "label": "Store"
-  },
-  {
-    "key": "customer",
-    "label": "Customer"
-  },
-  {
-    "key": "date",
-    "label": "Date"
-  },
-  {
-    "key": "sales",
-    "label": "Sales"
-  },
-  {
-    "key": "discount",
-    "label": "Discount"
-  },
-  {
-    "key": "net_bill",
-    "label": "Net Bill"
-  },
-  {
-    "key": "taxes",
-    "label": "Taxes"
-  },
-  {
-    "key": "gross_bill",
-    "label": "Gross Bill"
-  },
-  {
-    "key": "status",
-    "label": "Status"
-  }
+  { "key": "pi_number", "label": "PI Number" },
+  { "key": "date", "label": "Date" },
+  { "key": "store", "label": "Store" },
+  { "key": "product", "label": "Product" },
+  { "key": "sku", "label": "SKU" },
+  { "key": "qty", "label": "Qty" },
+  { "key": "sales", "label": "Sales" },
+  { "key": "discount", "label": "Product Discount" },
+  { "key": "gross_bill", "label": "Line Total" },
+  { "key": "status", "label": "Status" }
 ];
 
 export default function ProformaInvoicesPiProductLevelDiscountPage() {

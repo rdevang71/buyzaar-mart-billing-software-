@@ -26,6 +26,10 @@ function mapRow(row) {
     fulfillmentStatus: row.fulfillment_status || 'pending',
     approvalStatus: row.approval_status || 'pending',
     purchaseOrderId: row.purchase_order_id,
+    stockTransferId: row.stock_transfer_id,
+    requestedByUserId: row.requested_by_user_id,
+    approvedByUserId: row.approved_by_user_id,
+    rejectionReason: row.rejection_reason || '',
     totalItems: Number(row.total_items || 0),
     createdAt: row.created_at,
     approvedAt: row.approved_at,
@@ -117,7 +121,7 @@ export async function POST(request) {
     const auth = await requireAuth(request);
     if (auth.error) return auth.error;
 
-    const permissionCheck = requirePermission(auth.user, 'MANAGE_INVENTORY');
+    const permissionCheck = requirePermission(auth.user, 'VIEW_INVENTORY', 'MANAGE_INVENTORY');
     if (permissionCheck.error) return permissionCheck.error;
 
     const body = await request.json().catch(() => ({}));
@@ -163,14 +167,15 @@ export async function POST(request) {
       await client.query('BEGIN');
       const reqRes = await client.query(
         `INSERT INTO stock_requisitions (
-           source_id, destination_id, requested_by, mail_to, remarks,
+           source_id, destination_id, requested_by, requested_by_user_id, mail_to, remarks,
            status, fulfillment_status, approval_status, meta, created_at
-         ) VALUES ($1,$2,$3,$4,$5,'pending','pending','pending',$6::jsonb,NOW())
+         ) VALUES ($1,$2,$3,$4,$5,$6,'pending','pending','pending',$7::jsonb,NOW())
          RETURNING id`,
         [
           sourceId || null,
           destinationId,
           body.requestedBy || body.requested_by || auth.user?.name || auth.user?.username || null,
+          auth.user?.id || null,
           body.mailTo || body.mail_to || null,
           body.remarks || null,
           JSON.stringify(body),

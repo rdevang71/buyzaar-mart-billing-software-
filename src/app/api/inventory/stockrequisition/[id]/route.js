@@ -19,7 +19,7 @@ export async function PATCH(request, { params }) {
     const body = await request.json().catch(() => ({}));
     const action = String(body.action || '').toLowerCase();
 
-    const reqRes = await query('SELECT id, destination_id FROM stock_requisitions WHERE id = $1', [id]);
+    const reqRes = await query('SELECT id, destination_id, requested_by_user_id, approval_status, fulfillment_status FROM stock_requisitions WHERE id = $1', [id]);
     if (!reqRes.rows.length) return NextResponse.json({ success: false, message: 'Requisition not found' }, { status: 404 });
 
     const storeCheck = requireStore(auth.user, reqRes.rows[0].destination_id);
@@ -28,16 +28,22 @@ export async function PATCH(request, { params }) {
     if (action === 'approve') {
       await query(
         `UPDATE stock_requisitions
-         SET approval_status = 'approved', status = 'approved', approved_at = NOW()
+         SET approval_status = 'approved',
+             status = 'approved',
+             approved_by_user_id = $2,
+             approved_at = NOW()
          WHERE id = $1`,
-        [id]
+        [id, auth.user.id]
       );
     } else if (action === 'reject') {
       await query(
         `UPDATE stock_requisitions
-         SET approval_status = 'rejected', status = 'rejected'
+         SET approval_status = 'rejected',
+             status = 'rejected',
+             rejected_at = NOW(),
+             rejection_reason = $2
          WHERE id = $1`,
-        [id]
+        [id, body.reason || body.rejectionReason || null]
       );
     } else if (action === 'fulfill') {
       await query(

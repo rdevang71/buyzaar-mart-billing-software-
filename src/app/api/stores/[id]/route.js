@@ -44,12 +44,10 @@ async function deleteStoreDependencies(client, storeId) {
 
 function buildStoreMeta(body = {}) {
   return {
-    importAddress: body.importAddress || '',
     locationType: body.locationType || 'Store',
     latitude: body.latitude || '',
     longitude: body.longitude || '',
     panNumber: body.panNumber || '',
-    storeCapacity: body.storeCapacity || '',
     defaultCustomerGroup: body.defaultCustomerGroup || '',
     storeGuid: body.storeGuid || '',
     shortCode: body.shortCode || '',
@@ -70,7 +68,6 @@ function buildStoreMeta(body = {}) {
     ncCustomStoreOrderPrefix: body.ncCustomStoreOrderPrefix || '',
     ncRefundCustomStoreOrderPrefix: body.ncRefundCustomStoreOrderPrefix || '',
     rwiCustomStoreOrderPrefix: body.rwiCustomStoreOrderPrefix || '',
-    users: body.users || '',
   };
 }
 
@@ -127,9 +124,20 @@ export async function PUT(request, { params }) {
 
     const body = await request.json();
     const name = (body.name || '').trim();
-    if (!name) {
-      return errorResponse('Store name is required', 422);
-    }
+    const locationType = String(body.locationType || '').trim();
+    const addressLine1 = String(body.addressLine1 || '').trim();
+    const city = String(body.city || '').trim();
+    const state = String(body.state || '').trim();
+    const pincode = String(body.pincode || '').trim();
+    const country = String(body.country || '').trim() || 'India';
+    if (!name) return errorResponse('Store name is required', 422);
+    if (!locationType) return errorResponse('Location type is required', 422);
+    if (!addressLine1) return errorResponse('Address line 1 is required', 422);
+    if (!city) return errorResponse('City is required', 422);
+    if (!state) return errorResponse('State is required', 422);
+    if (!pincode) return errorResponse('Pincode is required', 422);
+    if (!/^\d{6}$/.test(pincode)) return errorResponse('Pincode must be 6 digits', 422);
+    if (!country) return errorResponse('Country is required', 422);
     const managerMobile = String(body.managerMobile || '').replace(/\D/g, '');
     const managerEmail = String(body.managerEmail || '').trim().toLowerCase();
     if (managerMobile && !/^\d{10}$/.test(managerMobile)) {
@@ -161,12 +169,12 @@ export async function PUT(request, { params }) {
        RETURNING id, name, address_line1, address_line2, city, state, pincode, country, manager_name, manager_mobile, manager_email, opening_time, closing_time, is_active, meta, created_at, updated_at`,
       [
         name,
-        body.addressLine1 || null,
+        addressLine1,
         body.addressLine2 || null,
-        body.city || null,
-        body.state || null,
-        body.pincode || null,
-        body.country || 'India',
+        city,
+        state,
+        pincode,
+        country,
         body.managerName || null,
         managerMobile || null,
         managerEmail || null,

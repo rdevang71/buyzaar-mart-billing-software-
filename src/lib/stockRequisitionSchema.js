@@ -1,6 +1,6 @@
 import { query } from '@/lib/db';
 
-const STOCK_REQUISITION_SCHEMA_VERSION = 1;
+const STOCK_REQUISITION_SCHEMA_VERSION = 2;
 const globalForStockRequisition = globalThis;
 
 export async function ensureStockRequisitionSchema() {
@@ -13,12 +13,17 @@ export async function ensureStockRequisitionSchema() {
       source_id INTEGER REFERENCES stores(id),
       destination_id INTEGER REFERENCES stores(id),
       requested_by VARCHAR(255),
+      requested_by_user_id INTEGER REFERENCES users(id),
       mail_to TEXT,
       remarks TEXT,
       status VARCHAR(30) DEFAULT 'pending',
       fulfillment_status VARCHAR(30) DEFAULT 'pending',
       approval_status VARCHAR(30) DEFAULT 'pending',
       purchase_order_id INTEGER REFERENCES purchase_orders(id),
+      stock_transfer_id INTEGER,
+      approved_by_user_id INTEGER REFERENCES users(id),
+      rejected_at TIMESTAMPTZ,
+      rejection_reason TEXT,
       meta JSONB DEFAULT '{}'::jsonb,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       approved_at TIMESTAMPTZ,
@@ -37,7 +42,12 @@ export async function ensureStockRequisitionSchema() {
     );
 
     ALTER TABLE stock_requisitions
+      ADD COLUMN IF NOT EXISTS requested_by_user_id INTEGER REFERENCES users(id),
       ADD COLUMN IF NOT EXISTS purchase_order_id INTEGER REFERENCES purchase_orders(id),
+      ADD COLUMN IF NOT EXISTS stock_transfer_id INTEGER,
+      ADD COLUMN IF NOT EXISTS approved_by_user_id INTEGER REFERENCES users(id),
+      ADD COLUMN IF NOT EXISTS rejected_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS rejection_reason TEXT,
       ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ,
       ADD COLUMN IF NOT EXISTS fulfilled_at TIMESTAMPTZ;
 

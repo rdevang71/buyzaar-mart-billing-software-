@@ -7,6 +7,7 @@ import { ensureCatalogExtrasSchema } from '@/lib/catalogExtrasSchema';
 import { validatePhoneNumber } from '@/lib/phoneValidator';
 import { sendBillOnWhatsApp } from '@/lib/whatsappService';
 import { allocateBatchStock, ensureInventoryBatchSchema, getInventoryIssueStrategy } from '@/lib/inventoryBatching';
+import { ensureSettingsSchema } from '@/lib/settingsSchema';
 
 function toNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -52,6 +53,51 @@ function canManageDiscounts(user) {
       user.permissions.includes('*') ||
       user.permissions.includes('MANAGE_BILLING')
     ));
+}
+
+const DEFAULT_PAYMENT_MODES = [
+  { id: 1, name: 'Cash', code: 'cash' },
+  { id: 2, name: 'UPI', code: 'upi' },
+  { id: 3, name: 'Card', code: 'card' },
+];
+
+function normalizePaymentMode(row) {
+  const config = row.config || {};
+  const code = String(config.paymentMode || row.code || row.name || '').trim().toLowerCase();
+  if (!code) return null;
+  return {
+    id: row.id,
+    name: row.name || code.charAt(0).toUpperCase() + code.slice(1),
+    code,
+    provider: config.provider || '',
+    settlementAccount: config.settlementAccount || '',
+    allowRefund: config.allowRefund !== false,
+  };
+}
+
+async function loadPaymentModes(storeId) {
+  await ensureSettingsSchema();
+  const normalizedStoreId = storeId ? Number(storeId) : null;
+  const settingsRes = await query(
+    `SELECT id, name, code, config, store_id, setting_type
+     FROM settings_records
+     WHERE is_active = TRUE
+       AND (
+         (setting_type = 'store-payment-modes' AND (store_id = $1 OR store_id IS NULL))
+         OR setting_type = 'chain-payment-settings'
+       )
+     ORDER BY
+       CASE WHEN store_id = $1 THEN 0 WHEN setting_type = 'store-payment-modes' THEN 1 ELSE 2 END,
+       name ASC`,
+    [normalizedStoreId]
+  );
+
+  const byCode = new Map();
+  for (const row of settingsRes.rows) {
+    const mode = normalizePaymentMode(row);
+    if (mode && !byCode.has(mode.code)) byCode.set(mode.code, mode);
+  }
+  return byCode.size ? Array.from(byCode.values()) : DEFAULT_PAYMENT_MODES;
 }
 
 async function ensureProductDiscountSchema() {
@@ -583,6 +629,7 @@ export async function GET(req) {
       return successResponse({
         products: [],
         recentBills: [],
+        paymentModes: DEFAULT_PAYMENT_MODES,
         session,
         stores: storesRes.rows,
         selectedStoreId: null,
@@ -605,6 +652,7 @@ export async function GET(req) {
       return successResponse({
         products: [],
         recentBills: [],
+        paymentModes: DEFAULT_PAYMENT_MODES,
         session,
         stores: [],
         selectedStoreId: null,
@@ -641,10 +689,12 @@ export async function GET(req) {
       LIMIT 10
     `;
     const billsRes = await query(billsSql, billParams);
+    const paymentModes = await loadPaymentModes(effectiveStoreId);
 
     return successResponse({
       products: productsRes.rows,
       recentBills: billsRes.rows,
+      paymentModes,
       session,
       stores: storesRes.rows,
       selectedStoreId: effectiveStoreId,

@@ -14,42 +14,17 @@ const filters = [
 ];
 
 const columns = [
-  {
-    "key": "product",
-    "label": "Product"
-  },
-  {
-    "key": "sku",
-    "label": "SKU"
-  },
-  {
-    "key": "store",
-    "label": "Store"
-  },
-  {
-    "key": "opening_stock",
-    "label": "Opening Stock"
-  },
-  {
-    "key": "stock_in",
-    "label": "Stock In"
-  },
-  {
-    "key": "stock_out",
-    "label": "Stock Out"
-  },
-  {
-    "key": "current_stock",
-    "label": "Current Stock"
-  },
-  {
-    "key": "unit",
-    "label": "Unit"
-  },
-  {
-    "key": "status",
-    "label": "Status"
-  }
+  { "key": "requisition_id", "label": "Requisition ID" },
+  { "key": "date", "label": "Date" },
+  { "key": "destination", "label": "Destination" },
+  { "key": "product", "label": "Product" },
+  { "key": "sku", "label": "SKU" },
+  { "key": "requested_qty", "label": "Requested Qty" },
+  { "key": "fulfilled_qty", "label": "Fulfilled Qty" },
+  { "key": "pending_qty", "label": "Pending Qty" },
+  { "key": "approval_status", "label": "Approval Status" },
+  { "key": "fulfillment_status", "label": "Fulfillment Status" },
+  { "key": "status", "label": "Status" }
 ];
 
 export default function InventoryUnfulfilledStockRequestsPage() {

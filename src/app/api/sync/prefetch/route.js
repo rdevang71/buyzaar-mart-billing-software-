@@ -11,6 +11,67 @@ import { NextResponse } from 'next/server';
 import { cookies }      from 'next/headers';
 import { verifyToken }  from '@/lib/auth-enhanced';
 import { query }        from '@/lib/db';
+import { ensureSettingsSchema } from '@/lib/settingsSchema';
+
+const DEFAULT_PAYMENT_MODES = [
+  { id: 1, name: 'Cash', code: 'cash' },
+  { id: 2, name: 'UPI', code: 'upi' },
+  { id: 3, name: 'Card', code: 'card' },
+];
+
+function normalizePaymentMode(row) {
+  const config = row.config || {};
+  const code = String(config.paymentMode || row.code || row.name || '').trim().toLowerCase();
+  if (!code) return null;
+  return {
+    id: row.id,
+    name: row.name || code.charAt(0).toUpperCase() + code.slice(1),
+    code,
+    provider: config.provider || '',
+    settlementAccount: config.settlementAccount || '',
+    allowRefund: config.allowRefund !== false,
+  };
+}
+
+async function loadPaymentModes(storeId) {
+  await ensureSettingsSchema();
+  const normalizedStoreId = storeId ? Number(storeId) : null;
+
+  const settingsRes = await query(
+    `SELECT id, name, code, config, store_id, setting_type
+     FROM settings_records
+     WHERE is_active = TRUE
+       AND (
+         (setting_type = 'store-payment-modes' AND (store_id = $1 OR store_id IS NULL))
+         OR setting_type = 'chain-payment-settings'
+       )
+     ORDER BY
+       CASE WHEN store_id = $1 THEN 0 WHEN setting_type = 'store-payment-modes' THEN 1 ELSE 2 END,
+       name ASC`,
+    [normalizedStoreId]
+  );
+
+  const byCode = new Map();
+  for (const row of settingsRes.rows) {
+    const mode = normalizePaymentMode(row);
+    if (mode && !byCode.has(mode.code)) byCode.set(mode.code, mode);
+  }
+
+  if (byCode.size) return Array.from(byCode.values());
+
+  try {
+    const pmResult = await query(
+      `SELECT id, name, LOWER(COALESCE(code, name)) AS code
+       FROM payment_modes
+       WHERE store_id = $1 OR store_id IS NULL
+       ORDER BY name`,
+      [normalizedStoreId]
+    );
+    return pmResult.rows.length ? pmResult.rows : DEFAULT_PAYMENT_MODES;
+  } catch {
+    return DEFAULT_PAYMENT_MODES;
+  }
+}
 
 export async function GET(request) {
   // ── Auth ────────────────────────────────────────────────────────────────
@@ -52,25 +113,7 @@ export async function GET(request) {
   );
 
   // ── Payment modes ────────────────────────────────────────────────────────
-  let paymentModes = [];
-  try {
-    // Try the payment_modes table (may not exist in every setup)
-    const pmResult = await query(
-      `SELECT id, name
-       FROM payment_modes
-       WHERE store_id = $1 OR store_id IS NULL
-       ORDER BY name`,
-      [storeId]
-    );
-    paymentModes = pmResult.rows;
-  } catch {
-    // Fallback to sensible defaults if table doesn't exist yet
-    paymentModes = [
-      { id: 1, name: 'Cash' },
-      { id: 2, name: 'UPI'  },
-      { id: 3, name: 'Card' },
-    ];
-  }
+  const paymentModes = await loadPaymentModes(storeId);
 
   return NextResponse.json({
     products:     productsResult.rows,

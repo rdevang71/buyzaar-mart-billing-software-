@@ -43,13 +43,27 @@ const DEFAULT_RECEIPT_CONFIG = {
 
 async function loadReceiptConfig() {
   try {
-    const res = await fetch('/api/settings/customize-receipt-print?pageSize=1&isActive=true', {
-      cache: 'no-store',
-      credentials: 'include',
-    });
-    const json = await res.json();
-    const config = json.data?.records?.[0]?.config || {};
-    return { ...DEFAULT_RECEIPT_CONFIG, ...config, subtitle: 'Return Product Receipt' };
+    const [receiptRes, businessRes] = await Promise.all([
+      fetch('/api/settings/customize-receipt-print?pageSize=1&isActive=true', {
+        cache: 'no-store',
+        credentials: 'include',
+      }),
+      fetch('/api/settings/business-info?pageSize=1&isActive=true', {
+        cache: 'no-store',
+        credentials: 'include',
+      }),
+    ]);
+    const receiptJson = await receiptRes.json();
+    const businessJson = await businessRes.json();
+    const config = receiptJson.data?.records?.[0]?.config || {};
+    const business = businessJson.data?.records?.[0]?.config || {};
+    return {
+      ...DEFAULT_RECEIPT_CONFIG,
+      ...config,
+      businessName: config.businessName || business.legalName || DEFAULT_RECEIPT_CONFIG.businessName,
+      headerText: config.headerText || business.address || '',
+      subtitle: 'Return Product Receipt',
+    };
   } catch {
     return DEFAULT_RECEIPT_CONFIG;
   }

@@ -8,6 +8,9 @@ import { ensureInvoiceSalesOrdersSchema } from '@/lib/invoiceSalesOrdersSchema';
 import { ensureInventoryBatchSchema } from '@/lib/inventoryBatching';
 import { ensureVendorsSchema } from '@/lib/vendorsSchema';
 import { ensurePurchaseOrderSchema } from '@/lib/purchaseOrderSchema';
+import { ensureStockRequisitionSchema } from '@/lib/stockRequisitionSchema';
+import { ensureStockTransferSchema } from '@/lib/stockTransferSchema';
+import { ensureAuditLogsSchema } from '@/lib/auditLogsSchema';
 
 const REPORT_ROLES = ['super_admin', 'admin', 'manager'];
 
@@ -272,6 +275,33 @@ function addSalesFilters({ conditions, params, filters, user, alias = 'sb' }) {
   }
 }
 
+function addStoreColumnScope({ conditions, params, user, columnName, requestedStoreId }) {
+  const storeId = Number(requestedStoreId || 0) || null;
+  const assignedStores = (user.assigned_stores || []).map(Number).filter(Number.isFinite);
+
+  if (user.role === 'super_admin') {
+    if (storeId) {
+      params.push(storeId);
+      conditions.push(`${columnName} = $${params.length}`);
+    }
+    return;
+  }
+
+  if (storeId && assignedStores.includes(storeId)) {
+    params.push(storeId);
+    conditions.push(`${columnName} = $${params.length}`);
+    return;
+  }
+
+  if (assignedStores.length > 0) {
+    params.push(assignedStores);
+    conditions.push(`${columnName} = ANY($${params.length}::int[])`);
+    return;
+  }
+
+  conditions.push('1 = 0');
+}
+
 async function ensureReportSchemas() {
   await ensureStockInSchema();
   await ensureStockOutSchema();
@@ -281,6 +311,9 @@ async function ensureReportSchemas() {
   await ensureInventoryBatchSchema();
   await ensureVendorsSchema();
   await ensurePurchaseOrderSchema();
+  await ensureStockRequisitionSchema();
+  await ensureStockTransferSchema();
+  await ensureAuditLogsSchema();
 }
 
 export function normalizeReportKey(slug) {
@@ -341,11 +374,13 @@ export async function getReportRows(reportKey, filters = {}, user) {
   if (reportKey === 'sales/monthly-sales') return getMonthlySalesReport(filters, user);
   if (reportKey === 'daily-sales-dsr') return getDailySalesReport(filters, user);
   if (reportKey === 'net-sales') return getNetSalesReport(filters, user);
+  if (reportKey === 'orders-list') return getOrdersReport(filters, user);
   if (reportKey === 'inventory/stock-level') return getStockLevelReport(filters, user);
   if (reportKey === 'stock-level') return getStockLevelReport(filters, user);
   if (reportKey.startsWith('sales/')) return getSalesDimensionReport(reportKey, filters, user);
   if (reportKey.startsWith('orders/')) return getOrderFamilyReport(reportKey, filters, user);
-  if (reportKey.startsWith('online-order/') || reportKey.startsWith('proforma-invoices/')) return getOrderFamilyReport(reportKey, filters, user);
+  if (reportKey.startsWith('online-order/')) return getOnlineOrderReport(reportKey, filters, user);
+  if (reportKey.startsWith('proforma-invoices/')) return getProformaInvoiceReport(reportKey, filters, user);
   if (reportKey.startsWith('accounting/')) return getAccountingTaxReport(reportKey, filters, user);
   if (reportKey.startsWith('inventory/')) return getInventoryFamilyReport(reportKey, filters, user);
   if (reportKey.startsWith('purchase/')) return getPurchaseFamilyReport(reportKey, filters, user);
@@ -929,6 +964,231 @@ async function getOrderPaymentReport(filters, user) {
   }));
 }
 
+async function getProformaInvoiceReport(reportKey, filters, user) {
+  if (reportKey.includes('product-in') || reportKey.includes('product-sale-transaction') || reportKey.includes('product-level-discount')) {
+    return getProformaProductReport(reportKey, filters, user);
+  }
+  if (reportKey.includes('payment')) return getProformaPaymentReport(reportKey, filters, user);
+  return getProformaListReport(filters, user);
+}
+
+async function getOnlineOrderReport(reportKey, filters, user) {
+  const onlineFilters = { ...filters };
+  const params = [];
+  const conditions = [
+    `sb.status IN ('paid', 'completed', 'partial', 'pending')`,
+    `(
+      LOWER(COALESCE(sb.meta->>'orderMode', sb.meta->>'channel', sb.payment_meta->>'channel', '')) LIKE '%online%'
+      OR LOWER(COALESCE(sb.meta->>'source', '')) LIKE '%online%'
+      OR LOWER(COALESCE(sb.payment_mode, '')) IN ('online', 'razorpay', 'paytm', 'phonepe')
+    )`,
+  ];
+  addSalesFilters({ conditions, params, filters: onlineFilters, user, alias: 'sb' });
+
+  if (reportKey.includes('product-in') || reportKey.includes('product-wise')) {
+    const res = await query(
+      `SELECT sb.id AS order_id, sb.bill_number, sb.created_at, sb.status, sb.payment_mode,
+              COALESCE(s.name, 'Store') AS store,
+              COALESCE(p.name, sbi.product_name, 'Product') AS product,
+              COALESCE(p.sku, sbi.sku, '') AS sku,
+              sbi.qty, sbi.selling_price, sbi.discount_amount, sbi.tax_amount, sbi.line_total
+       FROM sales_bill_items sbi
+       INNER JOIN sales_bills sb ON sb.id = sbi.sales_bill_id
+       LEFT JOIN products p ON p.id = sbi.product_id
+       LEFT JOIN stores s ON s.id = sb.store_id
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY sb.created_at DESC, sb.id DESC
+       LIMIT 1000`,
+      params
+    );
+    return res.rows.map((row) => ({
+      id: `online-product-${row.order_id}-${row.sku}`,
+      order_id: row.order_id,
+      invoice_number: row.bill_number,
+      store: row.store,
+      date: isoDate(row.created_at),
+      product: row.product,
+      sku: row.sku,
+      qty: number(row.qty),
+      sales: money(number(row.qty) * number(row.selling_price)),
+      discount: money(row.discount_amount),
+      taxes: money(row.tax_amount),
+      gross_bill: money(row.line_total),
+      payment_mode: row.payment_mode,
+      status: row.status,
+    }));
+  }
+
+  const res = await query(
+    `SELECT sb.id, sb.bill_number, sb.created_at, sb.status, sb.payment_mode,
+            sb.subtotal, sb.discount_total, sb.tax_total, sb.grand_total,
+            sb.customer_name, sb.customer_mobile,
+            COALESCE(s.name, 'Store') AS store
+     FROM sales_bills sb
+     LEFT JOIN stores s ON s.id = sb.store_id
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY sb.created_at DESC
+     LIMIT 1000`,
+    params
+  );
+  return res.rows.map((row) => ({
+    id: `online-${row.id}`,
+    order_id: row.id,
+    invoice_number: row.bill_number,
+    store: row.store,
+    customer: row.customer_name || 'Online Customer',
+    customer_mobile: row.customer_mobile || '',
+    date: isoDate(row.created_at),
+    sales: money(row.subtotal),
+    discount: money(row.discount_total),
+    net_bill: money(number(row.subtotal) - number(row.discount_total)),
+    taxes: money(row.tax_total),
+    gross_bill: money(row.grand_total),
+    payment_mode: row.payment_mode,
+    status: row.status,
+  }));
+}
+
+function addProformaFilters({ conditions, params, filters, user, alias = 'iso' }) {
+  const range = parseDateRange(filters.date_range);
+  params.push(range.from);
+  conditions.push(`DATE(COALESCE(${alias}.invoice_date, ${alias}.booking_date, ${alias}.submitted_date, ${alias}.created_at::date)) >= $${params.length}`);
+  params.push(range.to);
+  conditions.push(`DATE(COALESCE(${alias}.invoice_date, ${alias}.booking_date, ${alias}.submitted_date, ${alias}.created_at::date)) <= $${params.length}`);
+  addStoreColumnScope({ conditions, params, user, columnName: `${alias}.store_id`, requestedStoreId: filters.store });
+  if (filters.customer) {
+    params.push(`%${String(filters.customer).trim()}%`);
+    conditions.push(`(${alias}.customer_name ILIKE $${params.length} OR ${alias}.customer_mobile ILIKE $${params.length})`);
+  }
+}
+
+async function getProformaListReport(filters, user) {
+  const params = [];
+  const conditions = [`TRUE`];
+  addProformaFilters({ conditions, params, filters, user });
+  const res = await query(
+    `SELECT iso.*, COALESCE(s.name, 'Store') AS store_name,
+            COALESCE(sb.subtotal, iso.gross_bill, 0) AS subtotal,
+            COALESCE(sb.discount_total, iso.total_discount, 0) AS discount_total,
+            COALESCE(sb.tax_total, 0) AS tax_total,
+            COALESCE(sb.grand_total, iso.gross_bill, 0) AS grand_total
+     FROM invoice_sales_orders iso
+     LEFT JOIN stores s ON s.id = iso.store_id
+     LEFT JOIN sales_bills sb ON sb.id = iso.sales_bill_id
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY COALESCE(iso.invoice_date, iso.booking_date, iso.created_at::date) DESC, iso.id DESC
+     LIMIT 1000`,
+    params
+  );
+  return res.rows.map((row) => ({
+    id: `pi-${row.id}`,
+    pi_number: row.invoice_id || row.auto_invoice_id || row.transaction_id || row.sales_order_id || row.id,
+    sales_order_id: row.sales_order_id || '',
+    store: row.store_name || '',
+    customer: row.customer_name || 'Walk-in Customer',
+    customer_mobile: row.customer_mobile || '',
+    date: isoDate(row.invoice_date || row.booking_date || row.created_at),
+    sales: money(row.subtotal),
+    discount: money(row.discount_total),
+    net_bill: money(number(row.subtotal) - number(row.discount_total)),
+    taxes: money(row.tax_total),
+    gross_bill: money(row.grand_total),
+    payment_mode: row.payment_mode || row.channel || '',
+    status: row.status || '',
+  }));
+}
+
+async function getProformaProductReport(reportKey, filters, user) {
+  const params = [];
+  const conditions = [`TRUE`];
+  addProformaFilters({ conditions, params, filters, user });
+  if (reportKey.includes('product-level-discount')) {
+    conditions.push(`COALESCE(sbi.discount_amount, 0) > 0`);
+  }
+  const res = await query(
+    `SELECT iso.id AS pi_id, iso.invoice_id, iso.auto_invoice_id, iso.transaction_id, iso.sales_order_id,
+            COALESCE(iso.invoice_date, iso.booking_date, iso.created_at::date) AS pi_date,
+            iso.customer_name, iso.status, COALESCE(s.name, 'Store') AS store_name,
+            COALESCE(p.name, sbi.product_name, 'Product') AS product,
+            COALESCE(p.sku, sbi.sku, '') AS sku,
+            sbi.qty, sbi.selling_price, sbi.discount_amount, sbi.tax_amount, sbi.line_total
+     FROM invoice_sales_orders iso
+     LEFT JOIN stores s ON s.id = iso.store_id
+     LEFT JOIN sales_bill_items sbi ON sbi.sales_bill_id = iso.sales_bill_id
+     LEFT JOIN products p ON p.id = sbi.product_id
+     WHERE ${conditions.join(' AND ')}
+       AND sbi.id IS NOT NULL
+     ORDER BY pi_date DESC, iso.id DESC, product ASC
+     LIMIT 1000`,
+    params
+  );
+  return res.rows.map((row) => ({
+    id: `pi-product-${row.pi_id}-${row.sku || row.product}`,
+    pi_number: row.invoice_id || row.auto_invoice_id || row.transaction_id || row.sales_order_id || row.pi_id,
+    store: row.store_name || '',
+    customer: row.customer_name || 'Walk-in Customer',
+    date: isoDate(row.pi_date),
+    product: row.product,
+    sku: row.sku || '',
+    qty: number(row.qty),
+    quantity: number(row.qty),
+    rate: money(row.selling_price),
+    sales: money(number(row.qty) * number(row.selling_price)),
+    discount: money(row.discount_amount),
+    net_bill: money(number(row.line_total) - number(row.tax_amount)),
+    taxes: money(row.tax_amount),
+    gross_bill: money(row.line_total),
+    status: row.status || '',
+  }));
+}
+
+async function getProformaPaymentReport(reportKey, filters, user) {
+  const params = [];
+  const conditions = [`TRUE`];
+  addProformaFilters({ conditions, params, filters, user });
+  const res = await query(
+    `SELECT iso.id AS pi_id, iso.invoice_id, iso.auto_invoice_id, iso.transaction_id, iso.sales_order_id,
+            COALESCE(iso.invoice_date, iso.booking_date, iso.created_at::date) AS pi_date,
+            iso.customer_name, iso.customer_mobile, iso.payment_mode, iso.channel, iso.status,
+            COALESCE(s.name, 'Store') AS store_name,
+            COALESCE(sb.subtotal, iso.gross_bill, 0) AS subtotal,
+            COALESCE(sb.discount_total, iso.total_discount, 0) AS discount_total,
+            COALESCE(sb.tax_total, 0) AS tax_total,
+            COALESCE(sb.grand_total, iso.gross_bill, 0) AS grand_total,
+            COALESCE(sbp.method, iso.payment_mode, iso.channel, 'unpaid') AS payment_method,
+            COALESCE(sbp.amount, sb.paid_amount, 0) AS payment_amount,
+            sbp.reference_no,
+            COALESCE(sbp.created_at, iso.updated_at, iso.created_at) AS payment_date
+     FROM invoice_sales_orders iso
+     LEFT JOIN stores s ON s.id = iso.store_id
+     LEFT JOIN sales_bills sb ON sb.id = iso.sales_bill_id
+     LEFT JOIN sales_bill_payments sbp ON sbp.sales_bill_id = sb.id
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY payment_date DESC, iso.id DESC
+     LIMIT 1000`,
+    params
+  );
+  return res.rows.map((row, index) => ({
+    id: `pi-payment-${row.pi_id}-${index}`,
+    pi_number: row.invoice_id || row.auto_invoice_id || row.transaction_id || row.sales_order_id || row.pi_id,
+    store: row.store_name || '',
+    customer: row.customer_name || 'Walk-in Customer',
+    customer_mobile: row.customer_mobile || '',
+    date: isoDate(row.pi_date),
+    payment_date: isoDate(row.payment_date),
+    payment_mode: formatPaymentMethod(row.payment_method),
+    reference_no: row.reference_no || '',
+    sales: money(row.subtotal),
+    discount: money(row.discount_total),
+    net_bill: money(number(row.subtotal) - number(row.discount_total)),
+    taxes: money(row.tax_total),
+    gross_bill: money(row.grand_total),
+    paid_amount: money(row.payment_amount),
+    amount: money(row.payment_amount),
+    status: row.status || '',
+  }));
+}
+
 async function getAccountingTaxReport(reportKey, filters, user) {
   const params = [];
   const conditions = [`sb.status IN ('paid', 'completed')`];
@@ -976,6 +1236,12 @@ async function getAccountingTaxReport(reportKey, filters, user) {
 }
 
 async function getInventoryFamilyReport(reportKey, filters, user) {
+  if (reportKey.includes('stock-requisition') || reportKey.includes('unfulfilled-stock-requests') || reportKey.includes('stock-fulfillment')) {
+    return getStockRequisitionReport(reportKey, filters, user);
+  }
+  if (reportKey.includes('unfulfilled-stock-transfers')) {
+    return getUnfulfilledStockTransfersReport(filters, user);
+  }
   if (reportKey.includes('low-stock')) {
     const rows = await getStockLevelReport(filters, user);
     return rows.filter((row) => row.status === 'Low' || row.status === 'Out');
@@ -987,6 +1253,116 @@ async function getInventoryFamilyReport(reportKey, filters, user) {
     return getStockLevelReport(filters, user);
   }
   return getStockLevelReport(filters, user);
+}
+
+async function getStockRequisitionReport(reportKey, filters, user) {
+  const range = parseDateRange(filters.date_range);
+  const params = [range.from, range.to];
+  const conditions = [`DATE(sr.created_at) BETWEEN $1 AND $2`];
+  addStoreColumnScope({ conditions, params, user, columnName: 'sr.destination_id', requestedStoreId: filters.store });
+
+  if (reportKey.includes('unfulfilled-stock-requests')) {
+    conditions.push(`sr.fulfillment_status <> 'completed'`);
+    conditions.push(`sr.approval_status <> 'rejected'`);
+  } else if (reportKey.includes('stock-fulfillment')) {
+    conditions.push(`sr.approval_status = 'approved'`);
+  }
+
+  const res = await query(
+    `SELECT sr.id, sr.transaction_id, sr.created_at, sr.requested_by, sr.mail_to, sr.remarks,
+            sr.status, sr.approval_status, sr.fulfillment_status, sr.approved_at, sr.fulfilled_at,
+            sr.purchase_order_id, sr.stock_transfer_id, sr.rejection_reason,
+            COALESCE(src.name, '') AS source_name,
+            COALESCE(dst.name, '') AS destination_name,
+            COALESCE(p.name, sri.product_name, 'Product') AS product,
+            COALESCE(p.sku, '') AS sku,
+            sri.qty, sri.fulfilled_qty
+     FROM stock_requisitions sr
+     LEFT JOIN stores src ON src.id = sr.source_id
+     LEFT JOIN stores dst ON dst.id = sr.destination_id
+     LEFT JOIN stock_requisition_items sri ON sri.requisition_id = sr.id
+     LEFT JOIN products p ON p.id = sri.product_id
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY sr.created_at DESC, sr.id DESC, product ASC
+     LIMIT 1000`,
+    params
+  );
+
+  return res.rows.map((row) => {
+    const requestedQty = number(row.qty);
+    const fulfilledQty = row.fulfillment_status === 'completed' ? requestedQty : number(row.fulfilled_qty);
+    return {
+      id: `req-${row.id}-${row.sku || row.product}`,
+      requisition_id: row.transaction_id || `REQ-${String(row.id).padStart(4, '0')}`,
+      date: isoDate(row.created_at),
+      requested_time: displayTime(row.created_at),
+      source: row.source_name || '',
+      destination: row.destination_name || '',
+      store: row.destination_name || '',
+      product: row.product,
+      sku: row.sku || '',
+      requested_qty: requestedQty,
+      fulfilled_qty: fulfilledQty,
+      pending_qty: Math.max(0, requestedQty - fulfilledQty),
+      requested_by: row.requested_by || '',
+      mail_to: row.mail_to || '',
+      remarks: row.remarks || row.rejection_reason || '',
+      approval_status: row.approval_status || '',
+      fulfillment_status: row.fulfillment_status || '',
+      purchase_order_id: row.purchase_order_id || '',
+      stock_transfer_id: row.stock_transfer_id || '',
+      status: row.status || '',
+      unit: 'PCS',
+      opening_stock: requestedQty,
+      stock_in: fulfilledQty,
+      stock_out: Math.max(0, requestedQty - fulfilledQty),
+      current_stock: Math.max(0, requestedQty - fulfilledQty),
+    };
+  });
+}
+
+async function getUnfulfilledStockTransfersReport(filters, user) {
+  const range = parseDateRange(filters.date_range);
+  const params = [range.from, range.to];
+  const conditions = [`DATE(st.created_at) BETWEEN $1 AND $2`, `st.status <> 'confirmed'`];
+  addStoreColumnScope({ conditions, params, user, columnName: 'st.destination_id', requestedStoreId: filters.store });
+
+  const res = await query(
+    `SELECT st.id, st.transaction_id, st.created_at, st.status,
+            COALESCE(src.name, '') AS source_name,
+            COALESCE(dst.name, '') AS destination_name,
+            COALESCE(p.name, sti.product_name, 'Product') AS product,
+            COALESCE(p.sku, '') AS sku,
+            sti.qty
+     FROM stock_transfer st
+     LEFT JOIN stores src ON src.id = st.source_id
+     LEFT JOIN stores dst ON dst.id = st.destination_id
+     LEFT JOIN stock_transfer_items sti ON sti.stock_transfer_id = st.id
+     LEFT JOIN products p ON p.id = sti.product_id
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY st.created_at DESC, st.id DESC
+     LIMIT 1000`,
+    params
+  );
+
+  return res.rows.map((row) => ({
+    id: `transfer-${row.id}-${row.sku || row.product}`,
+    transfer_id: row.transaction_id || `TRN-${String(row.id).padStart(4, '0')}`,
+    date: isoDate(row.created_at),
+    source: row.source_name || '',
+    destination: row.destination_name || '',
+    store: row.destination_name || '',
+    product: row.product || '',
+    sku: row.sku || '',
+    requested_qty: number(row.qty),
+    pending_qty: number(row.qty),
+    status: row.status || 'draft',
+    unit: 'PCS',
+    opening_stock: 0,
+    stock_in: 0,
+    stock_out: number(row.qty),
+    current_stock: number(row.qty),
+  }));
 }
 
 async function getStockMovementReport(filters, user) {
@@ -1129,7 +1505,11 @@ async function getPurchaseFamilyReport(reportKey, filters, user) {
   }));
 }
 
-async function getPromotionsFamilyReport(filters, user) {
+async function getPromotionsFamilyReport(reportKey, filters, user) {
+  if (reportKey.includes('coupon-redemption')) return getCouponRedemptionReport(filters, user);
+  if (reportKey.includes('membership')) return getMembershipReport(filters, user);
+  if (reportKey.includes('discounted-products') || reportKey.includes('product-discount')) return getDiscountedProductsReport(filters, user);
+
   const params = [];
   const conditions = [`sb.status IN ('paid', 'completed')`, `COALESCE(sb.discount_total, 0) > 0`];
   addSalesFilters({ conditions, params, filters, user, alias: 'sb' });
@@ -1160,6 +1540,105 @@ async function getPromotionsFamilyReport(filters, user) {
   }));
 }
 
+async function getCouponRedemptionReport(filters, user) {
+  const range = parseDateRange(filters.date_range);
+  const params = [range.from, range.to];
+  const conditions = [`COALESCE(v.is_used, false) = true`, `DATE(COALESCE(v.updated_at, v.created_at)) BETWEEN $1 AND $2`];
+  addStoreColumnScope({ conditions, params, user, columnName: 'v.store_id', requestedStoreId: filters.store });
+
+  const res = await query(
+    `SELECT v.id, v.code, v.value, v.voucher_type, v.redeemed_count, v.updated_at, v.created_at,
+            COALESCE(s.name, 'Store') AS store,
+            COALESCE(c.name, '') AS customer
+     FROM vouchers v
+     LEFT JOIN stores s ON s.id = v.store_id
+     LEFT JOIN customers c ON c.id = v.customer_id
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY COALESCE(v.updated_at, v.created_at) DESC
+     LIMIT 1000`,
+    params
+  );
+  return res.rows.map((row) => ({
+    id: `coupon-${row.id}`,
+    date: isoDate(row.updated_at || row.created_at),
+    store: row.store,
+    customer: row.customer || '',
+    coupon: row.code,
+    voucher: row.code,
+    discount: money(row.value),
+    discount_amount: money(row.value),
+    redeemed_count: number(row.redeemed_count || 1),
+    status: 'Redeemed',
+    type: row.voucher_type || '',
+  }));
+}
+
+async function getMembershipReport(filters, user) {
+  const range = parseDateRange(filters.date_range);
+  const params = [range.from, range.to];
+  const conditions = [`DATE(m.created_at) BETWEEN $1 AND $2`];
+  const res = await query(
+    `SELECT m.id, m.name, m.membership_code, m.price, m.quantity, m.validity_days,
+            m.discount_type, m.discount_value, m.is_active, m.created_at,
+            COALESCE(c.name, '') AS category
+     FROM memberships m
+     LEFT JOIN categories c ON c.id = m.category_id
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY m.created_at DESC
+     LIMIT 1000`,
+    params
+  );
+  return res.rows.map((row) => ({
+    id: `membership-${row.id}`,
+    date: isoDate(row.created_at),
+    membership: row.name,
+    membership_code: row.membership_code || '',
+    category: row.category || '',
+    sales: money(row.price),
+    gross_bill: money(row.price),
+    discount: row.discount_value ? `${row.discount_type || ''} ${row.discount_value}`.trim() : '',
+    qty: number(row.quantity),
+    validity_days: number(row.validity_days),
+    status: row.is_active ? 'Active' : 'Inactive',
+  }));
+}
+
+async function getDiscountedProductsReport(filters, user) {
+  const params = [];
+  const conditions = [`sb.status IN ('paid', 'completed')`, `COALESCE(sbi.discount_amount, 0) > 0`];
+  addSalesFilters({ conditions, params, filters, user, alias: 'sb' });
+  const res = await query(
+    `SELECT sb.id AS order_id, sb.bill_number, sb.created_at,
+            COALESCE(s.name, 'Store') AS store,
+            COALESCE(p.name, sbi.product_name, 'Product') AS product,
+            COALESCE(p.sku, sbi.sku, '') AS sku,
+            sbi.qty, sbi.selling_price, sbi.discount_amount, sbi.line_total
+     FROM sales_bill_items sbi
+     INNER JOIN sales_bills sb ON sb.id = sbi.sales_bill_id
+     LEFT JOIN products p ON p.id = sbi.product_id
+     LEFT JOIN stores s ON s.id = sb.store_id
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY sb.created_at DESC
+     LIMIT 1000`,
+    params
+  );
+  return res.rows.map((row) => ({
+    id: `discount-product-${row.order_id}-${row.sku}`,
+    date: isoDate(row.created_at),
+    order_id: row.order_id,
+    invoice_number: row.bill_number,
+    store: row.store,
+    product: row.product,
+    sku: row.sku,
+    qty: number(row.qty),
+    sales: money(number(row.qty) * number(row.selling_price)),
+    discount: money(row.discount_amount),
+    discount_amount: money(row.discount_amount),
+    gross_bill: money(row.line_total),
+    status: 'Discounted',
+  }));
+}
+
 async function getInsightsFamilyReport(reportKey, filters, user) {
   if (reportKey.includes('dead-stock') || reportKey.includes('stockout') || reportKey.includes('smart-reorder')) {
     const rows = await getStockLevelReport(filters, user);
@@ -1177,12 +1656,19 @@ async function getInsightsFamilyReport(reportKey, filters, user) {
 }
 
 async function getLogsFamilyReport(reportKey, filters, user) {
+  if (reportKey.includes('system')) return getAuditLogReport(filters, user, 'system');
+  if (reportKey.includes('order-sync')) return getAuditLogReport(filters, user, 'order');
   if (reportKey.includes('product')) {
+    const auditRows = await getAuditLogReport(filters, user, 'product');
+    if (auditRows.length) return auditRows;
+    const range = parseDateRange(filters.date_range);
     const res = await query(
       `SELECT p.id, p.name, p.sku, p.updated_at
        FROM products p
+       WHERE DATE(COALESCE(p.updated_at, p.created_at)) BETWEEN $1 AND $2
        ORDER BY p.updated_at DESC NULLS LAST, p.id DESC
-       LIMIT 1000`
+       LIMIT 1000`,
+      [range.from, range.to]
     );
     return res.rows.map((row) => ({
       id: `product-log-${row.id}`,
@@ -1190,6 +1676,8 @@ async function getLogsFamilyReport(reportKey, filters, user) {
       time: displayTime(row.updated_at),
       product: row.name,
       sku: row.sku || '',
+      resource_type: 'product',
+      resource_id: row.id,
       action: 'Updated',
       employee: '',
       status: 'Logged',
@@ -1200,6 +1688,40 @@ async function getLogsFamilyReport(reportKey, filters, user) {
     ...row,
     action: reportKey.includes('sync') ? 'Synced' : 'System activity',
     status: row.payment_status || 'Logged',
+  }));
+}
+
+async function getAuditLogReport(filters, user, type = '') {
+  const range = parseDateRange(filters.date_range);
+  const params = [range.from, range.to];
+  const conditions = [`DATE(al.created_at) BETWEEN $1 AND $2`];
+  if (type === 'product') {
+    conditions.push(`LOWER(COALESCE(al.resource_type, '')) LIKE '%product%'`);
+  } else if (type === 'order') {
+    conditions.push(`(LOWER(COALESCE(al.resource_type, '')) LIKE '%order%' OR LOWER(COALESCE(al.action, '')) LIKE '%sync%')`);
+  }
+  const res = await query(
+    `SELECT al.id, al.action, al.resource_type, al.resource_id, al.status, al.error_message,
+            al.created_at, COALESCE(u.name, u.email, '') AS employee
+     FROM audit_logs al
+     LEFT JOIN users u ON u.id = al.user_id
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY al.created_at DESC
+     LIMIT 1000`,
+    params
+  );
+  return res.rows.map((row) => ({
+    id: `audit-${row.id}`,
+    date: isoDate(row.created_at),
+    time: displayTime(row.created_at),
+    action: row.action || '',
+    resource_type: row.resource_type || '',
+    resource_id: row.resource_id || '',
+    employee: row.employee || '',
+    status: row.status || (row.error_message ? 'Failed' : 'Logged'),
+    remarks: row.error_message || '',
+    product: row.resource_type === 'product' ? row.resource_id : '',
+    order_id: row.resource_type === 'order' ? row.resource_id : '',
   }));
 }
 

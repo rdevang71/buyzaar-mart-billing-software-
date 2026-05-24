@@ -15,6 +15,7 @@ export default function InventoryShell({
   tableData = [],
   searchValue,
   onSearchChange,
+  onDownload,
   emptyMessage = 'No Records Found',
   showTable = true,
 }) {
@@ -144,14 +145,14 @@ export default function InventoryShell({
             />
           </div>
           <div className="flex items-center gap-2 flex-wrap ml-auto">
-            {filters.map((filter) => (
-              <button key={filter} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 text-[12.5px] text-gray-600 hover:bg-gray-50 transition-colors">
+            {Array.isArray(filters) ? filters.map((filter) => (
+              <button key={filter} type="button" className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 text-[12.5px] text-gray-600 hover:bg-gray-50 transition-colors">
                 <i className="ti ti-filter text-[14px] text-blue-500" />
                 {filter}
                 <i className="ti ti-chevron-down text-[11px]" />
               </button>
-            ))}
-            <button className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
+            )) : filters}
+            <button type="button" onClick={onDownload} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
               <i className="ti ti-download text-gray-500 text-[16px]" />
             </button>
           </div>
@@ -194,7 +195,7 @@ export default function InventoryShell({
           <select className="border border-gray-200 rounded-lg px-3 py-2 bg-white text-[12px] text-gray-600">
             <option>10</option>
           </select>
-          <span>Showing 0 to 0 of 0 Results</span>
+          <span>Showing {tableData.length ? `1 to ${tableData.length}` : '0 to 0'} of {tableData.length} Results</span>
         </div>
       </div>
       )}

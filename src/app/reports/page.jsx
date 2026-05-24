@@ -253,8 +253,19 @@ export default function ReportsHomePage() {
 
   useEffect(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem('scheduledReports') || '[]');
-      if (Array.isArray(saved)) setScheduledReports(saved);
+      fetch('/api/reports/schedules', { cache: 'no-store' })
+        .then((res) => res.json())
+        .then((json) => {
+          if (json.success) setScheduledReports(json.data.records || []);
+          else {
+            const saved = JSON.parse(localStorage.getItem('scheduledReports') || '[]');
+            if (Array.isArray(saved)) setScheduledReports(saved);
+          }
+        })
+        .catch(() => {
+          const saved = JSON.parse(localStorage.getItem('scheduledReports') || '[]');
+          if (Array.isArray(saved)) setScheduledReports(saved);
+        });
     } catch {
       setScheduledReports([]);
     }
@@ -283,8 +294,26 @@ export default function ReportsHomePage() {
     return card;
   });
 
+  const downloadReport = async (url) => {
+    if (!url) return;
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) {
+      alert('Unable to download report');
+      return;
+    }
+    const blob = await res.blob();
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const filename = disposition.match(/filename="([^"]+)"/)?.[1] || `report-${new Date().toISOString().slice(0, 10)}.xlsx`;
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(objectUrl);
+  };
+
   const openPinnedExcel = () => {
-    window.location.href = '/api/reports/sales/daily-sales?export=xlsx';
+    downloadReport('/api/reports/sales/daily-sales?export=xlsx');
   };
 
   const getReportExportUrl = (href) => {
@@ -295,29 +324,38 @@ export default function ReportsHomePage() {
 
   const handleGenerateScheduledReport = () => {
     const url = getReportExportUrl(scheduleDraft.reportHref);
-    if (url) window.location.href = url;
+    if (url) downloadReport(url);
   };
 
-  const handleSaveSchedule = () => {
+  const handleSaveSchedule = async () => {
     const report = allItems.find((item) => item.href === scheduleDraft.reportHref);
     if (!report) return;
 
-    const next = [
-      {
-        id: `${Date.now()}`,
-        reportHref: scheduleDraft.reportHref,
-        reportLabel: report.label,
-        frequency: scheduleDraft.frequency,
-        format: scheduleDraft.format,
-        email: scheduleDraft.email.trim(),
-        createdAt: new Date().toISOString(),
-      },
-      ...scheduledReports,
-    ].slice(0, 10);
+    const payload = {
+      reportHref: scheduleDraft.reportHref,
+      reportLabel: report.label,
+      frequency: scheduleDraft.frequency,
+      format: scheduleDraft.format,
+      email: scheduleDraft.email.trim(),
+    };
 
-    setScheduledReports(next);
-    localStorage.setItem('scheduledReports', JSON.stringify(next));
-    setShowSchedule(false);
+    try {
+      const res = await fetch('/api/reports/schedules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.message || 'Failed');
+      setScheduledReports((current) => [json.data.schedule, ...current].slice(0, 10));
+      setShowSchedule(false);
+    } catch {
+      const fallback = { id: `${Date.now()}`, ...payload, createdAt: new Date().toISOString() };
+      const next = [fallback, ...scheduledReports].slice(0, 10);
+      setScheduledReports(next);
+      localStorage.setItem('scheduledReports', JSON.stringify(next));
+      setShowSchedule(false);
+    }
   };
 
   return (
