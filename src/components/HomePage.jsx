@@ -110,9 +110,7 @@ export default function HomePage() {
           </p>
         </div>
         <Link
-          href="/sales-order/pos"
-          target="_blank"
-          rel="noopener noreferrer"
+          href="/sales/pos"
           className="self-start flex items-center gap-2 px-4 py-2 bg-blue-600 rounded-lg text-[13px] font-semibold text-white hover:bg-blue-700 transition-colors flex-shrink-0"
         >
           <i className="ti ti-bolt text-[15px]" />
@@ -162,7 +160,7 @@ export default function HomePage() {
               Sales Analytics
             </p>
             <Link
-              href="/sales-order"
+              href="/sales/pos"
               className="text-[12.5px] md:text-[13px] text-blue-600 font-medium hover:underline flex items-center gap-1"
             >
               Open billing <i className="ti ti-arrow-right text-[12px]" />
