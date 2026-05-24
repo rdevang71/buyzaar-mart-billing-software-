@@ -50,6 +50,15 @@ function LoginPageContent() {
     }
   };
 
+  const normalizeRedirectLocation = (location) => {
+    if (!location) return '';
+    try {
+      return new URL(location, window.location.origin).pathname;
+    } catch {
+      return location.startsWith('/') ? location : '';
+    }
+  };
+
   // ============================================
   // Handle Form Input Changes
   // ============================================
@@ -102,7 +111,8 @@ function LoginPageContent() {
       // Handle redirect response (302)
       if (res.status === 302 || res.type === 'opaqueredirect') {
         console.log('[LOGIN PAGE] Redirect response received');
-        window.location.href = await resolveRedirect('/home');
+        const redirectFromApi = normalizeRedirectLocation(res.headers.get('location'));
+        window.location.href = redirectFromApi || await resolveRedirect('/home');
         return;
       }
 
@@ -117,7 +127,9 @@ function LoginPageContent() {
 
         if (json.success) {
           console.log('[LOGIN PAGE] Login successful');
-          window.location.href = await resolveRedirect('/home');
+          window.location.href = json.data?.user
+            ? getDefaultRouteForUser(json.data.user)
+            : await resolveRedirect('/home');
           return;
         }
 

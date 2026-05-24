@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import MainLayout from '@/components/MainLayout';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useUser } from '@/hooks/useUser';
 import { fetchAuthEndpoint } from '@/lib/auth-endpoints';
 
@@ -13,6 +14,7 @@ const checklistItems = [
 ];
 
 export default function HomePage() {
+  const router = useRouter();
   const { user } = useUser();
   const [stats, setStats] = useState({
     products: 0,
@@ -35,6 +37,11 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (user?.role === 'super_admin') {
+      router.replace('/home/master-dashboard');
+      return;
+    }
+
     const fetchStats = async () => {
       try {
         setLoading(true);
@@ -50,7 +57,7 @@ export default function HomePage() {
       }
     };
     fetchStats();
-  }, []);
+  }, [router, user?.role]);
 
   const dashboardStats = [
     {

@@ -11,7 +11,9 @@ import { ensureRolesSchema } from '@/lib/rolesSchema';
 import { ensureSessionsSchema } from '@/lib/sessionsSchema';
 import { ensureAuditLogsSchema } from '@/lib/auditLogsSchema';
 
-function getDefaultRoute(/* role */) {
+function getDefaultRoute(role) {
+  if (role === 'super_admin') return '/home/master-dashboard';
+  if (role === 'user') return '/sales/pos';
   return '/home';
 }
 
