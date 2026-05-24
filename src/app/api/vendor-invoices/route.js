@@ -36,6 +36,14 @@ function normalizeStatus(totalAmount, amountPaid) {
   return 'Pending';
 }
 
+function generateVendorInvoiceNumber() {
+  const now = new Date();
+  const date = now.toISOString().slice(0, 10).replace(/-/g, '');
+  const time = now.toTimeString().slice(0, 8).replace(/:/g, '');
+  const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
+  return `VINV-${date}-${time}-${suffix}`;
+}
+
 export async function GET(request) {
   try {
     await ensureVendorsSchema();
@@ -119,14 +127,13 @@ export async function POST(request) {
 
     const body = await request.json();
     const vendorId = body.vendor || body.vendorId || null;
-    const invoiceNumber = body.invoice_number || body.invoiceNumber || '';
+    const invoiceNumber = String(body.invoice_number || body.invoiceNumber || '').trim() || generateVendorInvoiceNumber();
     const totalAmount = Number(body.total_amount ?? body.amount ?? 0);
     const rawAmountPaid = Number(body.amount_paid ?? 0);
     const amountPaid = Math.min(Math.max(Number.isFinite(rawAmountPaid) ? rawAmountPaid : 0, 0), Math.max(totalAmount, 0));
     const purchaseOrderId = Number(body.purchase_order_id || body.purchaseOrderId || 0) || null;
 
     if (!vendorId) return NextResponse.json({ error: 'Vendor is required' }, { status: 400 });
-    if (!invoiceNumber.trim()) return NextResponse.json({ error: 'Invoice number is required' }, { status: 400 });
     if (!Number.isFinite(totalAmount) || totalAmount < 0) return NextResponse.json({ error: 'Amount is required' }, { status: 400 });
 
     const client = await getClient();

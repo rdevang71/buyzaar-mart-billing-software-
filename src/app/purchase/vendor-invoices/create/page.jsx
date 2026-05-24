@@ -47,7 +47,6 @@ export default function CreateVendorInvoicePage() {
   }, []);
 
   const handleSave = async () => {
-    if (!form.invoice_number.trim()) return alert('Invoice number is required');
     if (!form.total_amount || Number(form.total_amount) < 0) return alert('Amount is required');
     if (!form.vendor) return alert('Vendor is required');
     if (!form.due_date) return alert('Invoice due date is required');
@@ -103,13 +102,14 @@ export default function CreateVendorInvoicePage() {
           <h4 className="text-sm text-blue-700 font-semibold mb-8">Basic Information</h4>
           <div className="grid grid-cols-2 gap-x-12 gap-y-8">
             <div>
-              <label className="text-[12px] text-gray-700 font-medium">Invoice Number *</label>
+              <label className="text-[12px] text-gray-700 font-medium">Invoice Number</label>
               <input
                 value={form.invoice_number}
                 onChange={(e) => setForm({ ...form, invoice_number: e.target.value })}
-                placeholder="Enter Invoice Number"
+                placeholder="Auto-generated if blank"
                 className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-[13px] text-gray-800 bg-white placeholder:text-gray-400 focus:outline-none focus:border-blue-500"
               />
+              <p className="mt-1 text-[11px] text-gray-400">Leave blank to generate automatically.</p>
             </div>
 
             <div>
