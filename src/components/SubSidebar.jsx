@@ -68,7 +68,7 @@ export default function SubSidebar({ subSidebar, sectionHref, onBackToMain, onCl
         pathname.startsWith(currentSectionHref + '/'));
 
     return (
-      <div ref={scrollRef} className="flex flex-col h-full bg-[#edf3fa] border-r border-slate-200 overflow-y-auto">
+      <div ref={scrollRef} className="no-scrollbar flex flex-col h-full overflow-y-auto overflow-x-hidden bg-[#edf3fa] border-r border-slate-200">
         {(onBackToMain || onClose) && (
           <div className="md:hidden flex items-center justify-between px-3 py-2.5 border-b border-gray-200 bg-white shrink-0">
             {onBackToMain ? (
@@ -157,7 +157,7 @@ export default function SubSidebar({ subSidebar, sectionHref, onBackToMain, onCl
     setOpenGroups((prev) => ({ ...prev, [label]: !prev[label] }));
 
   return (
-    <div ref={scrollRef} className="flex flex-col h-full bg-[#edf3fa] border-r border-slate-200 overflow-y-auto">
+    <div ref={scrollRef} className="no-scrollbar flex flex-col h-full overflow-y-auto overflow-x-hidden bg-[#edf3fa] border-r border-slate-200">
       <div className="sticky top-0 z-10 border-b border-slate-200/80 bg-[#edf3fa]/95 px-3 py-3 backdrop-blur">
         <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -256,10 +256,6 @@ export default function SubSidebar({ subSidebar, sectionHref, onBackToMain, onCl
             No menu items found
           </div>
         )}
-      </div>
-      <div className="mt-auto border-t border-slate-200/80 px-4 py-3">
-        <p className="text-[18px] font-black leading-none text-blue-700">BillingPro</p>
-        <p className="mt-0.5 text-[10px] font-medium text-slate-400">India's No.1 Business App</p>
       </div>
     </div>
   );

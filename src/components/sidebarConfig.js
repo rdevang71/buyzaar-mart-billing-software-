@@ -1,17 +1,5 @@
 export const menuItems = [
-  { label: 'Home',         icon: 'ti-home',           href: '/',         subSidebar: {
-    title: 'Home',
-    titleIcon: 'ti-home',
-    groups: [
-      {
-        label: 'Dashboards', icon: 'ti-layout-dashboard',
-        items: [
-          { label: 'Master Dashboard',     href: '/home/master-dashboard' },
-          { label: 'Home Dashboard',       href: '/' },
-        ],
-      },
-    ],
-  }},
+  { label: 'Home',         icon: 'ti-home',           href: '/home' },
 
   { label: 'Sales',        icon: 'ti-shopping-bag',   href: '/sales/pos', subSidebar: {
     title: 'Sales & Point of Sale',

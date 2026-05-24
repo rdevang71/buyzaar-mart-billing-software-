@@ -6,7 +6,7 @@ import { menuItems } from './sidebarConfig';
 import { useUser } from '@/hooks/useUser';
 import { filterMenuItemsForUser, getPageTitleForMenu } from '@/lib/accessControl';
 
-export default function Topbar({ onMenuOpen }) {
+export default function Topbar({ onMenuOpen, sidebarExpanded = false }) {
   const router = useRouter();
   const pathname = usePathname();
   const { user, loading: loadingUser } = useUser();
@@ -25,6 +25,7 @@ export default function Topbar({ onMenuOpen }) {
   const [openNotifications, setOpenNotifications] = useState(false);
   const [returnRequests, setReturnRequests] = useState([]);
   const [lowStockAlerts, setLowStockAlerts] = useState([]);
+  const [requisitionRequests, setRequisitionRequests] = useState([]);
   const profileRef = useRef(null);
   const notificationRef = useRef(null);
 
@@ -61,8 +62,13 @@ export default function Topbar({ onMenuOpen }) {
   }, [user]);
 
   const canReviewReturns = user?.role === 'super_admin' || user?.role === 'admin' || user?.permissions?.includes('*');
+  const canReviewRequisitions =
+    user?.role === 'super_admin' ||
+    user?.role === 'admin' ||
+    user?.permissions?.includes('*') ||
+    user?.permissions?.includes('MANAGE_INVENTORY');
   const returnNotificationTitle = canReviewReturns ? 'Return Requests' : 'My Return Updates';
-  const notificationCount = returnRequests.length + lowStockAlerts.length;
+  const notificationCount = returnRequests.length + lowStockAlerts.length + requisitionRequests.length;
 
   const loadReturnNotifications = useCallback(async () => {
     if (!user) {
@@ -98,10 +104,31 @@ export default function Topbar({ onMenuOpen }) {
     }
   }, [user]);
 
+  const loadRequisitionNotifications = useCallback(async () => {
+    if (!user || !canReviewRequisitions) {
+      setRequisitionRequests([]);
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/inventory/stockrequisition', { cache: 'no-store' });
+      const json = await response.json();
+      const records = Array.isArray(json.records) ? json.records : [];
+      setRequisitionRequests(
+        records
+          .filter((record) => String(record.approvalStatus || '').toLowerCase() === 'pending')
+          .slice(0, 10)
+      );
+    } catch {
+      setRequisitionRequests([]);
+    }
+  }, [canReviewRequisitions, user]);
+
   const loadNotifications = useCallback(() => {
     loadReturnNotifications();
     loadLowStockNotifications();
-  }, [loadLowStockNotifications, loadReturnNotifications]);
+    loadRequisitionNotifications();
+  }, [loadLowStockNotifications, loadRequisitionNotifications, loadReturnNotifications]);
 
   useEffect(() => {
     loadNotifications();
@@ -184,11 +211,20 @@ export default function Topbar({ onMenuOpen }) {
       </button>
 
       {/* Brand — hidden on mobile (shown in drawer instead) */}
-      <div className="hidden md:flex w-[64px] flex-shrink-0 items-center justify-center">
-        <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-[0_10px_22px_rgba(37,99,235,0.18)]">
-          <span className="text-[19px] font-black leading-none">B</span>
-        </div>
-      </div>
+      <button
+        type="button"
+        onClick={() => router.push('/home')}
+        className={`hidden md:flex flex-shrink-0 items-center transition-all ${
+          sidebarExpanded ? 'w-[240px] justify-start pl-8' : 'w-[64px] justify-center'
+        }`}
+        aria-label="Go to home"
+      >
+        {sidebarExpanded ? (
+          <span className="text-[18px] font-black leading-none text-blue-700">BillingPro</span>
+        ) : (
+          <span className="sr-only">BillingPro</span>
+        )}
+      </button>
 
       {/* Brand — mobile center */}
       <div className="md:hidden flex-1 flex justify-center">
@@ -265,6 +301,38 @@ export default function Topbar({ onMenuOpen }) {
                             </div>
                             <span className="shrink-0 rounded-full bg-amber-100 px-2 py-1 text-xs font-bold text-amber-700">
                               {Number(alert.availableQty || 0)} left
+                            </span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {requisitionRequests.length > 0 && (
+                    <div className="border-b border-gray-100">
+                      <p className="px-4 pb-1 pt-3 text-[11px] font-black uppercase tracking-widest text-violet-600">
+                        Stock Requisitions
+                      </p>
+                      {requisitionRequests.map((request) => (
+                        <button
+                          key={request.id}
+                          type="button"
+                          onClick={() => {
+                            setOpenNotifications(false);
+                            router.push('/inventory/stockrequisition');
+                          }}
+                          className="block w-full border-t border-gray-100 px-4 py-3 text-left hover:bg-violet-50"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-gray-900">
+                                {request.transactionId || `REQ-${request.id}`} needs approval
+                              </p>
+                              <p className="mt-0.5 truncate text-xs text-gray-500">
+                                {request.destinationName || 'Destination'}{request.requestedBy ? ` - ${request.requestedBy}` : ''}
+                              </p>
+                            </div>
+                            <span className="shrink-0 rounded-full bg-violet-100 px-2 py-1 text-xs font-bold text-violet-700">
+                              {Number(request.totalItems || 0)} items
                             </span>
                           </div>
                         </button>

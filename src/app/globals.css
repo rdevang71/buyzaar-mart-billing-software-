@@ -46,6 +46,15 @@ body {
   background: transparent;
 }
 
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 .page-route-transition {
   animation: page-route-fade 180ms ease-out both;
 }

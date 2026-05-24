@@ -19,6 +19,7 @@ export default function MainLayout({ children }) {
   const accessibleMenuItems = useMemo(() => filterMenuItemsForUser(menuItems, user), [user]);
   const accessAllowed = !loading && user && canAccessPath(user, pathname);
   const hasAccessibleMenu = accessibleMenuItems.length > 0;
+  const homeSidebarExpanded = pathname === '/home' || pathname === '/';
 
   useEffect(() => {
     if (loading) return;
@@ -74,6 +75,7 @@ export default function MainLayout({ children }) {
   return (
     <div className="min-h-screen bg-[#f4f7fb] text-slate-900">
       <Topbar
+        sidebarExpanded={homeSidebarExpanded && hasAccessibleMenu}
         onMenuOpen={() => {
           setMobilePanel('main');
           setMobileOpen(true);
@@ -85,6 +87,7 @@ export default function MainLayout({ children }) {
           items={accessibleMenuItems}
           activeMenu={activeMenu}
           setActiveMenu={setActiveMenu}
+          expanded={homeSidebarExpanded}
           mobileOpen={mobileOpen}
           onMobileSubOpen={(item) => {
             setActiveMenu(item);
@@ -128,8 +131,8 @@ export default function MainLayout({ children }) {
         className={`
           transition-all duration-300
           mt-[56px]
-          ${hasAccessibleMenu ? 'md:ml-[64px]' : 'md:ml-0'}
-          ${hasAccessibleMenu && subOpen ? 'md:ml-[320px]' : ''}
+          ${hasAccessibleMenu ? (homeSidebarExpanded ? 'md:ml-[240px]' : 'md:ml-[64px]') : 'md:ml-0'}
+          ${hasAccessibleMenu && subOpen && !homeSidebarExpanded ? 'md:ml-[320px]' : ''}
           min-h-[calc(100vh-56px)]
           p-3 sm:p-5 md:p-6 lg:p-7
           max-w-full overflow-x-hidden

@@ -137,9 +137,6 @@ export default function CatalogDashboard() {
 
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-3">
-            <span className="text-[10px] font-bold text-orange-500 bg-orange-50 px-2 py-0.5 rounded tracking-wide">
-              + QB INTELLIGENCE
-            </span>
             <span className="text-sm font-semibold text-gray-800">What's hurting your catalog</span>
             <span className="ml-auto text-[11px] text-gray-400">Scanned {stats.total_products || 0} products</span>
           </div>
