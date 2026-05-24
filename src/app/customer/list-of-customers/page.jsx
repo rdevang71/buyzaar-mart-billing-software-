@@ -82,7 +82,7 @@ function TextField({ label, value, onChange, required = false, placeholder = '',
   const inputType = isPhone ? 'tel' : type;
   return (
     <div>
-      <label className="block text-[12px] text-gray-700 mb-1">{label}{required ? ' *' : ''}</label>
+      <label className="block text-[12px] text-gray-700 mb-1">{label}{required ? <span className="text-red-500"> *</span> : null}</label>
       <input
         type={inputType}
         inputMode={isPhone ? 'numeric' : undefined}
@@ -101,7 +101,7 @@ function TextField({ label, value, onChange, required = false, placeholder = '',
 function SelectField({ label, value, onChange, options, required = false }) {
   return (
     <div>
-      <label className="block text-[12px] text-gray-700 mb-1">{label}{required ? ' *' : ''}</label>
+      <label className="block text-[12px] text-gray-700 mb-1">{label}{required ? <span className="text-red-500"> *</span> : null}</label>
       <div className="relative">
         <select
           value={value}

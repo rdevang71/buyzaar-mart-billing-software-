@@ -15,12 +15,20 @@ const filters = [
 
 const columns = [
   {
+    "key": "product",
+    "label": "Product"
+  },
+  {
     "key": "store",
     "label": "Store"
   },
   {
     "key": "date",
     "label": "Date"
+  },
+  {
+    "key": "quantity",
+    "label": "Qty"
   },
   {
     "key": "sales",
@@ -47,6 +55,18 @@ const columns = [
     "label": "Orders"
   },
   {
+    "key": "cost_amount",
+    "label": "Cost Amount"
+  },
+  {
+    "key": "margin_amount",
+    "label": "Margin Amount"
+  },
+  {
+    "key": "margin_percent",
+    "label": "Margin %"
+  },
+  {
     "key": "avg_order_value",
     "label": "Avg Order Value"
   }
@@ -64,6 +84,7 @@ export default function SalesProductWiseSalesPage() {
       description="Sales by product"
       filters={filters}
       columns={columns}
+      reportKey="sales/product-wise-sales"
       actionButtons={[]}
     />
   );

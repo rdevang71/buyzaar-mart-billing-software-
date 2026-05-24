@@ -1,10 +1,17 @@
 import { query } from '@/lib/db';
 import { successResponse, errorResponse, validationError } from '@/lib/api-response';
 import { ensureCatalogExtrasSchema } from '@/lib/catalogExtrasSchema';
+import { appendStoreScope, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 export async function GET(request) {
   try {
     await ensureCatalogExtrasSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+
+    const permissionCheck = requirePermission(auth.user, 'VIEW_CATALOG', 'MANAGE_CATALOG');
+    if (permissionCheck.error) return permissionCheck.error;
+
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search') || '';
     const page = parseInt(searchParams.get('page') || '1');
@@ -15,7 +22,8 @@ export async function GET(request) {
     const storeId = searchParams.get('store_id');
     const productId = searchParams.get('product_id');
     if (search) filters.push(`(p.name ILIKE $${params.length + 1} OR COALESCE(st.name, '') ILIKE $${params.length + 1})`) && params.push(`%${search}%`);
-    if (storeId) { params.push(storeId); filters.push(`ps.store_id = $${params.length}`); }
+    const scope = appendStoreScope(filters, params, 'ps.store_id', auth.user, storeId);
+    if (scope.error) return scope.error;
     if (productId) { params.push(productId); filters.push(`ps.product_id = $${params.length}`); }
     const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
 
@@ -55,8 +63,17 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     await ensureCatalogExtrasSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_CATALOG');
+    if (permissionCheck.error) return permissionCheck.error;
+
     const body = await request.json();
     if (!body.product_id) return validationError({ product_id: 'Product is required' });
+    const storeId = Number(body.store_id || 0) || null;
+    const storeCheck = requireStore(auth.user, storeId);
+    if (storeCheck.error) return storeCheck.error;
 
     const result = await query(
       `INSERT INTO product_saleability (product_id, store_id, is_active, selling_price, mrp, low_stock_value)
@@ -70,7 +87,7 @@ export async function POST(request) {
        RETURNING *`,
       [
         body.product_id,
-        body.store_id || null,
+        storeId,
         body.is_active ?? true,
         Number(body.selling_price || 0),
         Number(body.mrp || 0),

@@ -3,6 +3,8 @@ import { successResponse, errorResponse } from '@/lib/api-response';
 import { ensureStockInSchema } from '@/lib/stockInSchema';
 import { ensureStockOutSchema } from '@/lib/stockOutSchema';
 import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
+import { ensureInventoryBatchSchema } from '@/lib/inventoryBatching';
+import { getAssignedStoreIds, requireAuth, requirePermission } from '@/lib/api-protection';
 
 async function safeQuery(sql, params = []) {
   try {
@@ -49,14 +51,55 @@ const STOCK_JOINS = `
   LEFT JOIN ${SOLD_SUB}      sold_agg ON sold_agg.product_id = p.id
 `;
 
-export async function GET() {
+export async function GET(request) {
   try {
     // Ensure tables exist before querying them
     await Promise.allSettled([
       ensureStockInSchema(),
       ensureStockOutSchema(),
       ensureSalesBillingSchema(),
+      ensureInventoryBatchSchema(),
     ]);
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+
+    const permissionCheck = requirePermission(auth.user, 'VIEW_CATALOG', 'MANAGE_CATALOG');
+    if (permissionCheck.error) return permissionCheck.error;
+
+    const assignedStores = auth.user.role === 'super_admin' ? null : getAssignedStoreIds(auth.user);
+    const hasStoreScope = Array.isArray(assignedStores);
+    const storeIdList = hasStoreScope && assignedStores.length ? assignedStores.join(',') : '';
+    const productScopeWhere = hasStoreScope
+      ? storeIdList
+        ? `WHERE EXISTS (
+            SELECT 1 FROM product_saleability ps_scope
+            WHERE ps_scope.product_id = p.id
+              AND ps_scope.is_active = TRUE
+              AND ps_scope.store_id = ANY(ARRAY[${storeIdList}]::int[])
+          )`
+        : 'WHERE 1 = 0'
+      : '';
+    const productScopeAnd = productScopeWhere ? productScopeWhere.replace(/^WHERE /, 'AND ') : '';
+    const storeScopedStockInSub = `(
+      SELECT ib.product_id, SUM(ib.available_qty) AS qty
+      FROM inventory_batches ib
+      WHERE ib.status = 'active'
+        ${hasStoreScope ? (storeIdList ? `AND ib.store_id = ANY(ARRAY[${storeIdList}]::int[])` : 'AND 1 = 0') : ''}
+      GROUP BY ib.product_id
+    )`;
+    const storeScopedStockOutSub = `(
+      SELECT NULL::bigint AS product_id, 0::numeric AS qty
+      WHERE FALSE
+    )`;
+    const storeScopedSoldSub = `(
+      SELECT NULL::bigint AS product_id, 0::numeric AS qty
+      WHERE FALSE
+    )`;
+    const stockJoins = `
+      LEFT JOIN ${storeScopedStockInSub}  sin_agg  ON sin_agg.product_id  = p.id
+      LEFT JOIN ${storeScopedStockOutSub} sout_agg ON sout_agg.product_id = p.id
+      LEFT JOIN ${storeScopedSoldSub}     sold_agg ON sold_agg.product_id = p.id
+    `;
 
     const [
       totalProductsRes,
@@ -70,25 +113,25 @@ export async function GET() {
       belowCostRes,
       productsRes,
     ] = await Promise.all([
-      safeQuery(`SELECT COUNT(*)::int AS count FROM products`),
+      safeQuery(`SELECT COUNT(*)::int AS count FROM products p ${productScopeWhere}`),
       safeQuery(`SELECT COUNT(*)::int AS count FROM categories`),
       safeQuery(`SELECT COUNT(*)::int AS count FROM brands`),
-      safeQuery(`SELECT COUNT(*)::int AS count FROM products WHERE image_url IS NULL OR image_url = ''`),
+      safeQuery(`SELECT COUNT(*)::int AS count FROM products p ${productScopeWhere ? `${productScopeWhere} AND` : 'WHERE'} (p.image_url IS NULL OR p.image_url = '')`),
 
       // Out of stock = actual available stock is 0
       safeQuery(`
         SELECT COUNT(*)::int AS count
         FROM products p
-        ${STOCK_JOINS}
-        WHERE ${ACTUAL_STOCK_EXPR} = 0
+        ${stockJoins}
+        ${productScopeWhere ? `${productScopeWhere} AND` : 'WHERE'} ${ACTUAL_STOCK_EXPR} = 0
       `),
 
       safeQuery(`
         SELECT COUNT(*)::int AS count FROM products p
         LEFT JOIN taxes t ON p.tax_id = t.id
-        WHERE t.hsn_code IS NULL OR t.hsn_code = ''
+        ${productScopeWhere ? `${productScopeWhere} AND` : 'WHERE'} (t.hsn_code IS NULL OR t.hsn_code = '')
       `),
-      safeQuery(`SELECT COUNT(*)::int AS count FROM products WHERE COALESCE(mrp, 0) <= 0`),
+      safeQuery(`SELECT COUNT(*)::int AS count FROM products p ${productScopeWhere ? `${productScopeWhere} AND` : 'WHERE'} COALESCE(p.mrp, 0) <= 0`),
       safeQuery(`
         SELECT COUNT(*)::int AS count
         FROM products p
@@ -97,12 +140,13 @@ export async function GET() {
           WHERE sku IS NOT NULL AND TRIM(sku) <> ''
           GROUP BY sku HAVING COUNT(*) > 1
         ) d ON d.sku = p.sku
+        ${productScopeWhere}
       `),
       safeQuery(`
-        SELECT COUNT(*)::int AS count FROM products
-        WHERE COALESCE(cost_price, 0) > 0
-          AND COALESCE(mrp, 0) > 0
-          AND mrp < cost_price
+        SELECT COUNT(*)::int AS count FROM products p
+        ${productScopeWhere ? `${productScopeWhere} AND` : 'WHERE'} COALESCE(p.cost_price, 0) > 0
+          AND COALESCE(p.mrp, 0) > 0
+          AND p.mrp < p.cost_price
       `),
 
       // Products list with actual stock
@@ -134,13 +178,14 @@ export async function GET() {
         LEFT JOIN brands      b ON p.brand_id  = b.id
         LEFT JOIN categories  c ON p.category_id = c.id
         LEFT JOIN taxes       t ON p.tax_id    = t.id
-        ${STOCK_JOINS}
+        ${stockJoins}
         LEFT JOIN (
           SELECT sku, COUNT(*) AS cnt
           FROM products
           WHERE sku IS NOT NULL AND TRIM(sku) <> ''
           GROUP BY sku
         ) d ON d.sku = p.sku
+        ${productScopeWhere}
         ORDER BY p.id DESC
         LIMIT 100
       `),

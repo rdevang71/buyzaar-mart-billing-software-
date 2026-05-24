@@ -45,6 +45,13 @@ function emptyPayment() {
   return { method: 'cash', amount: '', referenceNo: '' };
 }
 
+const PAYMENT_OPTIONS = [
+  { value: 'cash', label: 'Cash', icon: 'ti-cash' },
+  { value: 'card', label: 'Card', icon: 'ti-credit-card' },
+  { value: 'upi', label: 'UPI', icon: 'ti-qrcode' },
+  { value: 'credit', label: 'Credit', icon: 'ti-file-invoice' },
+];
+
 const inputClassName = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500 focus:ring-2 focus:ring-blue-400 outline-none';
 const DEFAULT_RECEIPT_CONFIG = {
   businessName: 'BillingPro',
@@ -270,7 +277,9 @@ export default function POSPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             ...item.payload,
-            payments: [{ method: item.payload.paymentMode, amount: toNumber(item.totals?.grandTotal || 0) }],
+            payments: Array.isArray(item.payload.payments) && item.payload.payments.length
+              ? item.payload.payments
+              : [{ method: item.payload.paymentMode, amount: toNumber(item.totals?.grandTotal || 0) }],
           }),
         });
         const json = await res.json();
@@ -513,7 +522,44 @@ export default function POSPage() {
     return { subtotal, lineDiscount, taxTotal, discount, roundValue, grandTotal };
   }, [cart, canApplyOrderDiscount, canManageDiscounts, orderDiscount, roundOff]);
 
-  const canGenerateBill = !!session?.sessionId && cart.length > 0 && !isProcessing;
+  const normalizedPayments = useMemo(() => {
+    const rows = payments
+      .map((payment) => ({
+        method: payment.method || paymentMode || 'cash',
+        amount: toNumber(payment.amount),
+        referenceNo: payment.referenceNo || '',
+      }))
+      .filter((payment) => payment.amount > 0);
+
+    if (!rows.length && cartTotals.grandTotal > 0) {
+      return [{ method: paymentMode || 'cash', amount: cartTotals.grandTotal, referenceNo: '' }];
+    }
+    return rows;
+  }, [payments, paymentMode, cartTotals.grandTotal]);
+
+  const paidTotal = useMemo(
+    () => normalizedPayments.reduce((sum, payment) => sum + toNumber(payment.amount), 0),
+    [normalizedPayments]
+  );
+  const paymentBalance = Math.round((cartTotals.grandTotal - paidTotal) * 100) / 100;
+  const isPaymentBalanced = Math.abs(paymentBalance) <= 0.01;
+  const canGenerateBill = !!session?.sessionId && cart.length > 0 && !isProcessing && isPaymentBalanced;
+
+  const updatePayment = (index, field, value) => {
+    setPayments((current) => current.map((payment, idx) => (
+      idx === index ? { ...payment, [field]: value } : payment
+    )));
+    if (field === 'method' && index === 0) setPaymentMode(value);
+  };
+
+  const addPaymentRow = () => {
+    const remaining = Math.max(0, Math.round((cartTotals.grandTotal - paidTotal) * 100) / 100);
+    setPayments((current) => [...current, { method: 'cash', amount: remaining ? String(remaining) : '', referenceNo: '' }]);
+  };
+
+  const removePaymentRow = (index) => {
+    setPayments((current) => current.length <= 1 ? current : current.filter((_, idx) => idx !== index));
+  };
 
   // ── CUSTOMER HISTORY ──
   const loadCustomerHistory = async () => {
@@ -758,6 +804,10 @@ export default function POSPage() {
     if (!session?.sessionId) { showToast('Open session first', 'error'); return; }
     if (cart.length === 0) { showToast('Add products to cart', 'error'); return; }
     if (customerMobile && !validatePhoneNumber(customerMobile).isValid) { showToast(validatePhoneNumber(customerMobile).error, 'error'); return; }
+    if (!isPaymentBalanced) {
+      showToast(`Payment total must match bill total. Balance ${formatCurrency(paymentBalance)}`, 'error');
+      return;
+    }
     setIsProcessing(true);
     let payload = null;
     try {
@@ -769,7 +819,8 @@ export default function POSPage() {
         counterName: session.counterName || counterName,
         customerName: customerName || 'Walk-in Customer',
         customerMobile,
-        paymentMode,
+        paymentMode: normalizedPayments.length > 1 ? 'split' : (normalizedPayments[0]?.method || paymentMode),
+        payments: normalizedPayments,
         items: cart.map((item) => ({
           productId: item.id, name: item.name, qty: item.qty, sellingPrice: item.sellingPrice,
           mrp: item.mrp, taxRate: item.taxRate || 0,
@@ -786,7 +837,8 @@ export default function POSPage() {
           invoiceNumber: payload.invoiceNumber,
           customerName: payload.customerName,
           customerMobile,
-          paymentMode,
+          paymentMode: payload.paymentMode,
+          payments: normalizedPayments,
           grandTotal: cartTotals.grandTotal,
           subtotal: cartTotals.subtotal,
           discountTotal: cartTotals.discount,
@@ -842,7 +894,7 @@ export default function POSPage() {
       }
       const res = await fetch('/api/sales-order/pos', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, payments: payments.map((p) => ({ ...p, amount: toNumber(p.amount || cartTotals.grandTotal) })) }),
+        body: JSON.stringify(payload),
       });
       const json = await res.json();
       if (json.success) {
@@ -854,7 +906,7 @@ export default function POSPage() {
         showToast(json.data?.message || `Bill ${payload.invoiceNumber} created!`);
         setRecentBills((current) => [savedBill, ...current].filter(Boolean).slice(0, 10));
         setReceiptData({
-          bill: { ...savedBill, customerName: payload.customerName, customerMobile, publicToken: savedBill?.publicToken ?? savedBill?.public_token ?? null, subtotal: cartTotals.subtotal, discountTotal: cartTotals.discount, taxTotal: cartTotals.taxTotal, grandTotal: cartTotals.grandTotal, paymentMode, createdAt: savedBill?.createdAt || new Date().toISOString() },
+          bill: { ...savedBill, customerName: payload.customerName, customerMobile, publicToken: savedBill?.publicToken ?? savedBill?.public_token ?? null, subtotal: cartTotals.subtotal, discountTotal: cartTotals.discount, taxTotal: cartTotals.taxTotal, grandTotal: cartTotals.grandTotal, paymentMode: payload.paymentMode, payments: normalizedPayments, createdAt: savedBill?.createdAt || new Date().toISOString() },
           items: receiptItems, subtotal: cartTotals.subtotal, discount: cartTotals.discount, taxTotal: cartTotals.taxTotal, grandTotal: cartTotals.grandTotal,
         });
         setReceiptModal(true);
@@ -1269,6 +1321,30 @@ export default function POSPage() {
                         {mode.label}
                       </button>
                     ))}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[10px] font-black text-slate-400 tracking-widest uppercase">Split Payment</p>
+                    <button type="button" onClick={addPaymentRow} className="text-[11px] font-bold text-indigo-600 hover:text-indigo-700">+ Add</button>
+                  </div>
+                  {payments.map((payment, index) => (
+                    <div key={index} className="grid grid-cols-[1fr_1fr_auto] gap-2">
+                      <select value={payment.method || 'cash'} onChange={(e) => updatePayment(index, 'method', e.target.value)} className={inputCls} style={{ fontSize: '12px' }}>
+                        {PAYMENT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                      <input type="number" min="0" step="0.01" value={payment.amount} onChange={(e) => updatePayment(index, 'amount', e.target.value)} placeholder="Amount" className={inputCls} style={{ fontSize: '12px' }} />
+                      <button type="button" onClick={() => removePaymentRow(index)} disabled={payments.length <= 1} className="h-9 w-9 rounded-lg border border-slate-200 bg-white text-slate-500 disabled:opacity-40" title="Remove payment">
+                        <i className="ti ti-x" />
+                      </button>
+                      {payment.method !== 'cash' && (
+                        <input type="text" value={payment.referenceNo || ''} onChange={(e) => updatePayment(index, 'referenceNo', e.target.value)} placeholder="Reference no." className={`${inputCls} col-span-3`} style={{ fontSize: '12px' }} />
+                      )}
+                    </div>
+                  ))}
+                  <div className={`text-[11px] font-bold ${isPaymentBalanced ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    Paid {formatCurrency(paidTotal)} / Balance {formatCurrency(paymentBalance)}
                   </div>
                 </div>
 

@@ -82,7 +82,7 @@ export async function GET(request) {
       sessionWhere.push(`ucs.session_id = $${sessionParams.length}`);
     } else {
       sessionWhere.push('ucs.is_active = TRUE');
-      if (!(Array.isArray(auth.user.permissions) && auth.user.permissions.includes('*'))) {
+      if (auth.user.role !== 'super_admin') {
         sessionParams.push(auth.user.id);
         sessionWhere.push(`ucs.user_id = $${sessionParams.length}`);
       }
@@ -107,7 +107,7 @@ export async function GET(request) {
       return successResponse({ session: null, closing: null });
     }
 
-    if (!(Array.isArray(auth.user.permissions) && auth.user.permissions.includes('*'))) {
+    if (auth.user.role !== 'super_admin') {
       const storeCheck = requireStore(auth.user, session.store_id);
       if (storeCheck.error) return storeCheck.error;
     }

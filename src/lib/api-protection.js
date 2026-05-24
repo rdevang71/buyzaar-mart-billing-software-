@@ -208,9 +208,8 @@ export function requireStore(user, storeId) {
   if (!user) {
     return { error: unauthorizedError('Not authenticated') };
   }
-  // Check if user is assigned to this store or has global access
-  const userPerms = Array.isArray(user.permissions) ? user.permissions : [];
-  if (userPerms.includes('*')) return { error: null };
+
+  if (user.role === 'super_admin') return { error: null };
 
   // Check if user is assigned to this store
   if (!user.assigned_stores.includes(Number(storeId))) {
@@ -222,6 +221,46 @@ export function requireStore(user, storeId) {
   }
 
   return { error: null };
+}
+
+export function getAssignedStoreIds(user) {
+  return (user?.assigned_stores || []).map(Number).filter(Number.isFinite);
+}
+
+export function canAccessAllStores(user) {
+  return user?.role === 'super_admin';
+}
+
+export function getStoreScope(user, requestedStoreId = null) {
+  const storeId = Number(requestedStoreId || 0) || null;
+
+  if (storeId) {
+    const storeCheck = requireStore(user, storeId);
+    if (storeCheck.error) return { error: storeCheck.error, storeIds: [] };
+    return { error: null, storeIds: [storeId] };
+  }
+
+  if (canAccessAllStores(user)) {
+    return { error: null, storeIds: null };
+  }
+
+  return { error: null, storeIds: getAssignedStoreIds(user) };
+}
+
+export function appendStoreScope(whereClauses, params, columnName, user, requestedStoreId = null) {
+  const scope = getStoreScope(user, requestedStoreId);
+  if (scope.error) return scope;
+
+  if (scope.storeIds === null) return scope;
+
+  if (!scope.storeIds.length) {
+    whereClauses.push('1 = 0');
+    return scope;
+  }
+
+  params.push(scope.storeIds);
+  whereClauses.push(`${columnName} = ANY($${params.length}::int[])`);
+  return scope;
 }
 
 /**

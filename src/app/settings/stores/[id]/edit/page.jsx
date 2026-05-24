@@ -249,9 +249,11 @@ export default function EditStorePage() {
 }
 
 function Field({ label, children }) {
+  const isRequired = String(label || '').trim().endsWith('*');
+  const displayLabel = isRequired ? String(label).replace(/\s*\*$/, '') : label;
   return (
     <label className="block">
-      <span className="mb-1 block text-sm font-medium text-gray-700">{label}</span>
+      <span className="mb-1 block text-sm font-medium text-gray-700">{displayLabel}{isRequired ? <span className="text-red-500"> *</span> : null}</span>
       {children}
     </label>
   );

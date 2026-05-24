@@ -1,47 +1,61 @@
 import { query } from '@/lib/db';
 import { successResponse, errorResponse } from '@/lib/api-response';
-import { verifyToken } from '@/lib/auth-enhanced';
 import { ensureCustomersSchema } from '@/lib/customersSchema';
 import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
 import { ensureVendorsSchema } from '@/lib/vendorsSchema';
 import { ensurePurchaseOrderSchema } from '@/lib/purchaseOrderSchema';
 import { ensureVendorInvoicesSchema } from '@/lib/vendorInvoicesSchema';
 import { ensureStockInSchema } from '@/lib/stockInSchema';
+import { ensureInventoryBatchSchema } from '@/lib/inventoryBatching';
+import { getAssignedStoreIds, requireAuth, requireStore } from '@/lib/api-protection';
 
 export async function GET(req) {
   try {
-    // Try to get token from Authorization header or cookies
-    let token = req.headers.get('authorization')?.replace('Bearer ', '');
-    
-    if (!token) {
-      // Try to get from cookies (for client-side requests)
-      token = req.cookies.get('access_token')?.value ||
-              req.cookies.get('auth_token')?.value ||
-              req.cookies.get('token')?.value;
-    }
-    
-    if (!token) return errorResponse('Unauthorized', 401);
-
-    const user = verifyToken(token);
-    if (!user) return errorResponse('Invalid token', 401);
+    const auth = await requireAuth(req);
+    if (auth.error) return auth.error;
+    const user = auth.user;
     await ensureCustomersSchema();
     await ensureSalesBillingSchema();
     await ensureVendorsSchema();
     await ensurePurchaseOrderSchema();
     await ensureVendorInvoicesSchema();
     await ensureStockInSchema();
+    await ensureInventoryBatchSchema();
 
     const { searchParams } = new URL(req.url);
     const rawStoreId = searchParams.get('store_id');
-    const selectedStoreId = rawStoreId && rawStoreId !== 'all' ? Number(rawStoreId) : null;
-    const hasStoreFilter = Number.isFinite(selectedStoreId) && selectedStoreId > 0;
+    const requestedStoreId = rawStoreId && rawStoreId !== 'all' ? Number(rawStoreId) : null;
+    if (requestedStoreId) {
+      const storeCheck = requireStore(user, requestedStoreId);
+      if (storeCheck.error) return storeCheck.error;
+    }
+
+    const accessibleStoreIds = requestedStoreId
+      ? [requestedStoreId]
+      : user.role === 'super_admin'
+        ? null
+        : getAssignedStoreIds(user);
+    const hasStoreFilter = Array.isArray(accessibleStoreIds);
+    const storeIdList = hasStoreFilter && accessibleStoreIds.length
+      ? accessibleStoreIds.join(',')
+      : '';
     const date_from = searchParams.get('date_from') || new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0];
     const date_to = searchParams.get('date_to') || new Date().toISOString().split('T')[0];
 
 
     // Base query filter
-    const storeFilter = hasStoreFilter ? `AND sb.store_id = ${selectedStoreId}` : '';
-    const storeWhere = hasStoreFilter ? `WHERE s.id = ${selectedStoreId}` : '';
+    const storeFilter = hasStoreFilter ? (storeIdList ? `AND sb.store_id = ANY(ARRAY[${storeIdList}]::int[])` : 'AND 1 = 0') : '';
+    const storeWhere = hasStoreFilter ? (storeIdList ? `WHERE s.id = ANY(ARRAY[${storeIdList}]::int[])` : 'WHERE 1 = 0') : '';
+    const psStoreWhere = hasStoreFilter ? (storeIdList ? `WHERE ps.store_id = ANY(ARRAY[${storeIdList}]::int[])` : 'WHERE 1 = 0') : '';
+    const psStoreAnd = hasStoreFilter ? (storeIdList ? `AND ps.store_id = ANY(ARRAY[${storeIdList}]::int[])` : 'AND 1 = 0') : '';
+    const productSaleabilityStoreAnd = hasStoreFilter ? (storeIdList ? `AND store_id = ANY(ARRAY[${storeIdList}]::int[])` : 'AND 1 = 0') : '';
+    const stockInStoreAnd = hasStoreFilter ? (storeIdList ? `AND si.destination_id = ANY(ARRAY[${storeIdList}]::int[])` : 'AND 1 = 0') : '';
+    const stockOutStoreAnd = hasStoreFilter ? (storeIdList ? `AND so.destination_id = ANY(ARRAY[${storeIdList}]::int[])` : 'AND 1 = 0') : '';
+    const salesBillStoreAnd = storeFilter;
+    const salesBillStoreWhere = hasStoreFilter ? (storeIdList ? `WHERE sb.store_id = ANY(ARRAY[${storeIdList}]::int[])` : 'WHERE 1 = 0') : '';
+    const purchaseOrderStoreAnd = hasStoreFilter ? (storeIdList ? `AND po.destination_id = ANY(ARRAY[${storeIdList}]::int[])` : 'AND 1 = 0') : '';
+    const payableStoreAnd = hasStoreFilter ? (storeIdList ? `AND (po.destination_id = ANY(ARRAY[${storeIdList}]::int[]) OR vi.purchase_order_id IS NULL)` : 'AND 1 = 0') : '';
+    const batchStoreAnd = hasStoreFilter ? (storeIdList ? `AND ib.store_id = ANY(ARRAY[${storeIdList}]::int[])` : 'AND 1 = 0') : '';
 
     // 1. Total Sales & Revenue
     const salesRes = await query(`
@@ -120,58 +134,27 @@ export async function GET(req) {
     `).catch(() => ({ rows: [] }));
 
     // 5. Inventory Valuation
-    // Uses same stock formula as catalog: global sin − sout(excl sales_bill) − sold
-    // Products are deduplicated via DISTINCT so multi-store saleability rows don't inflate the sum.
-    // When a store filter is applied all three subqueries are restricted to that store.
+    // Batches are the stock source of truth used by product and inventory pages.
     const inventoryRes = await query(`
       SELECT
         COUNT(DISTINCT p.id)::int AS total_products,
-        COALESCE(SUM(GREATEST(0,
-          COALESCE(sin_agg.qty, 0)
-          - COALESCE(sout_agg.qty, 0)
-          - COALESCE(sold_agg.qty, 0)
-        )), 0) AS total_stock_units,
-        COALESCE(SUM(GREATEST(0,
-          COALESCE(sin_agg.qty, 0)
-          - COALESCE(sout_agg.qty, 0)
-          - COALESCE(sold_agg.qty, 0)
-        ) * COALESCE(p.cost_price, 0)), 0) AS inventory_value_cost,
-        COALESCE(SUM(GREATEST(0,
-          COALESCE(sin_agg.qty, 0)
-          - COALESCE(sout_agg.qty, 0)
-          - COALESCE(sold_agg.qty, 0)
-        ) * COALESCE(NULLIF(p.selling_price, 0), 0)), 0) AS inventory_value_retail
+        COALESCE(SUM(COALESCE(batch_agg.qty, 0)), 0) AS total_stock_units,
+        COALESCE(SUM(COALESCE(batch_agg.qty, 0) * COALESCE(p.cost_price, 0)), 0) AS inventory_value_cost,
+        COALESCE(SUM(COALESCE(batch_agg.qty, 0) * COALESCE(NULLIF(p.selling_price, 0), 0)), 0) AS inventory_value_retail
       FROM (
         SELECT DISTINCT product_id
         FROM product_saleability
         WHERE is_active = TRUE
-        ${hasStoreFilter ? `AND store_id = ${selectedStoreId}` : ''}
+        ${productSaleabilityStoreAnd}
       ) active_ps
       INNER JOIN products p ON p.id = active_ps.product_id
       LEFT JOIN (
-        SELECT sii.product_id, SUM(sii.qty) AS qty
-        FROM stock_in_items sii
-        JOIN stock_in si ON si.id = sii.stock_in_id AND si.status = 'confirmed'
-        ${hasStoreFilter ? `AND si.destination_id = ${selectedStoreId}` : ''}
-        GROUP BY sii.product_id
-      ) sin_agg ON sin_agg.product_id = p.id
-      LEFT JOIN (
-        SELECT soi.product_id, SUM(soi.qty) AS qty
-        FROM stock_out_items soi
-        JOIN stock_out so ON so.id = soi.stock_out_id
-          AND so.status = 'confirmed'
-          AND COALESCE(so.reference_type, '') <> 'sales_bill'
-          ${hasStoreFilter ? `AND so.destination_id = ${selectedStoreId}` : ''}
-        GROUP BY soi.product_id
-      ) sout_agg ON sout_agg.product_id = p.id
-      LEFT JOIN (
-        SELECT sbi.product_id, SUM(sbi.qty) AS qty
-        FROM sales_bill_items sbi
-        JOIN sales_bills sb ON sb.id = sbi.sales_bill_id
-          AND sb.status IN ('paid', 'completed')
-          ${hasStoreFilter ? `AND sb.store_id = ${selectedStoreId}` : ''}
-        GROUP BY sbi.product_id
-      ) sold_agg ON sold_agg.product_id = p.id
+        SELECT ib.product_id, SUM(ib.available_qty) AS qty
+        FROM inventory_batches ib
+        WHERE ib.status = 'active'
+          ${batchStoreAnd}
+        GROUP BY ib.product_id
+      ) batch_agg ON batch_agg.product_id = p.id
     `).catch(() => ({ rows: [{ total_products: 0, total_stock_units: 0, inventory_value_cost: 0, inventory_value_retail: 0 }] }));
 
     // 6. Fast-moving vs Slow-moving Items
@@ -195,7 +178,7 @@ export async function GET(req) {
         AND DATE(sb.created_at) >= '${date_from}'
         AND DATE(sb.created_at) <= '${date_to}'
         AND sb.store_id = ps.store_id
-      ${hasStoreFilter ? `WHERE ps.store_id = ${selectedStoreId}` : ''}
+      ${psStoreWhere}
       GROUP BY p.id, p.name, p.sku
       ORDER BY quantity_sold DESC
       LIMIT 50
@@ -203,113 +186,103 @@ export async function GET(req) {
 
     // 7. Live Stock Alerts
     const stockAlertsRes = await query(`
+      WITH active_products AS (
+        SELECT
+          product_id,
+          COALESCE(NULLIF(MAX(COALESCE(low_stock_value, 0)), 0), 10) AS reorder_level
+        FROM product_saleability
+        WHERE is_active = TRUE
+          ${productSaleabilityStoreAnd}
+        GROUP BY product_id
+      ),
+      stock AS (
+        SELECT
+          ib.product_id,
+          COALESCE(SUM(ib.available_qty), 0) AS available_stock
+        FROM inventory_batches ib
+        WHERE ib.status = 'active'
+          ${batchStoreAnd}
+        GROUP BY ib.product_id
+      ),
+      recent_sales AS (
+        SELECT
+          sbi.product_id,
+          COALESCE(SUM(sbi.qty), 0) AS last_30days_sales
+        FROM sales_bill_items sbi
+        INNER JOIN sales_bills sb ON sbi.sales_bill_id = sb.id
+        WHERE DATE(sb.created_at) >= DATE(CURRENT_DATE - INTERVAL '30 days')
+          AND sb.status != 'cancelled'
+          ${storeFilter}
+        GROUP BY sbi.product_id
+      )
       SELECT 
         p.id,
         p.name,
         p.sku,
-        COALESCE(stock.available_stock, 0) as current_stock,
-        COALESCE(NULLIF(ps.low_stock_value, 0), 10) as reorder_level,
+        COALESCE(stock.available_stock, 0) AS current_stock,
+        active_products.reorder_level,
         CASE 
           WHEN COALESCE(stock.available_stock, 0) <= 0 THEN 'Out of Stock'
-          WHEN COALESCE(stock.available_stock, 0) <= COALESCE(NULLIF(ps.low_stock_value, 0), 10) THEN 'Low Stock'
+          WHEN COALESCE(stock.available_stock, 0) <= active_products.reorder_level THEN 'Low Stock'
           ELSE 'In Stock'
-        END as stock_status,
-        COALESCE(SUM(sbi.qty), 0) as last_30days_sales
-      FROM products p
-      INNER JOIN product_saleability ps ON ps.product_id = p.id AND ps.is_active = TRUE
-      LEFT JOIN LATERAL (
-        SELECT
-          COALESCE(in_qty.qty, 0) - COALESCE(sale_qty.qty, 0) - COALESCE(out_qty.qty, 0) AS available_stock
-        FROM (
-          SELECT SUM(sii.qty) AS qty
-          FROM stock_in_items sii
-          INNER JOIN stock_in si ON si.id = sii.stock_in_id
-          WHERE si.status = 'confirmed'
-            AND si.destination_id = ps.store_id
-            AND sii.product_id = ps.product_id
-        ) in_qty,
-        (
-          SELECT SUM(sbi2.qty) AS qty
-          FROM sales_bill_items sbi2
-          INNER JOIN sales_bills sb2 ON sb2.id = sbi2.sales_bill_id
-          WHERE sb2.status IN ('paid', 'completed')
-            AND sb2.store_id = ps.store_id
-            AND sbi2.product_id = ps.product_id
-        ) sale_qty,
-        (
-          SELECT SUM(soi.qty) AS qty
-          FROM stock_out_items soi
-          INNER JOIN stock_out so ON so.id = soi.stock_out_id
-          WHERE so.status = 'confirmed'
-            AND so.destination_id = ps.store_id
-            AND COALESCE(so.reference_type, '') <> 'sales_bill'
-            AND soi.product_id = ps.product_id
-        ) out_qty
-      ) stock ON TRUE
-      LEFT JOIN sales_bill_items sbi ON p.id = sbi.product_id
-      LEFT JOIN sales_bills sb ON sbi.sales_bill_id = sb.id
-        AND DATE(sb.created_at) >= DATE(CURRENT_DATE - INTERVAL '30 days')
-        AND sb.store_id = ps.store_id
-      ${hasStoreFilter ? `WHERE ps.store_id = ${selectedStoreId}` : ''}
-      GROUP BY p.id, p.name, p.sku, ps.low_stock_value, stock.available_stock
-      HAVING COALESCE(stock.available_stock, 0) <= COALESCE(NULLIF(ps.low_stock_value, 0), 10)
+        END AS stock_status,
+        COALESCE(recent_sales.last_30days_sales, 0) AS last_30days_sales
+      FROM active_products
+      INNER JOIN products p ON p.id = active_products.product_id
+      LEFT JOIN stock ON stock.product_id = p.id
+      LEFT JOIN recent_sales ON recent_sales.product_id = p.id
+      WHERE COALESCE(stock.available_stock, 0) <= active_products.reorder_level
       ORDER BY current_stock ASC
       LIMIT 50
     `).catch(() => ({ rows: [] }));
 
     // 8. Stockout forecast across all active products
     const stockForecastRes = await query(`
+      WITH active_products AS (
+        SELECT
+          product_id,
+          COALESCE(NULLIF(MAX(COALESCE(low_stock_value, 0)), 0), 10) AS reorder_level
+        FROM product_saleability
+        WHERE is_active = TRUE
+          ${productSaleabilityStoreAnd}
+        GROUP BY product_id
+      ),
+      stock AS (
+        SELECT
+          ib.product_id,
+          COALESCE(SUM(ib.available_qty), 0) AS available_stock
+        FROM inventory_batches ib
+        WHERE ib.status = 'active'
+          ${batchStoreAnd}
+        GROUP BY ib.product_id
+      ),
+      recent_sales AS (
+        SELECT
+          sbi.product_id,
+          COALESCE(SUM(sbi.qty), 0) AS last_30days_sales
+        FROM sales_bill_items sbi
+        INNER JOIN sales_bills sb ON sbi.sales_bill_id = sb.id
+        WHERE DATE(sb.created_at) >= DATE(CURRENT_DATE - INTERVAL '30 days')
+          AND sb.status != 'cancelled'
+          ${storeFilter}
+        GROUP BY sbi.product_id
+      )
       SELECT 
         p.id,
         p.name,
         p.sku,
-        COALESCE(stock.available_stock, 0) as current_stock,
-        COALESCE(NULLIF(ps.low_stock_value, 0), 10) as reorder_level,
-        COALESCE(SUM(sbi.qty), 0) as last_30days_sales,
+        COALESCE(stock.available_stock, 0) AS current_stock,
+        active_products.reorder_level,
+        COALESCE(recent_sales.last_30days_sales, 0) AS last_30days_sales,
         CASE
-          WHEN COALESCE(SUM(sbi.qty), 0) > 0
-            THEN ROUND(COALESCE(stock.available_stock, 0)::numeric / NULLIF((SUM(sbi.qty)::numeric / 30), 0), 1)
+          WHEN COALESCE(recent_sales.last_30days_sales, 0) > 0
+            THEN ROUND(COALESCE(stock.available_stock, 0)::numeric / NULLIF((recent_sales.last_30days_sales::numeric / 30), 0), 1)
           ELSE NULL
-        END as days_of_cover
-      FROM products p
-      INNER JOIN product_saleability ps ON ps.product_id = p.id AND ps.is_active = TRUE
-      LEFT JOIN LATERAL (
-        SELECT
-          COALESCE(in_qty.qty, 0) - COALESCE(sale_qty.qty, 0) - COALESCE(out_qty.qty, 0) AS available_stock
-        FROM (
-          SELECT SUM(sii.qty) AS qty
-          FROM stock_in_items sii
-          INNER JOIN stock_in si ON si.id = sii.stock_in_id
-          WHERE si.status = 'confirmed'
-            AND si.destination_id = ps.store_id
-            AND sii.product_id = ps.product_id
-        ) in_qty,
-        (
-          SELECT SUM(sbi2.qty) AS qty
-          FROM sales_bill_items sbi2
-          INNER JOIN sales_bills sb2 ON sb2.id = sbi2.sales_bill_id
-          WHERE sb2.status IN ('paid', 'completed')
-            AND sb2.store_id = ps.store_id
-            AND sbi2.product_id = ps.product_id
-        ) sale_qty,
-        (
-          SELECT SUM(soi.qty) AS qty
-          FROM stock_out_items soi
-          INNER JOIN stock_out so ON so.id = soi.stock_out_id
-          WHERE so.status = 'confirmed'
-            AND so.destination_id = ps.store_id
-            AND COALESCE(so.reference_type, '') <> 'sales_bill'
-            AND soi.product_id = ps.product_id
-        ) out_qty
-      ) stock ON TRUE
-      LEFT JOIN sales_bill_items sbi ON p.id = sbi.product_id
-      LEFT JOIN sales_bills sb ON sbi.sales_bill_id = sb.id
-        AND DATE(sb.created_at) >= DATE(CURRENT_DATE - INTERVAL '30 days')
-        AND sb.status != 'cancelled'
-        AND sb.store_id = ps.store_id
-      WHERE ps.is_active = TRUE
-        ${hasStoreFilter ? `AND ps.store_id = ${selectedStoreId}` : ''}
-      GROUP BY p.id, p.name, p.sku, ps.low_stock_value, stock.available_stock
+        END AS days_of_cover
+      FROM active_products
+      INNER JOIN products p ON p.id = active_products.product_id
+      LEFT JOIN stock ON stock.product_id = p.id
+      LEFT JOIN recent_sales ON recent_sales.product_id = p.id
       ORDER BY days_of_cover ASC NULLS LAST, current_stock ASC, last_30days_sales DESC
       LIMIT 8
     `).catch(() => ({ rows: [] }));
@@ -328,7 +301,7 @@ export async function GET(req) {
         AND DATE(sb.created_at) >= '${date_from}'
         AND DATE(sb.created_at) <= '${date_to}'
         AND sb.status != 'cancelled'
-      ${hasStoreFilter ? `WHERE sb.store_id = ${selectedStoreId}` : ''}
+      ${salesBillStoreWhere}
       GROUP BY c.id, c.first_name, c.last_name, c.mobile_number
       HAVING COUNT(DISTINCT sb.id) > 0
       ORDER BY total_spent DESC
@@ -353,7 +326,7 @@ export async function GET(req) {
         AND DATE(sb.created_at) >= '${date_from}'
         AND DATE(sb.created_at) <= '${date_to}'
         AND sb.status != 'cancelled'
-      ${hasStoreFilter ? `WHERE sb.store_id = ${selectedStoreId}` : ''}
+      ${salesBillStoreWhere}
       GROUP BY e.id, e.first_name, e.last_name
       ORDER BY sales_value DESC, last_bill_at DESC NULLS LAST
       LIMIT 1000
@@ -391,7 +364,7 @@ export async function GET(req) {
         FROM purchase_orders po
         WHERE DATE(COALESCE(po.confirmed_at, po.created_at)) >= '${date_from}'
           AND DATE(COALESCE(po.confirmed_at, po.created_at)) <= '${date_to}'
-          ${hasStoreFilter ? `AND po.destination_id = ${selectedStoreId}` : ''}
+          ${purchaseOrderStoreAnd}
         UNION ALL
         SELECT
           si.vendor_id,
@@ -400,7 +373,7 @@ export async function GET(req) {
         WHERE DATE(COALESCE(si.confirmed_at, si.created_at)) >= '${date_from}'
           AND DATE(COALESCE(si.confirmed_at, si.created_at)) <= '${date_to}'
           AND COALESCE(si.reference_type, '') <> 'purchase_order'
-          ${hasStoreFilter ? `AND si.destination_id = ${selectedStoreId}` : ''}
+          ${stockInStoreAnd}
       ),
       payable AS (
         SELECT
@@ -410,7 +383,7 @@ export async function GET(req) {
         FROM vendor_invoices vi
         LEFT JOIN purchase_orders po ON po.id = vi.purchase_order_id
         WHERE LOWER(COALESCE(vi.status, 'pending')) IN ('pending', 'partial')
-          ${hasStoreFilter ? `AND (po.destination_id = ${selectedStoreId} OR vi.purchase_order_id IS NULL)` : ''}
+          ${payableStoreAnd}
       )
       SELECT
         (SELECT COUNT(*)::int FROM vendors) AS total_vendors,
@@ -430,7 +403,7 @@ export async function GET(req) {
         FROM purchase_orders po
         WHERE DATE(COALESCE(po.confirmed_at, po.created_at)) >= '${date_from}'
           AND DATE(COALESCE(po.confirmed_at, po.created_at)) <= '${date_to}'
-          ${hasStoreFilter ? `AND po.destination_id = ${selectedStoreId}` : ''}
+          ${purchaseOrderStoreAnd}
         UNION ALL
         SELECT
           si.vendor_id,
@@ -440,7 +413,7 @@ export async function GET(req) {
         WHERE DATE(COALESCE(si.confirmed_at, si.created_at)) >= '${date_from}'
           AND DATE(COALESCE(si.confirmed_at, si.created_at)) <= '${date_to}'
           AND COALESCE(si.reference_type, '') <> 'purchase_order'
-          ${hasStoreFilter ? `AND si.destination_id = ${selectedStoreId}` : ''}
+          ${stockInStoreAnd}
       )
       SELECT
         COALESCE(v.id, 0) AS id,

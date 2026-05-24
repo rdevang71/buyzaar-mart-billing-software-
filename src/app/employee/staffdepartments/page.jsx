@@ -439,7 +439,7 @@ export default function EmployeeDepartmentsPage() {
 
               <div className="grid grid-cols-2 gap-x-12 gap-y-8">
                 <div>
-                  <label className="text-[12px] text-gray-700 font-medium">Department Name *</label>
+                  <label className="text-[12px] text-gray-700 font-medium">Department Name <span className="text-red-500">*</span></label>
                   <input
                     value={editingDepartment.departmentName}
                     onChange={(e) => setEditingDepartment({ ...editingDepartment, departmentName: e.target.value })}

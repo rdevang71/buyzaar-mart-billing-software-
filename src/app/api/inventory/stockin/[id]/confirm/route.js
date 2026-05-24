@@ -3,6 +3,7 @@ import { getClient, query } from '@/lib/db';
 import { ensureStockInSchema } from '@/lib/stockInSchema';
 import { ensureInventoryBatchSchema, receiveBatchStock } from '@/lib/inventoryBatching';
 import { ensureStoresSchema } from '@/lib/storesSchema';
+import { requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 function toNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -136,9 +137,15 @@ export async function POST(request, { params }) {
       await ensureStockInSchema();
       await ensureInventoryBatchSchema();
       await ensureStoresSchema();
-      const body = await request.json();
+      const auth = await requireAuth(request);
+      if (auth.error) return auth.error;
+
+      const permissionCheck = requirePermission(auth.user, 'MANAGE_INVENTORY');
+      if (permissionCheck.error) return permissionCheck.error;
+    const body = await request.json();
     const form  = body.form  || {};
     const items = body.items || [];
+    const normalizedInvoiceDate = normalizeDate(form.invoice_date);
 
     if (!items.length) {
       return NextResponse.json({ error: 'Add at least one product' }, { status: 400 });
@@ -163,7 +170,7 @@ export async function POST(request, { params }) {
 
     // ── 2. Fetch destination store (needed for product_saleability upsert) ───
     const stockInRow = await query(
-      `SELECT si.id, si.status, si.destination_id, stores.meta AS destination_meta
+      `SELECT si.id, si.status, si.destination_id, si.reference_type, si.vendor_id, si.vendor_name, stores.meta AS destination_meta
        FROM stock_in si
        LEFT JOIN stores ON stores.id = si.destination_id
        WHERE si.id = $1`,
@@ -176,6 +183,8 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: 'Already confirmed' }, { status: 409 });
     }
     const destinationId = stockInRow.rows[0].destination_id;
+    const storeCheck = requireStore(auth.user, destinationId);
+    if (storeCheck.error) return storeCheck.error;
 
     // ── 3. Compute totals ─────────────────────────────────────────────────────
     const destinationMeta = typeof stockInRow.rows[0].destination_meta === 'object'
@@ -184,6 +193,12 @@ export async function POST(request, { params }) {
     const destinationLocationType = String(destinationMeta.locationType || 'Warehouse').toLowerCase();
     const isStoreDestination = destinationLocationType === 'store';
     const isWarehouseDestination = destinationLocationType === 'warehouse';
+    const isVendorToStoreReceipt = isStoreDestination && (
+      stockInRow.rows[0].reference_type === 'purchase_order' ||
+      stockInRow.rows[0].vendor_id ||
+      stockInRow.rows[0].vendor_name ||
+      form.vendor
+    );
 
     if (isWarehouseDestination) {
       for (const item of items) {
@@ -210,7 +225,7 @@ export async function POST(request, { params }) {
       }
     }
 
-    if (isStoreDestination) {
+    if (isStoreDestination && !isVendorToStoreReceipt) {
       const requestedByProduct = items.reduce((acc, item) => {
         const pid = Number(item.product_id);
         const qty = Number(item.qty || 0);
@@ -279,7 +294,7 @@ export async function POST(request, { params }) {
         const costPrice    = Number(item.cost_price || 0);
         const taxValue     = Number(item.tax_value  || 0);
 
-        if (isStoreDestination) {
+        if (isStoreDestination && !isVendorToStoreReceipt) {
           const allocations = await allocateWarehouseBatchStock(client, {
             productId: pid,
             qty,
@@ -342,8 +357,8 @@ export async function POST(request, { params }) {
                 costPrice,
                 taxValue,
                 batch.batchNo || null,
-                batch.mfgDate || null,
-                batch.expiryDate || null,
+                normalizeDate(batch.mfgDate) || null,
+                normalizeDate(batch.expiryDate) || null,
               ]
             );
 
@@ -355,8 +370,8 @@ export async function POST(request, { params }) {
               qty: batch.qty,
               costPrice,
               batchNo: batch.batchNo,
-              mfgDate: batch.mfgDate,
-              expiryDate: batch.expiryDate,
+              mfgDate: normalizeDate(batch.mfgDate) || null,
+              expiryDate: normalizeDate(batch.expiryDate) || null,
               meta: { productName, invoiceNumber: form.invoice_number || null },
             });
           }
@@ -407,7 +422,7 @@ export async function POST(request, { params }) {
          WHERE id = $10`,
         [
           form.vendor        || null,
-          form.invoice_date  || null,
+          normalizedInvoiceDate || null,
           form.invoice_number|| null,
           Number(form.other_charges || 0),
           form.remarks       || null,

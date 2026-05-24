@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import MainLayout from '@/components/MainLayout';
 
@@ -96,6 +96,7 @@ const SECTIONS = [
     label: 'SALES', count: 19, iconKey: 'trend',
     items: [
       { label: 'Daily Sales',                 href: '/reports/sales/daily-sales' },
+      { label: 'Monthly Sales',               href: '/reports/sales/monthly-sales' },
       { label: 'Location Wise Sales',         href: '/reports/sales/location-wise-sales' },
       { label: 'Region Wise Sales',           href: '/reports/sales/region-wise-sales' },
       { label: 'Store Wise Sales',            href: '/reports/sales/store-wise-sales' },
@@ -218,6 +219,18 @@ function ReportCard({ item, iconKey }) {
 export default function ReportsHomePage() {
   const [search, setSearch] = useState('');
   const [dashboard, setDashboard] = useState(null);
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [scheduledReports, setScheduledReports] = useState([]);
+  const [scheduleDraft, setScheduleDraft] = useState({
+    reportHref: '/reports/sales/daily-sales',
+    frequency: 'daily',
+    format: 'xlsx',
+    email: '',
+  });
+  const allItems = useMemo(
+    () => SECTIONS.flatMap((s) => s.items.map((i) => ({ ...i, iconKey: s.iconKey }))),
+    []
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -238,7 +251,15 @@ export default function ReportsHomePage() {
     };
   }, []);
 
-  const allItems = SECTIONS.flatMap((s) => s.items.map((i) => ({ ...i, iconKey: s.iconKey })));
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('scheduledReports') || '[]');
+      if (Array.isArray(saved)) setScheduledReports(saved);
+    } catch {
+      setScheduledReports([]);
+    }
+  }, []);
+
   const filtered = search.trim()
     ? allItems.filter((i) => i.label.toLowerCase().includes(search.toLowerCase()))
     : null;
@@ -266,6 +287,39 @@ export default function ReportsHomePage() {
     window.location.href = '/api/reports/sales/daily-sales?export=xlsx';
   };
 
+  const getReportExportUrl = (href) => {
+    const reportKey = String(href || '').replace(/^\/reports\/?/, '');
+    if (!reportKey) return '';
+    return `/api/reports/${reportKey}?export=xlsx`;
+  };
+
+  const handleGenerateScheduledReport = () => {
+    const url = getReportExportUrl(scheduleDraft.reportHref);
+    if (url) window.location.href = url;
+  };
+
+  const handleSaveSchedule = () => {
+    const report = allItems.find((item) => item.href === scheduleDraft.reportHref);
+    if (!report) return;
+
+    const next = [
+      {
+        id: `${Date.now()}`,
+        reportHref: scheduleDraft.reportHref,
+        reportLabel: report.label,
+        frequency: scheduleDraft.frequency,
+        format: scheduleDraft.format,
+        email: scheduleDraft.email.trim(),
+        createdAt: new Date().toISOString(),
+      },
+      ...scheduledReports,
+    ].slice(0, 10);
+
+    setScheduledReports(next);
+    localStorage.setItem('scheduledReports', JSON.stringify(next));
+    setShowSchedule(false);
+  };
+
   return (
     <MainLayout>
       {/* Header */}
@@ -278,7 +332,11 @@ export default function ReportsHomePage() {
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0 ml-4">
-          <button className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 rounded-lg bg-white text-xs text-gray-700 hover:bg-gray-50 transition">
+          <button
+            type="button"
+            onClick={() => setShowSchedule(true)}
+            className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 rounded-lg bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 transition"
+          >
             <i className="ti ti-calendar-down text-[14px]" />
             Schedule reports
           </button>
@@ -381,6 +439,115 @@ export default function ReportsHomePage() {
             );
           })}
 
+        </div>
+      )}
+
+      {showSchedule && (
+        <div className="fixed inset-0 z-[80] flex items-start justify-center bg-black/40 p-4 sm:p-6">
+          <div className="mt-10 w-full max-w-2xl rounded-xl border border-gray-200 bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+              <div>
+                <h2 className="text-base font-semibold text-gray-900">Schedule reports</h2>
+                <p className="mt-0.5 text-xs text-gray-500">Save a repeat schedule or generate the selected report now.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSchedule(false)}
+                className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"
+                aria-label="Close schedule reports"
+              >
+                <i className="ti ti-x text-[18px]" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
+              <label className="block sm:col-span-2">
+                <span className="mb-1 block text-xs font-medium text-gray-700">Report</span>
+                <select
+                  value={scheduleDraft.reportHref}
+                  onChange={(event) => setScheduleDraft({ ...scheduleDraft, reportHref: event.target.value })}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500"
+                >
+                  {allItems.map((item) => (
+                    <option key={item.href} value={item.href}>{item.label}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-gray-700">Frequency</span>
+                <select
+                  value={scheduleDraft.frequency}
+                  onChange={(event) => setScheduleDraft({ ...scheduleDraft, frequency: event.target.value })}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500"
+                >
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-gray-700">Format</span>
+                <select
+                  value={scheduleDraft.format}
+                  onChange={(event) => setScheduleDraft({ ...scheduleDraft, format: event.target.value })}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500"
+                >
+                  <option value="xlsx">Excel (.xlsx)</option>
+                </select>
+              </label>
+
+              <label className="block sm:col-span-2">
+                <span className="mb-1 block text-xs font-medium text-gray-700">Email recipients</span>
+                <input
+                  value={scheduleDraft.email}
+                  onChange={(event) => setScheduleDraft({ ...scheduleDraft, email: event.target.value })}
+                  placeholder="name@example.com, finance@example.com"
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 outline-none focus:border-blue-500"
+                />
+              </label>
+
+              {scheduledReports.length > 0 && (
+                <div className="sm:col-span-2 rounded-lg border border-gray-100 bg-gray-50 p-3">
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Saved schedules</div>
+                  <div className="space-y-1.5">
+                    {scheduledReports.slice(0, 3).map((item) => (
+                      <div key={item.id} className="flex items-center justify-between gap-3 text-xs text-gray-700">
+                        <span className="truncate">{item.reportLabel}</span>
+                        <span className="shrink-0 capitalize text-gray-500">{item.frequency}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-2 border-t border-gray-100 px-5 py-4">
+              <button
+                type="button"
+                onClick={handleGenerateScheduledReport}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-white px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50"
+              >
+                <i className="ti ti-download text-[16px]" />
+                Generate now
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowSchedule(false)}
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveSchedule}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+              >
+                Save schedule
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </MainLayout>

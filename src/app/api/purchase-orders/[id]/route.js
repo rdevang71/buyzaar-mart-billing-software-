@@ -4,12 +4,20 @@ import { ensureStockInSchema } from '@/lib/stockInSchema';
 import { ensureVendorsSchema } from '@/lib/vendorsSchema';
 import { ensurePurchaseOrderSchema } from '@/lib/purchaseOrderSchema';
 
+function normalizePurchaseOrderLookup(value) {
+  const raw = decodeURIComponent(String(value || '')).replace(/^#/, '').trim();
+  const numericId = /^\d+$/.test(raw) ? Number(raw) : null;
+  const transactionId = raw.toUpperCase();
+  return { numericId, transactionId };
+}
+
 export async function GET(request, { params }) {
-  const { id } = params;
+  const { id } = await params;
   try {
     await ensureStockInSchema();
     await ensureVendorsSchema();
     await ensurePurchaseOrderSchema();
+    const { numericId, transactionId } = normalizePurchaseOrderLookup(id);
 
     const res = await query(
       `SELECT po.id, po.transaction_id, po.destination_id, po.vendor_id, po.invoice_date, po.expected_delivery_date,
@@ -20,8 +28,9 @@ export async function GET(request, { params }) {
        FROM purchase_orders po
        LEFT JOIN stores st ON st.id = po.destination_id
        LEFT JOIN vendors v ON v.id = po.vendor_id
-       WHERE po.id = $1`,
-      [id]
+       WHERE po.id = COALESCE($1::int, -1)
+          OR UPPER(po.transaction_id) = $2`,
+      [numericId, transactionId]
     );
 
     if (res.rows.length === 0) {
@@ -30,6 +39,16 @@ export async function GET(request, { params }) {
 
     const row = res.rows[0];
     const meta = typeof row.meta === 'object' && row.meta ? row.meta : {};
+    const itemsRes = await query(
+      `SELECT poi.id, poi.product_id, COALESCE(poi.product_name, p.name) AS product_name,
+              p.sku, poi.qty, poi.cost_price, poi.tax_value
+       FROM purchase_order_items poi
+       LEFT JOIN products p ON p.id = poi.product_id
+       WHERE poi.purchase_order_id = $1
+       ORDER BY poi.id`,
+      [row.id]
+    );
+
     return NextResponse.json({
       id: row.id,
       transactionId: row.transaction_id || `PO-${String(row.id).padStart(4, '0')}`,
@@ -46,6 +65,15 @@ export async function GET(request, { params }) {
       totalItems: Number(row.total_items || 0),
       totalCost: Number(row.total_cost || 0),
       totalTax: Number(row.total_tax || 0),
+      items: itemsRes.rows.map((item) => ({
+        id: item.id,
+        product_id: item.product_id,
+        name: item.product_name,
+        sku: item.sku,
+        qty: Number(item.qty || 0),
+        cost_price: Number(item.cost_price || 0),
+        tax_value: Number(item.tax_value || 0),
+      })),
     });
   } catch (err) {
     console.error('[purchase-orders GET id]', err.message);

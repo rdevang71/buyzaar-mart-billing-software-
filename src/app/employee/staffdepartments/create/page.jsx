@@ -175,7 +175,7 @@ export default function CreateEmployeeDepartmentPage() {
 
           <div className="grid grid-cols-2 gap-x-12 gap-y-8">
             <div>
-              <label className="text-[12px] text-gray-700 font-medium">Department Name *</label>
+              <label className="text-[12px] text-gray-700 font-medium">Department Name <span className="text-red-500">*</span></label>
               <input
                 value={form.departmentName}
                 onChange={(e) => setForm({ ...form, departmentName: e.target.value })}

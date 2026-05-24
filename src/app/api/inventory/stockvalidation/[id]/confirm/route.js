@@ -1,11 +1,20 @@
 import { NextResponse } from 'next/server';
 import { getClient } from '@/lib/db';
 import { ensureStockValidationSchema } from '@/lib/stockValidationSchema';
+import { allocateBatchStock, ensureInventoryBatchSchema, receiveBatchStock } from '@/lib/inventoryBatching';
+import { requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 export async function POST(request, { params }) {
   const { id } = await params;
   try {
     await ensureStockValidationSchema();
+    await ensureInventoryBatchSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_INVENTORY');
+    if (permissionCheck.error) return permissionCheck.error;
+
     const body = await request.json();
     const form = body.form || {};
     const items = body.items || [];
@@ -33,7 +42,7 @@ export async function POST(request, { params }) {
     const client = await getClient();
     try {
       await client.query('BEGIN');
-      const draft = await client.query('SELECT id, status FROM stock_validation WHERE id = $1', [id]);
+      const draft = await client.query('SELECT id, status, destination_id FROM stock_validation WHERE id = $1', [id]);
       if (draft.rows.length === 0) {
         await client.query('ROLLBACK');
         return NextResponse.json({ error: 'Stock validation not found' }, { status: 404 });
@@ -42,15 +51,69 @@ export async function POST(request, { params }) {
         await client.query('ROLLBACK');
         return NextResponse.json({ error: 'Already confirmed' }, { status: 409 });
       }
+      const storeCheck = requireStore(auth.user, draft.rows[0].destination_id);
+      if (storeCheck.error) {
+        await client.query('ROLLBACK');
+        return storeCheck.error;
+      }
 
       await client.query('DELETE FROM stock_validation_items WHERE stock_validation_id = $1', [id]);
       for (const item of items) {
+        const productId = Number(item.product_id);
+        const countedQty = Number(item.qty || 0);
+        const productName = item.name || item.product_name || `Product ${productId}`;
         await client.query(
           `INSERT INTO stock_validation_items (
             stock_validation_id, product_id, product_name, qty, cost_price, tax_value, created_at
           ) VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-          [id, item.product_id, item.name || null, item.qty, item.cost_price || 0, item.tax_value || 0]
+          [id, productId, productName, countedQty, item.cost_price || 0, item.tax_value || 0]
         );
+
+        const stockRes = await client.query(
+          `SELECT COALESCE(SUM(available_qty), 0) AS qty
+           FROM inventory_batches
+           WHERE product_id = $1
+             AND store_id = $2
+             AND status = 'active'`,
+          [productId, draft.rows[0].destination_id]
+        );
+        const currentQty = Number(stockRes.rows[0]?.qty || 0);
+        const variance = Math.round((countedQty - currentQty) * 1000) / 1000;
+
+        if (variance > 0) {
+          await receiveBatchStock(client, {
+            stockInId: id,
+            productId,
+            storeId: draft.rows[0].destination_id,
+            qty: variance,
+            costPrice: Number(item.cost_price || 0),
+            batchNo: `AUD-${id}-${productId}`,
+            meta: {
+              source: 'stock_validation',
+              validationId: id,
+              productName,
+              countedQty,
+              previousQty: currentQty,
+              variance,
+            },
+          });
+        } else if (variance < 0) {
+          await allocateBatchStock(client, {
+            productId,
+            storeId: draft.rows[0].destination_id,
+            qty: Math.abs(variance),
+            referenceType: 'stock_validation',
+            referenceId: id,
+            meta: {
+              source: 'stock_validation',
+              validationId: id,
+              productName,
+              countedQty,
+              previousQty: currentQty,
+              variance,
+            },
+          });
+        }
       }
 
       await client.query(

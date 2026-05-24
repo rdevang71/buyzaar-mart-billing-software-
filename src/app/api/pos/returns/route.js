@@ -10,7 +10,7 @@ function toNumber(value, fallback = 0) {
 }
 
 function isSuperAdmin(user) {
-  return user?.role === 'super_admin' || (Array.isArray(user?.permissions) && user.permissions.includes('*'));
+  return user?.role === 'super_admin';
 }
 
 function isStoreAdmin(user, storeId) {

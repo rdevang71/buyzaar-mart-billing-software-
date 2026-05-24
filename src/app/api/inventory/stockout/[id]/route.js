@@ -1,11 +1,18 @@
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { ensureStockOutSchema } from '@/lib/stockOutSchema';
+import { requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 export async function GET(request, { params }) {
   const { id } = await params;
   try {
     await ensureStockOutSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+
+    const permissionCheck = requirePermission(auth.user, 'VIEW_INVENTORY', 'MANAGE_INVENTORY');
+    if (permissionCheck.error) return permissionCheck.error;
+
     const res = await query(
       `SELECT s.id, s.method, s.destination_id, s.meta, s.status, s.created_at,
               s.purchase_order_id, s.vendor_name, s.invoice_number, s.invoice_date,
@@ -20,6 +27,9 @@ export async function GET(request, { params }) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
     const row = res.rows[0];
+    const storeCheck = requireStore(auth.user, row.destination_id);
+    if (storeCheck.error) return storeCheck.error;
+
     const meta = typeof row.meta === 'object' ? row.meta : {};
     return NextResponse.json({
       id: row.id,

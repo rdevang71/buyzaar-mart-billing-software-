@@ -1,10 +1,22 @@
 import { NextResponse } from 'next/server';
 import { getClient, query } from '@/lib/db';
 import { ensureStockValidationSchema } from '@/lib/stockValidationSchema';
+import { appendStoreScope, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
-export async function GET() {
+export async function GET(request) {
   try {
     await ensureStockValidationSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+
+    const permissionCheck = requirePermission(auth.user, 'VIEW_INVENTORY', 'MANAGE_INVENTORY');
+    if (permissionCheck.error) return permissionCheck.error;
+
+    const params = [];
+    const whereClauses = [`sv.status = 'confirmed'`];
+    const scope = appendStoreScope(whereClauses, params, 'sv.destination_id', auth.user);
+    if (scope.error) return scope.error;
+
     const res = await query(
       `SELECT
         sv.id,
@@ -22,10 +34,11 @@ export async function GET() {
       FROM stock_validation sv
       LEFT JOIN stores ON stores.id = sv.destination_id
       LEFT JOIN stock_validation_items svi ON svi.stock_validation_id = sv.id
-      WHERE sv.status = 'confirmed'
+      WHERE ${whereClauses.join(' AND ')}
       GROUP BY sv.id, stores.name
       ORDER BY sv.confirmed_at DESC NULLS LAST, sv.created_at DESC
-      LIMIT 200`
+      LIMIT 200`,
+      params
     );
 
     return NextResponse.json(
@@ -50,12 +63,26 @@ export async function GET() {
 export async function POST(request) {
   try {
     await ensureStockValidationSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_INVENTORY');
+    if (permissionCheck.error) return permissionCheck.error;
+
     const payload = await request.json();
+    const destinationId = payload.destination && payload.destination !== 'none' ? Number(payload.destination) : null;
+    if (!destinationId && auth.user.role !== 'super_admin') {
+      return NextResponse.json({ error: 'Store destination is required for your account' }, { status: 403 });
+    }
+    if (destinationId) {
+      const storeCheck = requireStore(auth.user, destinationId);
+      if (storeCheck.error) return storeCheck.error;
+    }
+
     const client = await getClient();
 
     try {
       await client.query('BEGIN');
-      const destinationId = payload.destination && payload.destination !== 'none' ? Number(payload.destination) : null;
       const res = await client.query(
         `INSERT INTO stock_validation (
           destination_id, apply_taxes, meta, status, created_at

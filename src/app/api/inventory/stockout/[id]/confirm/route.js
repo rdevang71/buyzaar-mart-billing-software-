@@ -2,12 +2,19 @@ import { NextResponse } from 'next/server';
 import { getClient } from '@/lib/db';
 import { ensureStockOutSchema } from '@/lib/stockOutSchema';
 import { allocateBatchStock, ensureInventoryBatchSchema, getInventoryIssueStrategy } from '@/lib/inventoryBatching';
+import { requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 export async function POST(request, { params }) {
   const { id } = await params;
     try {
       await ensureStockOutSchema();
       await ensureInventoryBatchSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_INVENTORY');
+    if (permissionCheck.error) return permissionCheck.error;
+
     const body = await request.json();
     const form = body.form || {};
     const items = body.items || [];
@@ -44,6 +51,11 @@ export async function POST(request, { params }) {
       if (draft.rows[0].status === 'confirmed') {
         await client.query('ROLLBACK');
         return NextResponse.json({ error: 'Already confirmed' }, { status: 409 });
+      }
+      const storeCheck = requireStore(auth.user, draft.rows[0].destination_id);
+      if (storeCheck.error) {
+        await client.query('ROLLBACK');
+        return storeCheck.error;
       }
 
       await client.query('DELETE FROM stock_out_items WHERE stock_out_id = $1', [id]);

@@ -17,6 +17,13 @@ async function fetchStores() {
   return [];
 }
 
+async function fetchPurchaseOrders() {
+  const res = await fetch('/api/purchase-orders', { credentials: 'include' });
+  if (!res.ok) throw new Error('Failed to fetch purchase orders');
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
+}
+
 async function postGrn(payload) {
   const res = await fetch('/api/purchase/grns', {
     method: 'POST',
@@ -27,8 +34,23 @@ async function postGrn(payload) {
   return res.json();
 }
 
+function normalizeDate(value) {
+  if (!value) return '';
+  if (typeof value === 'string') {
+    const match = value.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (match) return match[1];
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export default function CreateGrnPage() {
   const [stores, setStores] = useState([]);
+  const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [loadingStores, setLoadingStores] = useState(false);
   const [poId, setPoId] = useState('');
   const [destination, setDestination] = useState('');
@@ -40,11 +62,23 @@ export default function CreateGrnPage() {
 
   useEffect(() => {
     setLoadingStores(true);
-    fetchStores()
-      .then((data) => setStores(data || []))
+    Promise.all([fetchStores(), fetchPurchaseOrders()])
+      .then(([storeData, poData]) => {
+        setStores(storeData || []);
+        setPurchaseOrders(poData || []);
+      })
       .catch(() => setStores([]))
       .finally(() => setLoadingStores(false));
   }, []);
+
+  const selectedPo = purchaseOrders.find((po) => String(po.id) === String(poId) || String(po.transactionId) === String(poId));
+  useEffect(() => {
+    if (!selectedPo) return;
+    setDestination(selectedPo.destinationId ? String(selectedPo.destinationId) : '');
+    setVendorName(selectedPo.vendorName || '');
+    setInvoiceNumber(selectedPo.invoiceNumber === '—' ? '' : selectedPo.invoiceNumber || '');
+    setInvoiceDate(normalizeDate(selectedPo.invoiceDate));
+  }, [selectedPo]);
 
   const handleSubmit = async () => {
     if (!poId) return alert('Please enter Purchase Order ID');
@@ -77,15 +111,22 @@ export default function CreateGrnPage() {
 
       <div className="max-w-3xl mx-auto">
         <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-          <h1 className="text-2xl font-semibold mb-4">Create Purchase GRN</h1>
+          <h1 className="text-2xl font-semibold text-gray-900 mb-4">Create Purchase GRN</h1>
 
           <div className="mb-4">
-            <label className="block text-sm text-gray-700 font-medium mb-1">Purchase Order ID</label>
-              <input
+            <label className="block text-sm text-gray-700 font-medium mb-1">Purchase Order ID <span className="text-red-500">*</span></label>
+              <select
                 value={poId}
                 onChange={(e) => setPoId(e.target.value)}
                 className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-[13px] text-gray-800 bg-white placeholder:text-gray-400 focus:outline-none focus:border-blue-500"
-              />
+              >
+                <option value="">Select Purchase Order</option>
+                {purchaseOrders.map((po) => (
+                  <option key={po.id} value={po.id}>
+                    {po.transactionId} - {po.destinationName || 'Destination'} - {po.vendorName || 'Vendor'}
+                  </option>
+                ))}
+              </select>
           </div>
 
           <div className="mb-4">
@@ -130,7 +171,7 @@ export default function CreateGrnPage() {
           </div>
 
           <div className="flex gap-3">
-            <button className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 text-[13px]" onClick={() => router.back()}>Back</button>
+            <button className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 bg-white text-[13px] font-medium text-gray-700 hover:bg-gray-50" onClick={() => router.back()}>Back</button>
             <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-[13px] font-medium text-white hover:bg-blue-700" onClick={handleSubmit} disabled={submitting}>{submitting ? '...' : 'Create GRN'}</button>
           </div>
         </div>

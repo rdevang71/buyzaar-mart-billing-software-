@@ -1,8 +1,8 @@
 import { getClient } from '@/lib/db';
 import { successResponse, errorResponse } from '@/lib/api-response';
-import { verifyToken } from '@/lib/auth-enhanced';
 import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
 import { allocateBatchStock, ensureInventoryBatchSchema, getInventoryIssueStrategy } from '@/lib/inventoryBatching';
+import { requireAuth, requireStore } from '@/lib/api-protection';
 
 function toNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -22,10 +22,9 @@ export async function POST(req) {
       return errorResponse('No offline bills to sync', 400);
     }
 
-    const token = req.headers.get('authorization')?.replace('Bearer ', '');
-    if (!token) return errorResponse('Unauthorized', 401);
-    const user = verifyToken(token);
-    if (!user) return errorResponse('Invalid token', 401);
+    const auth = await requireAuth(req);
+    if (auth.error) return auth.error;
+    const user = auth.user;
 
     let syncedCount = 0;
     const errors = [];
@@ -33,6 +32,13 @@ export async function POST(req) {
     for (const bill of offline_bills) {
       let client;
       try {
+        const billStoreId = Number(bill.store_id || bill.storeId);
+        const storeCheck = requireStore(user, billStoreId);
+        if (storeCheck.error) {
+          errors.push({ bill: bill.invoice_number || bill.bill_number || bill.sync_id, error: `No access to store ${billStoreId || '-'}` });
+          continue;
+        }
+
         client = await getClient();
         await client.query('BEGIN');
 
@@ -46,7 +52,22 @@ export async function POST(req) {
         const discountTotal = toNumber(bill.discount_amount ?? bill.discountTotal);
         const roundOff = toNumber(bill.round_off ?? bill.roundOff);
         const grandTotal = toNumber(bill.total_amount ?? bill.grandTotal, Math.max(0, subtotal - discountTotal + taxTotal + roundOff));
-        const paidAmount = toNumber(bill.paid_amount ?? bill.paidAmount, grandTotal);
+        const normalizedPayments = (Array.isArray(bill.payments) && bill.payments.length
+          ? bill.payments
+          : [{ method: bill.payment_mode || bill.paymentMode || 'cash', amount: grandTotal, referenceNo: bill.reference_no || bill.referenceNo || '' }]
+        )
+          .map((payment) => ({
+            method: String(payment.method || bill.payment_mode || bill.paymentMode || 'cash').trim().toLowerCase(),
+            amount: toNumber(payment.amount),
+            referenceNo: String(payment.referenceNo || payment.reference_no || '').trim(),
+          }))
+          .filter((payment) => payment.amount > 0);
+        const paidAmount = normalizedPayments.reduce((sum, payment) => sum + payment.amount, 0);
+        if (!normalizedPayments.length) throw new Error('Add at least one payment');
+        if (Math.abs(paidAmount - grandTotal) > 0.01) {
+          throw new Error(`Payment total must match bill total. Paid ${paidAmount}, bill ${grandTotal}`);
+        }
+        const finalPaymentMode = normalizedPayments.length > 1 ? 'split' : normalizedPayments[0].method;
 
         const billRes = await client.query(`
           INSERT INTO sales_bills (
@@ -65,7 +86,7 @@ export async function POST(req) {
         `, [
           bill.sync_id || bill.syncId || null,
           billNumber,
-          Number(bill.store_id || bill.storeId),
+          billStoreId,
           bill.customer_name || bill.customerName || 'Walk-in Customer',
           bill.customer_mobile || bill.customerMobile || '',
           subtotal,
@@ -75,11 +96,11 @@ export async function POST(req) {
           grandTotal,
           paidAmount,
           Math.max(0, grandTotal - paidAmount),
-          bill.payment_mode || bill.paymentMode || 'cash',
+          finalPaymentMode,
           bill.notes || bill.remarks || '',
           bill.user_id || bill.created_by || user.id,
           bill.device_id || bill.deviceId || null,
-          JSON.stringify({ source: 'legacy-pos-offline-sync', customer_id: bill.customer_id || null }),
+          JSON.stringify({ source: 'legacy-pos-offline-sync', customer_id: bill.customer_id || null, payments: normalizedPayments }),
           bill.created_at || bill.createdAt || null,
         ]);
 
@@ -103,7 +124,7 @@ export async function POST(req) {
            ) RETURNING id`,
           [
             `POS-STKO-${bill_id}`,
-            Number(bill.store_id || bill.storeId),
+            billStoreId,
             billNumber,
             items.reduce((sum, item) => sum + toNumber(item.qty), 0),
             taxTotal,
@@ -139,7 +160,7 @@ export async function POST(req) {
 
           const allocations = await allocateBatchStock(client, {
             productId,
-            storeId: Number(bill.store_id || bill.storeId),
+            storeId: billStoreId,
             qty,
             strategy: issueStrategy,
             referenceType: 'sales_bill',
@@ -189,11 +210,13 @@ export async function POST(req) {
           }
         }
 
-        await client.query(
-          `INSERT INTO sales_bill_payments (sales_bill_id, method, amount, reference_no, meta, created_at)
-           VALUES ($1, $2, $3, $4, '{}'::jsonb, NOW())`,
-          [bill_id, bill.payment_mode || bill.paymentMode || 'cash', paidAmount, bill.reference_no || bill.referenceNo || '']
-        );
+        for (const payment of normalizedPayments) {
+          await client.query(
+            `INSERT INTO sales_bill_payments (sales_bill_id, method, amount, reference_no, meta, created_at)
+             VALUES ($1, $2, $3, $4, '{}'::jsonb, NOW())`,
+            [bill_id, payment.method || finalPaymentMode, payment.amount, payment.referenceNo || '']
+          );
+        }
 
         await client.query('COMMIT');
 

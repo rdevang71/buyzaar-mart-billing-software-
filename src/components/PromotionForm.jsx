@@ -127,13 +127,13 @@ export default function PromotionForm({ onClose, initial = null, onSaved = null 
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs text-gray-600 mb-1">Promotion Name *</label>
+            <label className="block text-xs text-gray-600 mb-1">Promotion Name <span className="text-red-500">*</span></label>
             <input value={name} onChange={e => setName(e.target.value)}
               className="w-full border border-gray-200 rounded px-3 py-2 text-sm" />
           </div>
 
           <div>
-            <label className="block text-xs text-gray-600 mb-1">Date Range *</label>
+            <label className="block text-xs text-gray-600 mb-1">Date Range <span className="text-red-500">*</span></label>
             <div className="flex gap-2">
               <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
                 className="border border-gray-200 rounded px-3 py-2 text-sm w-1/2" />

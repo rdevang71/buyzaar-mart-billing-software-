@@ -17,23 +17,17 @@
  */
 
 import { NextResponse }       from 'next/server';
-import { cookies }            from 'next/headers';
-import { verifyToken }        from '@/lib/auth-enhanced';
 import { query }              from '@/lib/db';
 import { sendBillOnWhatsApp } from '@/lib/whatsappService';
 import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
 import { allocateBatchStock, ensureInventoryBatchSchema, getInventoryIssueStrategy } from '@/lib/inventoryBatching';
+import { requireAuth, requireStore } from '@/lib/api-protection';
 
 export async function POST(request) {
   // ── Auth ────────────────────────────────────────────────────────────────
-  const cookieStore = await cookies();
-  const token = cookieStore.get('access_token')?.value ||
-                cookieStore.get('auth_token')?.value;
-
-  if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-  const payload = verifyToken(token);
-  if (!payload?.sub) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const auth = await requireAuth(request);
+  if (auth.error) return auth.error;
+  const user = auth.user;
   await ensureSalesBillingSchema();
   await ensureInventoryBatchSchema();
 
@@ -55,9 +49,16 @@ export async function POST(request) {
 
   for (const bill of bills) {
     const syncId = bill.syncId;
+    const billStoreId = Number(bill.storeId || bill.store_id || 0) || null;
 
     if (!syncId) {
       failed.push({ syncId: null, error: 'Missing syncId' });
+      continue;
+    }
+
+    const storeCheck = requireStore(user, billStoreId);
+    if (storeCheck.error) {
+      failed.push({ syncId, error: `No access to store ${billStoreId || '-'}` });
       continue;
     }
 
@@ -107,8 +108,8 @@ export async function POST(request) {
           syncId,
           bill.billNumber    || `OFL-${syncId.slice(0, 8).toUpperCase()}`,
           bill.sessionId     || null,
-          payload.sub,
-          bill.storeId       || null,
+          user.id,
+          billStoreId,
           bill.counterId     || null,
           bill.customerName  || 'Walk-in Customer',
           bill.customerMobile || null,
@@ -179,7 +180,7 @@ export async function POST(request) {
              status,         total_items, confirmed_at, created_at
            ) VALUES ($1, 'sale', $2, 'sales_bill', $3, 'confirmed', $4, $5, $5)
            RETURNING id`,
-          [stockOutTxId, bill.storeId || null, billNumber, totalQty, billCreatedAt]
+          [stockOutTxId, billStoreId, billNumber, totalQty, billCreatedAt]
         );
 
         const stockOutId = soResult.rows[0].id;
@@ -188,7 +189,7 @@ export async function POST(request) {
         for (const item of items) {
           const allocations = await allocateBatchStock({ query }, {
             productId: item.productId,
-            storeId: bill.storeId,
+            storeId: billStoreId,
             qty: item.qty,
             strategy: issueStrategy,
             referenceType: 'offline_sales_bill',
@@ -245,7 +246,7 @@ export async function POST(request) {
                  JOIN sales_bills b ON b.id = bi.sales_bill_id
                  WHERE bi.product_id = base.pid AND b.store_id = $2
                ) sb ON TRUE`,
-              [item.productId, bill.storeId || null]
+              [item.productId, billStoreId]
             );
 
             const row = stockCheck.rows[0];
@@ -283,7 +284,7 @@ export async function POST(request) {
         [
           syncId,
           bill.deviceId       || null,
-          payload.sub,
+          user.id,
           JSON.stringify(bill),
           billCreatedAt,
         ]
@@ -291,7 +292,7 @@ export async function POST(request) {
 
       // ── WhatsApp receipt for offline-synced bills ───────────────────────
       if (bill.customerMobile) {
-        query('SELECT name FROM stores WHERE id = $1', [bill.storeId || null])
+        query('SELECT name FROM stores WHERE id = $1', [billStoreId])
           .then(async ({ rows }) => {
             const storeName = rows[0]?.name || 'Our Store';
             // Fetch the public_token that was just inserted

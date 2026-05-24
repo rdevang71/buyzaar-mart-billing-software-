@@ -16,12 +16,12 @@ function money(value) {
   });
 }
 
-function addStoreScope(user, params) {
+function addStoreScope(user, params, alias = 'sb') {
   if (user.role === 'super_admin') return '';
   const assignedStores = (user.assigned_stores || []).map(Number).filter(Number.isFinite);
   if (!assignedStores.length) return ' AND 1 = 0';
   params.push(assignedStores);
-  return ` AND sb.store_id = ANY($${params.length}::int[])`;
+  return ` AND ${alias}.store_id = ANY($${params.length}::int[])`;
 }
 
 export async function GET(request) {
@@ -46,6 +46,7 @@ export async function GET(request) {
 
     const statsParams = [];
     const statsStoreScope = addStoreScope(auth.user, statsParams);
+    const registeredStatsStoreScope = addStoreScope(auth.user, statsParams, 'c');
     const statsResult = await query(
       `WITH registered_customers AS (
          SELECT
@@ -55,7 +56,8 @@ export async function GET(request) {
              ELSE 'id:' || id::text
            END AS customer_key,
            status
-         FROM customers
+         FROM customers c
+         WHERE 1 = 1${registeredStatsStoreScope}
        ),
        billed_customers AS (
          SELECT DISTINCT
@@ -91,6 +93,7 @@ export async function GET(request) {
 
     const newParams = [];
     const newStoreScope = addStoreScope(auth.user, newParams);
+    const registeredNewStoreScope = addStoreScope(auth.user, newParams, 'c');
     const newCustomersResult = await query(
       `WITH first_seen AS (
          SELECT
@@ -100,7 +103,8 @@ export async function GET(request) {
              ELSE 'id:' || id::text
            END AS customer_key,
            MIN(created_at::date) AS first_seen_date
-         FROM customers
+         FROM customers c
+         WHERE 1 = 1${registeredNewStoreScope}
          GROUP BY 1
          UNION ALL
          SELECT

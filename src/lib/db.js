@@ -7,13 +7,23 @@ if (!globalForPg._pgPool) {
   const poolMax = Number(process.env.PG_POOL_MAX || 20);
   const idleTimeoutMs = Number(process.env.PG_IDLE_TIMEOUT_MS || 30000);
   const connectTimeoutMs = Number(process.env.PG_CONNECT_TIMEOUT_MS || 10000);
+  const databaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL || '';
+  const useSsl = String(process.env.DB_SSL || '').toLowerCase() === 'true' || /sslmode=require/i.test(databaseUrl);
+  const ssl = useSsl ? { rejectUnauthorized: false } : false;
+
+  const baseConfig = databaseUrl
+    ? { connectionString: databaseUrl }
+    : {
+      host:     process.env.DB_HOST     || 'localhost',
+      port:     Number(process.env.DB_PORT) || 5432,
+      database: process.env.DB_NAME     || 'billingpro',
+      user:     process.env.DB_USER     || 'postgres',
+      password: process.env.DB_PASSWORD || '',
+    };
 
   globalForPg._pgPool = new Pool({
-    host:     process.env.DB_HOST     || 'localhost',
-    port:     Number(process.env.DB_PORT) || 5432,
-    database: process.env.DB_NAME     || 'billingpro',
-    user:     process.env.DB_USER     || 'postgres',
-    password: process.env.DB_PASSWORD || '',
+    ...baseConfig,
+    ssl,
     max: Number.isFinite(poolMax) ? poolMax : 20,
     idleTimeoutMillis: Number.isFinite(idleTimeoutMs) ? idleTimeoutMs : 30000,
     connectionTimeoutMillis: Number.isFinite(connectTimeoutMs) ? connectTimeoutMs : 10000,

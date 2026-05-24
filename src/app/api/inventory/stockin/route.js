@@ -1,10 +1,22 @@
 import { NextResponse } from 'next/server';
 import { query, getClient } from '@/lib/db';
 import { ensureStockInSchema } from '@/lib/stockInSchema';
+import { appendStoreScope, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
-export async function GET() {
+export async function GET(request) {
   try {
     await ensureStockInSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+
+    const permissionCheck = requirePermission(auth.user, 'VIEW_INVENTORY', 'MANAGE_INVENTORY');
+    if (permissionCheck.error) return permissionCheck.error;
+
+    const params = [];
+    const whereClauses = [`s.status = 'confirmed'`];
+    const scope = appendStoreScope(whereClauses, params, 's.destination_id', auth.user);
+    if (scope.error) return scope.error;
+
     const res = await query(
       `SELECT
         s.id,
@@ -26,10 +38,11 @@ export async function GET() {
       FROM stock_in s
       LEFT JOIN stores st ON st.id = s.destination_id
       LEFT JOIN stock_in_items si ON si.stock_in_id = s.id
-      WHERE s.status = 'confirmed'
+      WHERE ${whereClauses.join(' AND ')}
       GROUP BY s.id, st.name
       ORDER BY s.confirmed_at DESC NULLS LAST, s.created_at DESC
-      LIMIT 200`
+      LIMIT 200`,
+      params
     );
 
     const records = res.rows.map((row) => {
@@ -61,7 +74,22 @@ export async function GET() {
 export async function POST(request) {
   try {
     await ensureStockInSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_INVENTORY');
+    if (permissionCheck.error) return permissionCheck.error;
+
     const payload = await request.json();
+    const destinationId = payload.destination ? Number(payload.destination) : null;
+    if (!destinationId && auth.user.role !== 'super_admin') {
+      return NextResponse.json({ error: 'Store destination is required for your account' }, { status: 403 });
+    }
+    if (destinationId) {
+      const storeCheck = requireStore(auth.user, destinationId);
+      if (storeCheck.error) return storeCheck.error;
+    }
+
     const client = await getClient();
     try {
       await client.query('BEGIN');
@@ -71,7 +99,7 @@ export async function POST(request) {
         RETURNING id`;
       const values = [
         payload.method || 'new',
-        payload.destination || null,
+        destinationId,
         payload.applyTaxes ?? true,
         payload.addProductsPrefill ?? false,
         JSON.stringify(payload),

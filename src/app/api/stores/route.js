@@ -1,6 +1,7 @@
 import { successResponse, errorResponse, validationError } from '@/lib/api-response';
 import { query } from '@/lib/db';
 import { ensureStoresSchema } from '@/lib/storesSchema';
+import { appendStoreScope, requireAuth, requirePermission } from '@/lib/api-protection';
 
 function buildStoreMeta(body = {}) {
   return {
@@ -37,6 +38,8 @@ function buildStoreMeta(body = {}) {
 export async function GET(request) {
   try {
     await ensureStoresSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
 
     const url = new URL(request.url);
     const pageParam = url.searchParams.get('page');
@@ -50,6 +53,9 @@ export async function GET(request) {
 
       const where = [];
       const params = [];
+      const scope = appendStoreScope(where, params, 's.id', auth.user);
+      if (scope.error) return scope.error;
+
       if (searchParam) {
         params.push(`%${searchParam}%`);
         where.push(`(s.name ILIKE $${params.length} OR CAST(s.id AS TEXT) = $${params.length})`);
@@ -79,12 +85,20 @@ export async function GET(request) {
       return successResponse({ stores: res.rows, page, pageSize, total, totalPages }, 'Stores fetched');
     }
 
-    // Fallback: return all stores as an array for legacy callers
+    const where = [];
+    const params = [];
+    const scope = appendStoreScope(where, params, 'id', auth.user);
+    if (scope.error) return scope.error;
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+    // Fallback: return accessible stores as an array for legacy callers
     const res = await query(
       `SELECT id, name, address_line1, address_line2, city, state, pincode, country,
               manager_name, manager_mobile, manager_email, opening_time, closing_time, is_active, meta, created_at, updated_at
        FROM stores
-       ORDER BY name`
+       ${whereSql}
+       ORDER BY name`,
+      params
     );
     return successResponse({ stores: res.rows }, 'Stores fetched');
   } catch (err) {
@@ -96,6 +110,11 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     await ensureStoresSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_STORES');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const body = await request.json().catch(() => ({}));
     const name = String(body.name || '').trim();

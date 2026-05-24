@@ -63,6 +63,25 @@ function LineItemsContent() {
             other_charges: d.other_charges ?? '',
             remarks: d.remarks || '',
           });
+          if (Array.isArray(d.items) && d.items.length) {
+            const warehouseDestination = String(d.destinationLocationType || 'Warehouse').toLowerCase() === 'warehouse';
+            setCart(d.items.map((item) => ({
+              line_id: `${item.product_id}-${item.id || Date.now()}`,
+              product_id: item.product_id,
+              name: item.name,
+              sku: item.sku,
+              cost_price: Number(item.cost_price || 0),
+              tax_value: Number(item.tax_value || 0),
+              qty: Number(item.qty || 1),
+              max_qty: null,
+              batches: warehouseDestination
+                ? [createBatchRow(Number(item.qty || 1))]
+                : [],
+              batch_no: item.batch_no || '',
+              mfg_date: item.mfg_date || '',
+              expiry_date: item.expiry_date || '',
+            })));
+          }
         }
       })
       .finally(() => setLoading(false));

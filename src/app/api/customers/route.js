@@ -4,7 +4,7 @@ import { ensureCustomersSchema } from '@/lib/customersSchema';
 import { validatePhoneNumber } from '@/lib/phoneValidator';
 import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
 import { ensureCustomerGroupsSchema } from '@/lib/customerGroupsSchema';
-import { requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
+import { getAssignedStoreIds, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 function normalizeText(value) {
   const text = String(value ?? '').trim();
@@ -106,6 +106,20 @@ export async function GET(request) {
     const where = [];
     const storeScope = addVisibleStoreScope(auth.user, params, store);
     if (storeScope.error) return storeScope.error;
+    let registeredStoreScopeSql = '';
+    const requestedStoreId = Number(store || 0) || null;
+    if (requestedStoreId) {
+      params.push(requestedStoreId);
+      registeredStoreScopeSql = `WHERE c.store_id = $${params.length}`;
+    } else if (auth.user.role !== 'super_admin') {
+      const assignedStores = getAssignedStoreIds(auth.user);
+      if (!assignedStores.length) {
+        registeredStoreScopeSql = 'WHERE 1 = 0';
+      } else {
+        params.push(assignedStores);
+        registeredStoreScopeSql = `WHERE c.store_id = ANY($${params.length}::int[])`;
+      }
+    }
 
     if (statusFilter) {
       params.push(statusFilter);
@@ -161,6 +175,7 @@ export async function GET(request) {
            END AS customer_key,
            c.*
          FROM customers c
+         ${registeredStoreScopeSql}
        ),
        billed AS (
          SELECT
@@ -246,6 +261,19 @@ export async function POST(request) {
     if (permissionCheck.error) return permissionCheck.error;
 
     const body = await request.json();
+    const requestedStoreId = Number(body.store_id ?? body.storeId ?? 0) || null;
+    const assignedStores = getAssignedStoreIds(auth.user);
+    const customerStoreId =
+      requestedStoreId ||
+      (auth.user.role === 'super_admin' ? null : assignedStores[0] || null);
+
+    if (customerStoreId) {
+      const storeCheck = requireStore(auth.user, customerStoreId);
+      if (storeCheck.error) return storeCheck.error;
+    } else if (auth.user.role !== 'super_admin') {
+      return NextResponse.json({ error: 'No store assigned to create customer' }, { status: 403 });
+    }
+
     const firstName = normalizeText(body.first_name ?? body.firstName);
     const mobileNumber = normalizeText(body.mobile_number ?? body.mobileNumber).replace(/\D/g, '');
     const emailAddress = normalizeText(body.email_address ?? body.emailAddress).toLowerCase();
@@ -320,12 +348,12 @@ export async function POST(request) {
          first_name, last_name, customer_type, customer_group_id, customer_code, email_address, birthday, mobile_number,
          address_type, city, state, country, pincode, address_1, address_2, landmark, anniversary,
          gender, gst_number, pan_number, aadhar_number, contact_person_name, contact_person_phone,
-         registration_points, credit_limit, enable_crm, notes, total_sales, status
+         registration_points, credit_limit, enable_crm, notes, total_sales, status, store_id
        ) VALUES (
          $1,$2,$3,$4,$5,$6,$7,$8,
          $9,$10,$11,$12,$13,$14,$15,$16,$17,
          $18,$19,$20,$21,$22,$23,
-         $24,$25,$26,$27,0,'Active'
+         $24,$25,$26,$27,0,'Active',$28
        )
        RETURNING id, first_name, last_name, customer_type, customer_group_id, customer_code, email_address, birthday, mobile_number,
                  address_type, city, state, country, pincode, address_1, address_2, landmark, anniversary,
@@ -359,6 +387,7 @@ export async function POST(request) {
         payload.credit_limit,
         payload.enable_crm,
         payload.notes,
+        customerStoreId,
       ]
     );
 

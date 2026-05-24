@@ -44,7 +44,37 @@ const fetchHomeStats = unstable_cache(
         [firstDay, lastDay]
       ),
       query(`SELECT COUNT(*)::int AS count FROM products WHERE is_active = TRUE`),
-      query(`SELECT COUNT(*)::int AS count FROM customers`),
+      query(
+        `WITH registered_customers AS (
+           SELECT
+             CASE
+               WHEN NULLIF(TRIM(mobile_number), '') IS NOT NULL THEN 'm:' || LOWER(TRIM(mobile_number))
+               WHEN NULLIF(TRIM(customer_code), '') IS NOT NULL THEN 'c:' || LOWER(TRIM(customer_code))
+               ELSE 'id:' || id::text
+             END AS customer_key
+           FROM customers
+         ),
+         billed_customers AS (
+           SELECT DISTINCT
+             CASE
+               WHEN NULLIF(TRIM(customer_mobile), '') IS NOT NULL THEN 'm:' || LOWER(TRIM(customer_mobile))
+               WHEN NULLIF(TRIM(customer_name), '') IS NOT NULL THEN 'n:' || LOWER(TRIM(customer_name))
+               ELSE 'bill:' || id::text
+             END AS customer_key
+           FROM sales_bills
+           WHERE status IN ('paid', 'completed')
+             AND (
+               NULLIF(TRIM(customer_mobile), '') IS NOT NULL
+               OR NULLIF(TRIM(customer_name), '') IS NOT NULL
+             )
+         )
+         SELECT COUNT(*)::int AS count
+         FROM (
+           SELECT customer_key FROM registered_customers
+           UNION
+           SELECT customer_key FROM billed_customers
+         ) all_customers`
+      ),
     ]);
 
     const summary = salesResult.rows[0] || {};

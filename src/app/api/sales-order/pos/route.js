@@ -41,7 +41,7 @@ function mapSession(row) {
 
 function isStoreAllowed(user, storeId) {
   if (!storeId) return false;
-  if (user?.permissions?.includes && user.permissions.includes('*')) return true;
+  if (user?.role === 'super_admin') return true;
   return (user?.assigned_stores || []).map(Number).includes(Number(storeId));
 }
 
@@ -218,7 +218,23 @@ export async function POST(req) {
     const totalDiscount = (allowOrderDiscount ? toNumber(orderDiscount) : 0) +
       normalizedItems.reduce((sum, item) => sum + (allowDiscounts && item.dbProduct?.allow_discount_on_pos ? toNumber(item.discountAmount) : 0), 0);
     const grandTotal = Math.max(0, subtotal - totalDiscount + totalTax + toNumber(roundOff));
-    const paidAmount = payments.reduce((sum, p) => sum + toNumber(p.amount), 0) || grandTotal;
+    const normalizedPayments = (Array.isArray(payments) && payments.length ? payments : [{ method: paymentMode, amount: grandTotal, referenceNo: '' }])
+      .map((payment) => ({
+        method: String(payment.method || paymentMode || 'cash').trim().toLowerCase(),
+        amount: toNumber(payment.amount),
+        referenceNo: String(payment.referenceNo || payment.reference_no || '').trim(),
+      }))
+      .filter((payment) => payment.amount > 0);
+    const paidAmount = normalizedPayments.reduce((sum, p) => sum + p.amount, 0);
+    if (!normalizedPayments.length) {
+      await client.query('ROLLBACK');
+      return errorResponse('Add at least one payment', 400);
+    }
+    if (Math.abs(paidAmount - grandTotal) > 0.01) {
+      await client.query('ROLLBACK');
+      return errorResponse(`Payment total must match bill total. Paid ${paidAmount}, bill ${grandTotal}`, 400);
+    }
+    const finalPaymentMode = normalizedPayments.length > 1 ? 'split' : normalizedPayments[0].method;
     const billNumber = invoiceNumber || `POS-${Date.now()}`;
 
     const billRes = await client.query(
@@ -249,8 +265,8 @@ export async function POST(req) {
         grandTotal,
         paidAmount,
         Math.max(0, grandTotal - paidAmount),
-        paymentMode,
-        JSON.stringify(payments),
+        finalPaymentMode,
+        JSON.stringify(normalizedPayments),
         JSON.stringify({ clientBillId, source: 'pos', deviceUid, counterUid, counterName }),
       ]
     );
@@ -374,13 +390,12 @@ export async function POST(req) {
       }
     }
 
-    const normalizedPayments = payments.length ? payments : [{ method: paymentMode, amount: grandTotal, referenceNo: '' }];
     for (const payment of normalizedPayments) {
       await client.query(
         `INSERT INTO sales_bill_payments (
           sales_bill_id, method, amount, reference_no, meta, created_at
         ) VALUES ($1, $2, $3, $4, '{}'::jsonb, NOW())`,
-        [billId, payment.method || paymentMode, toNumber(payment.amount, grandTotal), payment.referenceNo || '']
+        [billId, payment.method || finalPaymentMode, toNumber(payment.amount, grandTotal), payment.referenceNo || '']
       );
     }
 
@@ -408,7 +423,7 @@ export async function POST(req) {
             discountTotal: totalDiscount,
             taxTotal:      totalTax,
             grandTotal,
-            paymentMode,
+            paymentMode: finalPaymentMode,
             publicToken:   billRes.rows[0].public_token ?? null,
             createdAt:     new Date().toISOString(),
           });
@@ -434,7 +449,7 @@ export async function POST(req) {
         customerMobile,
         grandTotal,
         totalTax,
-        paymentMode,
+        paymentMode: finalPaymentMode,
         itemCount:  items.length,
         createdAt:  new Date().toISOString(),
         status:     'paid',
@@ -494,7 +509,7 @@ export async function GET(req) {
       sessionParams
     );
 
-    const isGlobalStoreAccess = Array.isArray(auth.user.permissions) && auth.user.permissions.includes('*');
+    const isGlobalStoreAccess = auth.user.role === 'super_admin';
     const assignedStores = (auth.user.assigned_stores || []).map(Number).filter(Number.isFinite);
     const storesRes = isGlobalStoreAccess
       ? await query('SELECT id, name FROM stores ORDER BY name ASC')
