@@ -19,7 +19,7 @@ export default function AssignBulkPreview() {
       try {
         const res = await fetch('/api/stores');
         const json = await res.json();
-        if (json.success) setStores(json.data.stores || []);
+        if (json.success) setStores(json.data.stores || json.data.records || []);
       } catch (e) { /* ignore */ }
 
       // call preview API to match rows to products

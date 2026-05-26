@@ -4,26 +4,21 @@ import { useEffect, useState } from 'react';
 
 export default function AssignWarehouseBulkPreview() {
   const [rows, setRows] = useState([]);
-  const [storeId, setStoreId] = useState('');
   const [warehouseIds, setWarehouseIds] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
-  const [stores, setStores] = useState([]);
   const [preview, setPreview] = useState([]);
   const [selectedIds, setSelectedIds] = useState([]);
 
   useEffect(() => {
     const r = JSON.parse(sessionStorage.getItem('assignBulkWarehouse_preview_rows') || '[]');
-    const s = sessionStorage.getItem('assignBulkWarehouse_preview_store') || '';
     const w = JSON.parse(sessionStorage.getItem('assignBulkWarehouse_preview_warehouses') || '[]');
     setRows(r);
-    setStoreId(s);
     setWarehouseIds(w);
 
     (async () => {
       try {
-        const [storesRes, whRes] = await Promise.all([fetch('/api/stores'), fetch('/api/warehouses')]);
-        const [storesJson, whJson] = await Promise.all([storesRes.json(), whRes.json()]);
-        if (storesJson.success) setStores(storesJson.data.records || []);
+        const whRes = await fetch('/api/warehouses');
+        const whJson = await whRes.json();
         if (whJson.success) setWarehouses(whJson.data.records || []);
       } catch (e) { /* ignore */ }
 
@@ -54,14 +49,12 @@ export default function AssignWarehouseBulkPreview() {
   };
 
   const warehouseNames = warehouseIds.map(id => warehouses.find(s => String(s.id) === String(id))?.name).filter(Boolean);
-  const storeName = stores.find(s => String(s.id) === String(storeId))?.name;
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
       <h2 className="text-xl font-semibold mb-4">Bulk Operation — Preview (Warehouses)</h2>
       <div className="bg-white p-4 rounded-lg mb-4 shadow-sm">
         <div className="text-sm text-gray-600 space-y-1">
-          <div>Store: {storeName || storeId || '—'}</div>
           <div>Warehouses: {warehouseNames.length ? warehouseNames.join(', ') : warehouseIds.join(', ')}</div>
         </div>
       </div>
