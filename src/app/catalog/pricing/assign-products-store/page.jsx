@@ -46,7 +46,7 @@ export default function AssignProductsToStorePage() {
       try {
         const res = await fetch('/api/stores');
         const json = await res.json();
-        if (json.success) setStoresList(json.data.records || json.data.stores || []);
+        if (json.success) setStoresList(json.data.stores || json.data.records || []);
       } catch (e) { /* ignore */ }
     })();
   }, []);

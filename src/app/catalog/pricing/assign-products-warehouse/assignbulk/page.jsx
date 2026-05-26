@@ -7,25 +7,42 @@ import * as XLSX from 'xlsx';
 export default function AssignBulkPage() {
   const router = useRouter();
   const [rows, setRows] = useState([]);
-  const [stores, setStores] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
-  const [selectedStoreId, setSelectedStoreId] = useState('');
   const [selectedWarehouseIds, setSelectedWarehouseIds] = useState([]);
   const [categoryList, setCategoryList] = useState([]);
   const [fileName, setFileName] = useState('');
   const fileRef = useRef();
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef(null);
+  const canProceed = !!(rows && rows.length);
+  const nextButtonClass = canProceed
+    ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/25 hover:from-blue-700 hover:to-indigo-700 hover:shadow-blue-500/35'
+    : 'bg-slate-400 text-white/90 shadow-sm cursor-not-allowed';
+
+  useEffect(() => {
+    const handleOutsideClick = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleOutsideClick);
+    document.addEventListener('touchstart', handleOutsideClick);
+
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('touchstart', handleOutsideClick);
+    };
+  }, []);
 
   useEffect(() => {
     (async () => {
       try {
-        const [storeRes, whRes, catRes] = await Promise.all([
-          fetch('/api/stores'),
+        const [whRes, catRes] = await Promise.all([
           fetch('/api/warehouses'),
           fetch('/api/catalog/categories?pageSize=200'),
         ]);
-        const [storeJson, whJson, catJson] = await Promise.all([storeRes.json(), whRes.json(), catRes.json()]);
-        if (storeJson?.success) setStores(storeJson.data?.records || []);
+        const [whJson, catJson] = await Promise.all([whRes.json(), catRes.json()]);
         if (whJson?.success) setWarehouses(whJson.data?.records || []);
         if (catJson?.success) setCategoryList(catJson.data?.records || []);
       } catch (e) { }
@@ -52,11 +69,9 @@ export default function AssignBulkPage() {
   };
 
   const startPreview = () => {
-    if (!selectedStoreId) return alert('Select a store');
     if (!selectedWarehouseIds.length) return alert('Select at least one warehouse');
     if (!rows || !rows.length) return alert('Please upload a template file first');
     sessionStorage.setItem('assignBulkWarehouse_preview_rows', JSON.stringify(rows));
-    sessionStorage.setItem('assignBulkWarehouse_preview_store', String(selectedStoreId));
     sessionStorage.setItem('assignBulkWarehouse_preview_warehouses', JSON.stringify(selectedWarehouseIds));
     router.push('/catalog/pricing/assign-products-warehouse/assignbulk/preview');
   };
@@ -74,17 +89,7 @@ export default function AssignBulkPage() {
       <div className="bg-white p-6 rounded-lg mb-6 shadow-sm">
         <h3 className="font-semibold mb-3 text-gray-700">Please Select Warehouses</h3>
         <div className="grid grid-cols-12 gap-4 items-end">
-          <div className="col-span-4">
-            <label className="text-sm text-gray-600 mb-1 block">Store</label>
-            <select value={selectedStoreId} onChange={e => setSelectedStoreId(e.target.value)} className="w-full border border-slate-200 rounded-md px-3 py-2 text-sm bg-white">
-              <option value="">select</option>
-              {stores.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="col-span-4 relative">
+          <div ref={dropdownRef} className="col-span-6 relative">
             <label className="text-sm text-gray-600 mb-1 block">Warehouses</label>
             <div className="relative">
               <button type="button" onClick={() => setDropdownOpen(o => !o)}
@@ -113,7 +118,7 @@ export default function AssignBulkPage() {
             </div>
           </div>
 
-          <div className="col-span-4">
+          <div className="col-span-6">
             <label className="text-sm text-gray-600 mb-1 block">Category (optional)</label>
             <select className="w-full border border-slate-200 rounded-md px-3 py-2 text-sm bg-white">
               <option value="">Any</option>
@@ -129,16 +134,25 @@ export default function AssignBulkPage() {
 
       <div className="bg-white p-6 rounded-lg shadow-sm">
         <h3 className="font-semibold mb-3 text-gray-700">Upload Template</h3>
-        <div className="border border-dashed border-yellow-200 bg-yellow-50 p-8 text-center rounded">
-          <div className="mb-3 text-sm text-gray-600">{fileName || 'Choose File'}</div>
-          <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} className="mx-auto" />
-          <div className="text-sm text-gray-600 mt-2">Rows parsed: {rows.length}</div>
+        <div className="group rounded-2xl border border-dashed border-amber-200 bg-gradient-to-br from-amber-50 via-white to-blue-50 p-8 text-center shadow-sm transition hover:border-amber-300 hover:shadow-md">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-amber-100">
+            <i className="ti ti-file-spreadsheet text-[22px] text-amber-600" />
+          </div>
+          <div className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-amber-700">Excel Upload</div>
+          <div className="mb-2 text-sm font-semibold text-slate-800">{fileName || 'Choose File'}</div>
+          <p className="mb-4 text-xs text-slate-500">Upload the warehouse assignment sheet to continue to the preview step.</p>
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/25 transition hover:bg-blue-700 hover:shadow-blue-500/35">
+            <i className="ti ti-upload text-[16px]" />
+            <span>Choose Excel File</span>
+            <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} className="hidden" />
+          </label>
+          <div className="mt-3 text-xs text-slate-500">Rows parsed: {rows.length}</div>
         </div>
       </div>
 
       <div className="flex justify-end gap-2 mt-6">
         <button onClick={() => window.history.back()} className="px-4 py-2 border rounded-md">Back</button>
-        <button onClick={startPreview} className={`px-4 py-2 rounded-md text-white ${selectedWarehouseIds.length && rows && rows.length ? 'bg-blue-600' : 'bg-slate-300'}`} disabled={!(selectedWarehouseIds.length && rows && rows.length)}>Next</button>
+        <button onClick={startPreview} className={`px-4 py-2 rounded-md font-semibold transition-all duration-200 ${nextButtonClass}`} disabled={!canProceed}>Next</button>
       </div>
     </div>
   );

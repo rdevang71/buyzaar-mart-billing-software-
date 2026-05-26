@@ -20,7 +20,7 @@ export default function AssignGroupsPreview() {
       try {
         const res = await fetch('/api/stores');
         const json = await res.json();
-        if (json.success) setStores(json.data.records || []);
+        if (json.success) setStores(json.data.stores || json.data.records || []);
       } catch (e) { }
 
       try {
