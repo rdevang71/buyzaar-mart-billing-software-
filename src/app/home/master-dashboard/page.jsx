@@ -88,6 +88,22 @@ export default function MasterDashboardPage() {
     : staffWindowSource;
 
   const fmt = (v) => parseFloat(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+  const paymentModesSource = Array.isArray(data.payment_modes) ? data.payment_modes : [];
+  const paymentModesData = paymentModesSource
+    .map((mode, index) => {
+      const paymentMode = String(mode.payment_mode || mode.paymentMode || mode.method || `Mode ${index + 1}`);
+      const amount = Number.parseFloat(mode.amount ?? mode.total_amount ?? mode.value ?? 0);
+      const transactions = Number.parseInt(mode.transactions ?? mode.count ?? 0, 10);
+      return {
+        payment_mode: paymentMode,
+        amount: Number.isFinite(amount) ? amount : 0,
+        transactions: Number.isFinite(transactions) ? transactions : 0,
+      };
+    })
+    .filter((mode) => mode.amount > 0)
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 5);
+  const paymentModesTotal = paymentModesData.reduce((sum, mode) => sum + mode.amount, 0);
 
   return (
     <MainLayout>
@@ -110,24 +126,27 @@ export default function MasterDashboardPage() {
             {/* Filters + Live Badge */}
             <div className="flex items-center gap-2 flex-wrap">
               <div className="flex items-center gap-1.5 bg-white/8 border border-white/10 rounded-xl px-3 py-2">
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider shrink-0">From</span>
+                <span className="text-[9px] font-black text-white uppercase tracking-wider shrink-0">From</span>
                 <input
                   type="date" value={dateFrom}
                   onChange={(e) => setDateFrom(e.target.value)}
                   className="bg-transparent text-white text-xs font-semibold focus:outline-none w-[110px]"
+                  style={{ color: '#ffffff', WebkitTextFillColor: '#ffffff', colorScheme: 'dark' }}
                 />
               </div>
               <div className="flex items-center gap-1.5 bg-white/8 border border-white/10 rounded-xl px-3 py-2">
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider shrink-0">To</span>
+                <span className="text-[9px] font-black text-white uppercase tracking-wider shrink-0">To</span>
                 <input
                   type="date" value={dateTo}
                   onChange={(e) => setDateTo(e.target.value)}
                   className="bg-transparent text-white text-xs font-semibold focus:outline-none w-[110px]"
+                  style={{ color: '#ffffff', WebkitTextFillColor: '#ffffff', colorScheme: 'dark' }}
                 />
               </div>
               <select
                 value={storeId} onChange={(e) => setStoreId(e.target.value)}
                 className="bg-white/8 border border-white/10 text-white text-xs font-semibold rounded-xl px-3 py-2 focus:outline-none cursor-pointer"
+                style={{ color: '#ffffff', WebkitTextFillColor: '#ffffff' }}
               >
                 <option value="all" className="text-slate-900 bg-white">All Stores</option>
                 {stores.map(store => (
@@ -136,9 +155,9 @@ export default function MasterDashboardPage() {
               </select>
               <div className="flex items-center gap-2 bg-emerald-500/15 border border-emerald-400/25 rounded-xl px-3 py-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-                <span className="text-emerald-300 text-[10px] font-black uppercase tracking-wider">Live</span>
+                <span className="text-white text-[10px] font-black uppercase tracking-wider">Live</span>
                 {lastUpdated && (
-                  <span className="text-emerald-400/60 text-[9px] font-semibold hidden sm:inline">
+                  <span className="text-white text-[9px] font-semibold hidden sm:inline">
                     · {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 )}
@@ -187,19 +206,26 @@ export default function MasterDashboardPage() {
 
             <Card>
               <CardHeader icon="💳" title="Top 5 Payment Modes" />
-              {data.payment_modes?.length > 0 ? (
-                <ResponsiveContainer width="100%" height={200}>
+              {paymentModesData.length > 0 && paymentModesTotal > 0 ? (
+                <ResponsiveContainer width="100%" height={240}>
                   <PieChart>
                     <Pie
-                      data={data.payment_modes} dataKey="amount" nameKey="payment_mode"
-                      cx="50%" cy="50%" outerRadius={72} innerRadius={36}
+                      data={paymentModesData}
+                      dataKey="amount"
+                      nameKey="payment_mode"
+                      cx="50%"
+                      cy="44%"
+                      outerRadius={84}
+                      innerRadius={34}
+                      minAngle={5}
+                      paddingAngle={2}
                     >
-                      {data.payment_modes.map((_, i) => (
+                      {paymentModesData.map((_, i) => (
                         <Cell key={i} fill={COLORS[i % COLORS.length]} />
                       ))}
                     </Pie>
                     <Tooltip
-                      formatter={(value) => `₹${fmt(value)}`}
+                      formatter={(value, _name, item) => [`₹${fmt(value)}`, `${item?.payload?.payment_mode || 'Mode'}`]}
                       contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '11px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
                     />
                     <Legend wrapperStyle={{ fontSize: '10px', fontWeight: 700 }} />
