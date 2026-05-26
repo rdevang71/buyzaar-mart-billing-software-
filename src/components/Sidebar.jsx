@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -14,6 +15,7 @@ export default function Sidebar({
   onMobileSubOpen,
 }) {
   const pathname = usePathname();
+  const [hoveredLabel, setHoveredLabel] = useState(null);
   const descriptions = {
     Home: 'Open dashboard and store setup checklist.',
     Sales: 'Create bills, returns, and POS transactions.',
@@ -63,11 +65,15 @@ export default function Sidebar({
       pathname.startsWith('/' + item.href.split('/')[1] + '/') ||
       pathname === '/' + item.href.split('/')[1];
     const isActive = isSubActive || isPageActive;
+    const isHovered = hoveredLabel === item.label;
 
     return (
       <Link
         href={item.href}
         onClick={(e) => handleClick(e, item)}
+        onMouseEnter={() => setHoveredLabel(item.label)}
+        onMouseLeave={() => setHoveredLabel((current) => (current === item.label ? null : current))}
+        aria-label={item.label}
         className="relative block group"
       >
         {/* Desktop */}
@@ -78,12 +84,6 @@ export default function Sidebar({
         `}>
           {isActive && <span className="absolute -left-2 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-indigo-600" />}
           <i className={`ti ${item.icon} text-[22px]`} />
-          <span className="pointer-events-none absolute left-[58px] top-1/2 z-50 w-[220px] -translate-y-1/2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left opacity-0 shadow-xl transition-all duration-150 group-hover:translate-x-1 group-hover:opacity-100">
-            <span className="block text-[12px] font-bold text-slate-900">{item.label}</span>
-            <span className="mt-1 block whitespace-normal text-[11px] font-medium leading-snug text-slate-500">
-              {item.description || descriptions[item.label] || `Open ${item.label}`}
-            </span>
-          </span>
         </div>
 
         {/* Mobile */}
@@ -100,6 +100,13 @@ export default function Sidebar({
             <i className={`ti ti-chevron-right text-[13px] ml-auto ${isActive ? 'text-indigo-400' : 'text-slate-400'}`} />
           )}
         </div>
+
+        <span className={`pointer-events-none absolute left-[66px] top-1/2 z-[200] hidden w-[290px] -translate-y-1/2 rounded-3xl border border-fuchsia-300/35 bg-gradient-to-br from-fuchsia-700 via-violet-700 to-purple-800 px-4 py-3.5 text-left shadow-[0_20px_45px_rgba(88,28,135,0.42)] backdrop-blur-sm transition-all duration-300 ease-out md:block ${isHovered ? 'visible translate-x-2 scale-100 opacity-100' : 'invisible translate-x-0 scale-95 opacity-0'}`}>
+          <span className="block text-[16px] font-extrabold tracking-wide text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.25)]">{item.label}</span>
+          <span className="mt-2 block whitespace-normal text-[13px] font-medium leading-snug text-indigo-100">
+            {item.description || descriptions[item.label] || `Open ${item.label}`}
+          </span>
+        </span>
       </Link>
     );
   };
@@ -175,7 +182,7 @@ export default function Sidebar({
           </div>
         </aside>
       ) : (
-      <aside className="hidden md:flex fixed left-0 top-[56px] h-[calc(100vh-56px)] w-[64px] flex-col items-center overflow-hidden border-r border-slate-200/80 bg-white/95 z-40 shadow-[2px_0_18px_rgba(15,23,42,0.04)]">
+      <aside className="hidden md:flex fixed left-0 top-[56px] h-[calc(100vh-56px)] w-[64px] flex-col items-center overflow-visible border-r border-slate-200/80 bg-white/95 z-40 shadow-[2px_0_18px_rgba(15,23,42,0.04)]">
         <div className="flex w-full justify-center border-b border-slate-100 px-2 py-3">
           <button
             type="button"
@@ -190,7 +197,7 @@ export default function Sidebar({
             <span className="text-[20px] font-black leading-none">B</span>
           </button>
         </div>
-        <div className="no-scrollbar flex-1 space-y-2 overflow-y-auto overflow-x-hidden px-2 py-3">
+        <div className="no-scrollbar flex-1 space-y-2 overflow-visible px-2 py-3">
           {items.map((item) => (
             <NavItem key={item.label} item={item} />
           ))}

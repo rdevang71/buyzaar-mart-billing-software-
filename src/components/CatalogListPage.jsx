@@ -225,6 +225,26 @@ export default function CatalogListPage({
         ]),
       ];
 
+  const importErrors = Array.isArray(importResult?.errors) ? importResult.errors : [];
+  const groupedImportErrors = importErrors.reduce((acc, item) => {
+    const message = (item?.error || 'Unknown import error').trim();
+    const rowName = (item?.row || '').trim();
+
+    if (!acc[message]) {
+      acc[message] = { message, count: 0, samples: [] };
+    }
+
+    acc[message].count += 1;
+    if (rowName && acc[message].samples.length < 4 && !acc[message].samples.includes(rowName)) {
+      acc[message].samples.push(rowName);
+    }
+
+    return acc;
+  }, {});
+
+  const groupedImportErrorsList = Object.values(groupedImportErrors)
+    .sort((a, b) => b.count - a.count);
+
   return (
     <div className="min-h-screen bg-gray-100 p-6 font-sans text-sm text-gray-800">
 
@@ -255,27 +275,77 @@ export default function CatalogListPage({
       {/* Import Result Modal */}
       {importResult && (
         <div className="fixed inset-0 z-[998] flex items-center justify-center bg-black/30">
-          <div className="bg-white rounded-xl shadow-xl p-6 w-80">
-            <h3 className="text-base font-bold text-gray-800 mb-3">Import Complete</h3>
-            <div className="space-y-2 text-sm mb-4">
-              <div className="flex justify-between">
-                <span className="text-gray-500">Imported</span>
-                <span className="font-semibold text-green-600">{importResult.inserted}</span>
+          <div className="w-[min(92vw,560px)] rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-start gap-3">
+              <div className={`mt-0.5 flex h-9 w-9 items-center justify-center rounded-full ${importErrors.length ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                <span className="text-base font-bold">{importErrors.length ? '!' : '✓'}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500">Skipped</span>
-                <span className="font-semibold text-orange-500">{importResult.skipped}</span>
+              <div>
+                <h3 className="text-lg font-extrabold text-slate-900">Import Complete</h3>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {importErrors.length
+                    ? 'Some rows could not be imported. Please review the reasons below.'
+                    : 'All rows imported successfully.'}
+                </p>
               </div>
-              {importResult.errors?.length > 0 && (
-                <div className="mt-2 bg-red-50 rounded-lg p-3 text-xs text-red-600 max-h-32 overflow-y-auto">
-                  {importResult.errors.map((e, i) => (
-                    <p key={i}>{e.row}: {e.error}</p>
+            </div>
+
+            <div className="mb-4 grid grid-cols-3 gap-2">
+              <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Imported</p>
+                <p className="mt-1 text-lg font-extrabold text-emerald-700">{importResult.inserted}</p>
+              </div>
+              <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">Skipped</p>
+                <p className="mt-1 text-lg font-extrabold text-amber-700">{importResult.skipped}</p>
+              </div>
+              <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-rose-700">Errors</p>
+                <p className="mt-1 text-lg font-extrabold text-rose-700">{importErrors.length}</p>
+              </div>
+            </div>
+
+            {importErrors.length > 0 && (
+              <div className="mb-4 space-y-3">
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  Tip: Fix the listed reasons in your Excel file, then re-upload.
+                </div>
+
+                <div className="max-h-52 space-y-2 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  {groupedImportErrorsList.map((group, index) => (
+                    <div key={`${group.message}-${index}`} className="rounded-lg border border-slate-200 bg-white p-2.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-[12px] font-semibold text-slate-800">{group.message}</p>
+                        <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700 whitespace-nowrap">
+                          {group.count} row{group.count > 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      {group.samples.length > 0 && (
+                        <p className="mt-1 text-[11px] text-slate-500">
+                          Example: {group.samples.join(', ')}
+                        </p>
+                      )}
+                    </div>
                   ))}
                 </div>
-              )}
-            </div>
-            <button onClick={() => setImportResult(null)}
-              className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+
+                <details className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                  <summary className="cursor-pointer text-xs font-semibold text-slate-700">Show full row-wise error details</summary>
+                  <div className="mt-2 max-h-36 space-y-1 overflow-y-auto pr-1">
+                    {importErrors.map((e, i) => (
+                      <p key={i} className="text-[11px] text-slate-600">
+                        <span className="font-semibold text-slate-800">{e.row}:</span> {e.error}
+                      </p>
+                    ))}
+                  </div>
+                </details>
+              </div>
+            )}
+
+            <button
+              onClick={() => setImportResult(null)}
+              className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
+            >
               Done
             </button>
           </div>
