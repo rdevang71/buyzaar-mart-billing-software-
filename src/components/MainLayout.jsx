@@ -88,7 +88,7 @@ export default function MainLayout({ children }) {
   );
 
   return (
-    <div className="min-h-screen bg-[#f4f7fb] text-slate-900">
+    <div className="min-h-screen bg-transparent text-slate-900">
       <Topbar
         sidebarExpanded={homeSidebarExpanded && hasAccessibleMenu}
         onMenuOpen={() => {

@@ -243,96 +243,96 @@ export default function SettingsResourcePage({
 
   return (
     <MainLayout>
-      <div className="min-h-screen bg-gray-100 p-6 text-sm text-gray-800">
+      <div className="min-h-screen bg-transparent p-6 text-sm text-slate-800">
         {toast && (
           <div className={`fixed right-4 top-4 z-[999] rounded-lg px-4 py-3 text-sm font-semibold text-white shadow-lg ${toast.variant === 'error' ? 'bg-red-500' : 'bg-green-500'}`}>
             {toast.message}
           </div>
         )}
 
-        <nav className="mb-4 flex items-center gap-1.5 text-xs text-gray-500">
+        <nav className="mb-4 flex items-center gap-1.5 text-xs text-slate-500">
           {breadcrumbs.map((crumb, index) => (
             <span key={crumb.label} className="flex items-center gap-1.5">
-              {index > 0 && <span className="text-gray-400">›</span>}
+              {index > 0 && <span className="text-slate-400">›</span>}
               {crumb.href ? (
-                <Link href={crumb.href} className="text-blue-500 hover:underline">
+                <Link href={crumb.href} className="text-indigo-600 hover:underline">
                   {crumb.label}
                 </Link>
               ) : (
-                <span className="font-medium text-gray-700">{crumb.label}</span>
+                <span className="font-medium text-slate-700">{crumb.label}</span>
               )}
             </span>
           ))}
         </nav>
 
-        <div className="mb-5 flex items-start justify-between gap-4">
+        <div className="mb-5 flex items-start justify-between gap-4 rounded-2xl border border-slate-200 bg-white/85 p-4 shadow-[0_1px_12px_rgba(15,23,42,0.04)]">
           <div>
-            <h1 className="text-xl font-bold text-gray-900">{title}</h1>
-            {description && <p className="mt-1 text-xs text-gray-500">{description}</p>}
+            <h1 className="text-xl font-black tracking-tight text-slate-900">{title}</h1>
+            {description && <p className="mt-1 text-xs text-slate-500">{description}</p>}
           </div>
-          <button onClick={openCreate} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
+          <button onClick={openCreate} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700">
             Create
           </button>
         </div>
 
-        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-          <div className="flex justify-end border-b border-gray-100 px-4 py-3">
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_1px_12px_rgba(15,23,42,0.04)]">
+          <div className="flex justify-end border-b border-slate-100 px-4 py-3">
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search"
-              className="w-64 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-blue-400 focus:bg-white"
+              className="w-64 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100"
             />
           </div>
 
           <div className="overflow-x-auto">
             <table className="w-full min-w-[980px] border-collapse text-sm">
               <thead>
-                <tr className="border-b border-gray-100 bg-gray-50">
-                  <th className="px-4 py-3 text-left font-semibold text-gray-600">S. No.</th>
-                  <th className="px-4 py-3 text-left font-semibold text-gray-600">Name</th>
-                  <th className="px-4 py-3 text-left font-semibold text-gray-600">{codeLabel}</th>
-                  {storeScoped && <th className="px-4 py-3 text-left font-semibold text-gray-600">Store</th>}
+                <tr className="border-b border-slate-100 bg-slate-50/80">
+                  <th className="px-4 py-3 text-left font-semibold text-slate-600">S. No.</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-600">Name</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-600">{codeLabel}</th>
+                  {storeScoped && <th className="px-4 py-3 text-left font-semibold text-slate-600">Store</th>}
                   {fields.slice(0, 4).map((field) => (
-                    <th key={field.key} className="px-4 py-3 text-left font-semibold text-gray-600">
+                    <th key={field.key} className="px-4 py-3 text-left font-semibold text-slate-600">
                       {field.label}
                     </th>
                   ))}
-                  <th className="px-4 py-3 text-left font-semibold text-gray-600">Status</th>
-                  <th className="px-4 py-3 text-right font-semibold text-gray-600">Actions</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-600">Status</th>
+                  <th className="px-4 py-3 text-right font-semibold text-slate-600">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={fields.length + 6} className="py-16 text-center text-gray-400">Loading...</td>
+                    <td colSpan={fields.length + 6} className="py-16 text-center text-slate-400">Loading...</td>
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
-                    <td colSpan={fields.length + 6} className="py-16 text-center text-gray-400">No records found</td>
+                    <td colSpan={fields.length + 6} className="py-16 text-center text-slate-400">No records found</td>
                   </tr>
                 ) : (
                   rows.map((row) => (
-                    <tr key={row.id} className="border-t border-gray-50 hover:bg-gray-50">
-                      <td className="px-4 py-3 text-blue-600 font-medium">{row.sno}</td>
-                      <td className="px-4 py-3 font-semibold text-gray-900">{row.name}</td>
-                      <td className="px-4 py-3 text-gray-700">{row.code || '-'}</td>
-                      {storeScoped && <td className="px-4 py-3 text-gray-700">{row.storeName || 'All stores'}</td>}
+                    <tr key={row.id} className="border-t border-slate-50 hover:bg-slate-50/70">
+                      <td className="px-4 py-3 font-medium text-indigo-600">{row.sno}</td>
+                      <td className="px-4 py-3 font-semibold text-slate-900">{row.name}</td>
+                      <td className="px-4 py-3 text-slate-700">{row.code || '-'}</td>
+                      {storeScoped && <td className="px-4 py-3 text-slate-700">{row.storeName || 'All stores'}</td>}
                       {fields.slice(0, 4).map((field) => (
-                        <td key={field.key} className="px-4 py-3 text-gray-700">
+                        <td key={field.key} className="px-4 py-3 text-slate-700">
                           {formatValue(field, row.config?.[field.key])}
                         </td>
                       ))}
                       <td className="px-4 py-3">
-                        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${row.isActive ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
+                        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${row.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-600'}`}>
                           {row.isActive ? 'Active' : 'Inactive'}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <button onClick={() => openEdit(row)} className="mr-2 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                        <button onClick={() => openEdit(row)} className="mr-2 rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
                           Edit
                         </button>
-                        <button onClick={() => setDeleteTarget(row)} className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50">
+                        <button onClick={() => setDeleteTarget(row)} className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50">
                           Delete
                         </button>
                       </td>
@@ -343,44 +343,44 @@ export default function SettingsResourcePage({
             </table>
           </div>
 
-          <div className="flex items-center justify-between border-t border-gray-100 px-4 py-3">
+          <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3">
             <div className="flex items-center gap-3">
-              <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }} className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm">
+              <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100">
                 {PAGE_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}
               </select>
-              <span className="text-xs text-gray-500">Showing {start} to {end} of {total} records</span>
+              <span className="text-xs text-slate-500">Showing {start} to {end} of {total} records</span>
             </div>
             <div className="flex gap-2">
-              <button disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))} className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm disabled:opacity-40">Prev</button>
-              <span className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm">{page} / {totalPages}</span>
-              <button disabled={page >= totalPages} onClick={() => setPage((current) => Math.min(totalPages, current + 1))} className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm disabled:opacity-40">Next</button>
+              <button disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))} className="rounded-xl border border-slate-200 px-3 py-1.5 text-sm disabled:opacity-40">Prev</button>
+              <span className="rounded-xl border border-slate-200 px-3 py-1.5 text-sm">{page} / {totalPages}</span>
+              <button disabled={page >= totalPages} onClick={() => setPage((current) => Math.min(totalPages, current + 1))} className="rounded-xl border border-slate-200 px-3 py-1.5 text-sm disabled:opacity-40">Next</button>
             </div>
           </div>
         </div>
 
         {modalOpen && (
-          <div className="fixed inset-0 z-[998] flex items-center justify-center bg-black/40 p-4">
-            <form onSubmit={saveRecord} className="max-h-[90vh] w-full max-w-2xl overflow-auto rounded-2xl bg-white p-5 shadow-2xl">
+          <div className="fixed inset-0 z-[998] flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-[2px]">
+            <form onSubmit={saveRecord} className="max-h-[90vh] w-full max-w-2xl overflow-auto rounded-3xl bg-white p-5 shadow-2xl">
               <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-lg font-bold text-gray-900">{form.id ? 'Edit' : 'Create'} {title}</h2>
-                <button type="button" onClick={() => setModalOpen(false)} className="rounded-lg border border-gray-200 px-3 py-1 text-sm">Close</button>
+                <h2 className="text-lg font-black text-slate-900">{form.id ? 'Edit' : 'Create'} {title}</h2>
+                <button type="button" onClick={() => setModalOpen(false)} className="rounded-xl border border-slate-200 px-3 py-1.5 text-sm">Close</button>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="block">
-                  <span className="mb-1 block text-xs font-semibold text-gray-600">Name</span>
-                  <input required value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">Name</span>
+                  <input required value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
                 </label>
 
                 <label className="block">
-                  <span className="mb-1 block text-xs font-semibold text-gray-600">{codeLabel}</span>
-                  <input value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">{codeLabel}</span>
+                  <input value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
                 </label>
 
                 {storeScoped && (
                   <label className="block">
-                    <span className="mb-1 block text-xs font-semibold text-gray-600">Store</span>
-                    <select value={form.storeId} onChange={(event) => setForm((current) => ({ ...current, storeId: event.target.value }))} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400">
+                    <span className="mb-1 block text-xs font-semibold text-slate-600">Store</span>
+                    <select value={form.storeId} onChange={(event) => setForm((current) => ({ ...current, storeId: event.target.value }))} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100">
                       <option value="">All stores</option>
                       {stores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}
                     </select>
@@ -388,8 +388,8 @@ export default function SettingsResourcePage({
                 )}
 
                 <label className="block">
-                  <span className="mb-1 block text-xs font-semibold text-gray-600">Status</span>
-                  <select value={form.isActive ? 'true' : 'false'} onChange={(event) => setForm((current) => ({ ...current, isActive: event.target.value === 'true' }))} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">Status</span>
+                  <select value={form.isActive ? 'true' : 'false'} onChange={(event) => setForm((current) => ({ ...current, isActive: event.target.value === 'true' }))} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100">
                     <option value="true">Active</option>
                     <option value="false">Inactive</option>
                   </select>
@@ -399,32 +399,32 @@ export default function SettingsResourcePage({
                   const required = isRequiredField(field, index);
                   return (
                   <label key={field.key} className={field.type === 'textarea' ? 'block md:col-span-2' : 'block'}>
-                    <span className="mb-1 block text-xs font-semibold text-gray-600">{field.label}{required ? <span className="text-red-500"> *</span> : null}</span>
+                    <span className="mb-1 block text-xs font-semibold text-slate-600">{field.label}{required ? <span className="text-red-500"> *</span> : null}</span>
                     {field.type === 'select' ? (
-                      <select required={required} value={form.config[field.key] ?? ''} onChange={(event) => setConfig(field.key, event.target.value)} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400">
+                      <select required={required} value={form.config[field.key] ?? ''} onChange={(event) => setConfig(field.key, event.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100">
                         <option value="">Select</option>
                         {(field.options || []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                       </select>
                     ) : field.type === 'textarea' ? (
-                      <textarea required={required} rows={3} value={form.config[field.key] ?? ''} onChange={(event) => setConfig(field.key, event.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                      <textarea required={required} rows={3} value={form.config[field.key] ?? ''} onChange={(event) => setConfig(field.key, event.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
                     ) : field.type === 'checkbox' ? (
                       <input type="checkbox" checked={!!form.config[field.key]} onChange={(event) => setConfig(field.key, event.target.checked)} className="h-5 w-5 accent-blue-600" />
                     ) : (
-                      <input {...fieldInputProps(field)} required={required} value={form.config[field.key] ?? ''} onChange={(event) => setConfig(field.key, normalizeConfigInput(field, event.target.value))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                      <input {...fieldInputProps(field)} required={required} value={form.config[field.key] ?? ''} onChange={(event) => setConfig(field.key, normalizeConfigInput(field, event.target.value))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
                     )}
                   </label>
                 );
                 })}
 
                 <label className="block md:col-span-2">
-                  <span className="mb-1 block text-xs font-semibold text-gray-600">Description</span>
-                  <textarea rows={3} value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">Description</span>
+                  <textarea rows={3} value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
                 </label>
               </div>
 
               <div className="mt-5 flex justify-end gap-2">
-                <button type="button" onClick={() => setModalOpen(false)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700">Cancel</button>
-                <button disabled={saving} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60">
+                <button type="button" onClick={() => setModalOpen(false)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700">Cancel</button>
+                <button disabled={saving} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">
                   {saving ? 'Saving...' : 'Save'}
                 </button>
               </div>
@@ -433,13 +433,13 @@ export default function SettingsResourcePage({
         )}
 
         {deleteTarget && (
-          <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 p-4">
-            <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
-              <h3 className="text-base font-bold text-gray-900">Delete {deleteTarget.name}?</h3>
-              <p className="mt-2 text-sm text-gray-500">This setting will be removed permanently.</p>
+          <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-[2px]">
+            <div className="w-full max-w-sm rounded-3xl bg-white p-5 shadow-2xl">
+              <h3 className="text-base font-black text-slate-900">Delete {deleteTarget.name}?</h3>
+              <p className="mt-2 text-sm text-slate-500">This setting will be removed permanently.</p>
               <div className="mt-5 flex justify-end gap-2">
-                <button onClick={() => setDeleteTarget(null)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700">Cancel</button>
-                <button onClick={deleteRecord} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700">Delete</button>
+                <button onClick={() => setDeleteTarget(null)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700">Cancel</button>
+                <button onClick={deleteRecord} className="rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-rose-700">Delete</button>
               </div>
             </div>
           </div>

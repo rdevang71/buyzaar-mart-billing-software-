@@ -74,9 +74,9 @@ export default function Sidebar({
         <div className={`
           hidden md:flex h-12 w-12 items-center justify-center rounded-2xl
           cursor-pointer transition-all duration-200
-          ${isActive ? 'bg-blue-600 text-white shadow-[0_10px_22px_rgba(37,99,235,0.22)]' : 'text-slate-500 hover:bg-blue-50 hover:text-blue-700'}
+          ${isActive ? 'bg-indigo-600 text-white shadow-[0_10px_22px_rgba(79,70,229,0.22)]' : 'text-slate-500 hover:bg-indigo-50 hover:text-indigo-700'}
         `}>
-          {isActive && <span className="absolute -left-2 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-blue-600" />}
+          {isActive && <span className="absolute -left-2 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-indigo-600" />}
           <i className={`ti ${item.icon} text-[22px]`} />
           <span className="pointer-events-none absolute left-[58px] top-1/2 z-50 w-[220px] -translate-y-1/2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left opacity-0 shadow-xl transition-all duration-150 group-hover:translate-x-1 group-hover:opacity-100">
             <span className="block text-[12px] font-bold text-slate-900">{item.label}</span>
@@ -90,14 +90,14 @@ export default function Sidebar({
         <div className={`
           md:hidden flex items-center gap-3 px-4 py-3
           cursor-pointer transition-all duration-150 border-b border-gray-100
-          ${isActive ? 'bg-orange-50 border-l-[3px] border-l-orange-400' : 'hover:bg-gray-50 border-l-[3px] border-l-transparent'}
+          ${isActive ? 'bg-indigo-50 border-l-[3px] border-l-indigo-500' : 'hover:bg-slate-50 border-l-[3px] border-l-transparent'}
         `}>
-          <i className={`ti ${item.icon} text-[22px] flex-shrink-0 ${isActive ? 'text-orange-500' : 'text-blue-900'}`} />
-          <span className={`text-[14px] font-medium ${isActive ? 'text-orange-500' : 'text-gray-700'}`}>
+          <i className={`ti ${item.icon} text-[22px] flex-shrink-0 ${isActive ? 'text-indigo-600' : 'text-slate-700'}`} />
+          <span className={`text-[14px] font-medium ${isActive ? 'text-indigo-700' : 'text-slate-700'}`}>
             {item.label}
           </span>
           {item.subSidebar && (
-            <i className={`ti ti-chevron-right text-[13px] ml-auto ${isActive ? 'text-orange-400' : 'text-gray-400'}`} />
+            <i className={`ti ti-chevron-right text-[13px] ml-auto ${isActive ? 'text-indigo-400' : 'text-slate-400'}`} />
           )}
         </div>
       </Link>
@@ -116,11 +116,11 @@ export default function Sidebar({
         onClick={(e) => handleClick(e, item)}
         className={`group flex min-h-[76px] flex-col items-center justify-center rounded-xl border p-2 text-center transition-all duration-200 ${
           isPageActive
-            ? 'border-blue-100 bg-blue-50 text-blue-700 shadow-sm'
-            : 'border-slate-200 bg-white text-slate-700 hover:border-blue-100 hover:bg-blue-50 hover:text-blue-700'
+            ? 'border-indigo-100 bg-indigo-50 text-indigo-700 shadow-sm'
+            : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-100 hover:bg-indigo-50 hover:text-indigo-700'
         }`}
       >
-        <i className={`ti ${item.icon} text-[24px] ${isPageActive ? 'text-blue-700' : 'text-slate-600 group-hover:text-blue-700'}`} />
+        <i className={`ti ${item.icon} text-[24px] ${isPageActive ? 'text-indigo-700' : 'text-slate-600 group-hover:text-indigo-700'}`} />
         <span className="mt-1.5 text-[12px] font-semibold leading-tight">{item.label}</span>
       </Link>
     );
@@ -137,13 +137,13 @@ export default function Sidebar({
         flex flex-col md:hidden
         ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
           <div>
-            <p className="text-[16px] font-extrabold text-blue-700">BillingPro</p>
+            <p className="text-[16px] font-extrabold text-indigo-700">BillingPro</p>
             <p className="text-[10px] text-gray-400">India's No.1 Business App</p>
           </div>
-          <button onClick={onMobileClose} className="p-2 rounded-lg hover:bg-gray-100">
-            <i className="ti ti-x text-gray-500 text-[18px]" />
+          <button onClick={onMobileClose} className="p-2 rounded-lg hover:bg-slate-100">
+            <i className="ti ti-x text-slate-500 text-[18px]" />
           </button>
         </div>
 
@@ -155,7 +155,7 @@ export default function Sidebar({
 
         <div className="border-t border-gray-100 px-4 py-4">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center">
+            <div className="w-9 h-9 rounded-full bg-indigo-600 flex items-center justify-center">
               <span className="text-[11px] font-bold text-white">AD</span>
             </div>
             <div>
@@ -183,7 +183,7 @@ export default function Sidebar({
               setActiveMenu(null);
               onRequestOpen?.();
             }}
-            className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-[0_10px_22px_rgba(37,99,235,0.2)] transition-all hover:bg-blue-700 hover:shadow-[0_12px_26px_rgba(37,99,235,0.26)]"
+            className="flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-[0_10px_22px_rgba(79,70,229,0.2)] transition-all hover:bg-indigo-700 hover:shadow-[0_12px_26px_rgba(79,70,229,0.26)]"
             title="Open sidebar"
             aria-label="Open sidebar"
           >
