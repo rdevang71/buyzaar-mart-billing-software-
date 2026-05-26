@@ -211,7 +211,7 @@ export default function MasterDashboardPage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <Card>
-              <CardHeader icon="V" title="Vendor & Payables" />
+              <CardHeader icon="🤝" title="Vendor & Payables" />
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <MiniStat label="Total Vendors" value={data.vendor_summary?.total_vendors || 0} />
                 <MiniStat label="Active" value={data.vendor_summary?.active_vendors || 0} />
@@ -225,7 +225,7 @@ export default function MasterDashboardPage() {
             </Card>
 
             <Card>
-              <CardHeader icon="PO" title="Top Vendors by Purchase" />
+              <CardHeader icon="📋" title="Top Vendors by Purchase" />
               {data.top_vendors?.length > 0 ? (
                 <div className="mt-3 overflow-x-auto">
                   <table className="w-full">
