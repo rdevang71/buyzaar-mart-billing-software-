@@ -13,7 +13,17 @@ async function ensureProductDiscountSchema() {
 
 function normalizeText(value) {
   if (value === null || value === undefined) return '';
-  return String(value).trim();
+  return String(value)
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeReferenceName(value) {
+  const text = normalizeText(value);
+  if (!text) return '';
+  return text.replace(/^['"]+|['"]+$/g, '').trim();
 }
 
 function nullableText(value) {
@@ -37,19 +47,91 @@ function toBoolean(value, fallback = false) {
 }
 
 async function resolveIdByName(client, table, name, { categoryId = null } = {}) {
-  const lookup = normalizeText(name);
+  const lookup = normalizeReferenceName(name);
   if (!lookup) return null;
+
+  const normalizedLookup = lookup.toLowerCase();
 
   if (table === 'sub_categories' && categoryId) {
     const scoped = await client.query(
-      `SELECT id FROM sub_categories WHERE category_id = $1 AND name ILIKE $2 LIMIT 1`,
-      [categoryId, lookup]
+      `SELECT id
+       FROM sub_categories
+       WHERE category_id = $1
+         AND regexp_replace(lower(trim(name)), '\\s+', ' ', 'g') = $2
+       LIMIT 1`,
+      [categoryId, normalizedLookup]
     );
     if (scoped.rows.length) return scoped.rows[0].id;
   }
 
-  const res = await client.query(`SELECT id FROM ${table} WHERE name ILIKE $1 LIMIT 1`, [lookup]);
+  const res = await client.query(
+    `SELECT id
+     FROM ${table}
+     WHERE regexp_replace(lower(trim(name)), '\\s+', ' ', 'g') = $1
+     LIMIT 1`,
+    [normalizedLookup]
+  );
   return res.rows[0]?.id || null;
+}
+
+async function ensureReferenceId(client, table, name, { categoryId = null, manufacturerId = null } = {}) {
+  const lookup = normalizeReferenceName(name);
+  if (!lookup) return null;
+
+  const existingId = await resolveIdByName(client, table, lookup, { categoryId });
+  if (existingId) return existingId;
+
+  if (table === 'categories') {
+    const inserted = await client.query(
+      `INSERT INTO categories (name, description, sort_sequence, is_active)
+       VALUES ($1, NULL, 0, true)
+       RETURNING id`,
+      [lookup]
+    );
+    return inserted.rows[0]?.id || null;
+  }
+
+  if (table === 'sub_categories') {
+    const inserted = await client.query(
+      `INSERT INTO sub_categories (name, description, category_id, sort_sequence, is_active)
+       VALUES ($1, NULL, $2, 0, true)
+       RETURNING id`,
+      [lookup, categoryId]
+    );
+    return inserted.rows[0]?.id || null;
+  }
+
+  if (table === 'manufacturers') {
+    const inserted = await client.query(
+      `INSERT INTO manufacturers (name, contact, email, phone, address, is_active)
+       VALUES ($1, NULL, NULL, NULL, NULL, true)
+       RETURNING id`,
+      [lookup]
+    );
+    return inserted.rows[0]?.id || null;
+  }
+
+  if (table === 'brands') {
+    const inserted = await client.query(
+      `INSERT INTO brands (name, description, manufacturer_id, is_active)
+       VALUES ($1, NULL, $2, true)
+       RETURNING id`,
+      [lookup, manufacturerId]
+    );
+    return inserted.rows[0]?.id || null;
+  }
+
+  if (table === 'departments') {
+    const inserted = await client.query(
+      `INSERT INTO departments (name, code, is_active)
+       VALUES ($1, NULL, true)
+       RETURNING id`,
+      [lookup]
+    );
+    return inserted.rows[0]?.id || null;
+  }
+
+  return null;
 }
 
 function parseStoreSaleabilityFromRow(row = {}) {
@@ -92,11 +174,11 @@ async function insertProductWithIntegrations(client, row, user) {
   validateMoneyField(row, 'opening_stock_qty', 'Opening stock quantity', rowErrors);
   if (rowErrors.length) throw new Error(rowErrors.join(', '));
 
-  const categoryId = await resolveIdByName(client, 'categories', row.category_name);
-  const subCategoryId = await resolveIdByName(client, 'sub_categories', row.sub_category_name, { categoryId });
-  const brandId = await resolveIdByName(client, 'brands', row.brand_name);
-  const manufacturerId = await resolveIdByName(client, 'manufacturers', row.manufacturer_name);
-  const departmentId = await resolveIdByName(client, 'departments', row.department_name);
+  const categoryId = await ensureReferenceId(client, 'categories', row.category_name);
+  const subCategoryId = await ensureReferenceId(client, 'sub_categories', row.sub_category_name, { categoryId });
+  const manufacturerId = await ensureReferenceId(client, 'manufacturers', row.manufacturer_name);
+  const brandId = await ensureReferenceId(client, 'brands', row.brand_name, { manufacturerId });
+  const departmentId = await ensureReferenceId(client, 'departments', row.department_name);
   const taxId = await resolveIdByName(client, 'taxes', row.tax_name);
   const inventoryStoreId = await resolveIdByName(client, 'stores', row.inventory_store_name);
 
@@ -107,9 +189,6 @@ async function insertProductWithIntegrations(client, row, user) {
   if (normalizeText(row.manufacturer_name) && !manufacturerId) referenceErrors.push(`Manufacturer "${row.manufacturer_name}" not found`);
   if (normalizeText(row.department_name) && !departmentId) referenceErrors.push(`Department "${row.department_name}" not found`);
   if (normalizeText(row.tax_name) && !taxId) referenceErrors.push(`Tax "${row.tax_name}" not found`);
-  if (toNumber(row.opening_stock_qty, 0) > 0 && !inventoryStoreId) {
-    referenceErrors.push('Inventory store name is required for opening stock');
-  }
   if (inventoryStoreId) {
     const storeCheck = requireStore(user, inventoryStoreId);
     if (storeCheck.error) referenceErrors.push(`No access to inventory store "${row.inventory_store_name}"`);
@@ -158,7 +237,7 @@ async function insertProductWithIntegrations(client, row, user) {
   const openingStockQty = toNumber(row.opening_stock_qty, 0);
   const manageInventoryEnabled = toBoolean(row.manage_inventory_enabled, true);
 
-  if (manageInventoryEnabled && openingStockQty > 0) {
+  if (manageInventoryEnabled && openingStockQty > 0 && inventoryStoreId) {
     const stockInInsert = await client.query(
       `INSERT INTO stock_in (
         method,
