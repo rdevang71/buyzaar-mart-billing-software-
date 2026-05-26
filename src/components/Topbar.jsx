@@ -199,15 +199,15 @@ export default function Topbar({ onMenuOpen, sidebarExpanded = false }) {
   };
 
   return (
-    <header className="fixed top-0 left-0 right-0 h-[56px] bg-white/95 backdrop-blur border-b border-slate-200/80 z-50 flex items-center px-3 md:px-5 shadow-[0_1px_12px_rgba(15,23,42,0.04)]">
+    <header className="fixed top-0 left-0 right-0 h-[56px] bg-white/90 backdrop-blur-md border-b border-slate-200/80 z-50 flex items-center px-3 md:px-5 shadow-[0_1px_16px_rgba(15,23,42,0.06)]">
 
       {/* Hamburger — mobile only */}
       <button
         onClick={onMenuOpen}
-        className="md:hidden p-2 rounded-lg hover:bg-gray-100 transition-colors mr-2 flex-shrink-0"
+        className="md:hidden p-2 rounded-xl hover:bg-indigo-50 transition-colors mr-2 flex-shrink-0"
         aria-label="Open menu"
       >
-        <i className="ti ti-menu-2 text-gray-700 text-[20px]" />
+        <i className="ti ti-menu-2 text-slate-700 text-[20px]" />
       </button>
 
       {/* Brand — hidden on mobile (shown in drawer instead) */}
@@ -220,7 +220,7 @@ export default function Topbar({ onMenuOpen, sidebarExpanded = false }) {
         aria-label="Go to home"
       >
         {sidebarExpanded ? (
-          <span className="text-[18px] font-black leading-none text-blue-700">BillingPro</span>
+          <span className="text-[18px] font-black leading-none text-indigo-700">BillingPro</span>
         ) : (
           <span className="sr-only">BillingPro</span>
         )}
@@ -228,7 +228,7 @@ export default function Topbar({ onMenuOpen, sidebarExpanded = false }) {
 
       {/* Brand — mobile center */}
       <div className="md:hidden flex-1 flex justify-center">
-        <p className="text-[15px] font-extrabold text-blue-700">BillingPro</p>
+        <p className="text-[15px] font-extrabold text-indigo-700">BillingPro</p>
       </div>
 
       {/* Page title — desktop */}
@@ -248,10 +248,10 @@ export default function Topbar({ onMenuOpen, sidebarExpanded = false }) {
               setOpenNotifications((prev) => !prev);
               loadNotifications();
             }}
-            className="relative rounded-xl p-2 text-slate-500 transition-colors hover:bg-blue-50 hover:text-blue-700"
+            className="relative rounded-xl p-2 text-slate-500 transition-colors hover:bg-indigo-50 hover:text-indigo-700"
             aria-label="Notifications"
           >
-            <i className="ti ti-bell text-gray-500 text-[20px]" />
+            <i className="ti ti-bell text-slate-500 text-[20px]" />
             {notificationCount > 0 && (
               <span className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-red-500 px-1 text-center text-[10px] font-bold leading-4 text-white">
                 {notificationCount}

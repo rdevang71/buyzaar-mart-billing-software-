@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useRef, useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Topbar from './Topbar';
 import Sidebar from './Sidebar';
@@ -16,10 +16,13 @@ export default function MainLayout({ children }) {
   const [activeMenu, setActiveMenu] = useState(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mobilePanel, setMobilePanel] = useState('main');
+  const [pinnedSidebarOpen, setPinnedSidebarOpen] = useState(false);
+  const sidebarShellRef = useRef(null);
   const accessibleMenuItems = useMemo(() => filterMenuItemsForUser(menuItems, user), [user]);
   const accessAllowed = !loading && user && canAccessPath(user, pathname);
   const hasAccessibleMenu = accessibleMenuItems.length > 0;
-  const homeSidebarExpanded = pathname === '/home' || pathname === '/';
+  const isHomeRoute = pathname === '/home' || pathname === '/' || pathname.startsWith('/home/');
+  const homeSidebarExpanded = pinnedSidebarOpen || isHomeRoute;
 
   useEffect(() => {
     if (loading) return;
@@ -61,6 +64,18 @@ export default function MainLayout({ children }) {
     setMobilePanel('main');
   }, [pathname]);
 
+  useEffect(() => {
+    if (!pinnedSidebarOpen) return;
+
+    const handlePointerDown = (event) => {
+      if (sidebarShellRef.current?.contains(event.target)) return;
+      setPinnedSidebarOpen(false);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [pinnedSidebarOpen]);
+
   const subOpen = activeMenu?.subSidebar != null;
   const content = accessAllowed ? children : !loading && user && !hasAccessibleMenu ? (
     <div className="flex min-h-[50vh] items-center justify-center text-sm font-medium text-gray-500">
@@ -73,7 +88,7 @@ export default function MainLayout({ children }) {
   );
 
   return (
-    <div className="min-h-screen bg-[#f4f7fb] text-slate-900">
+    <div className="min-h-screen bg-transparent text-slate-900">
       <Topbar
         sidebarExpanded={homeSidebarExpanded && hasAccessibleMenu}
         onMenuOpen={() => {
@@ -83,22 +98,25 @@ export default function MainLayout({ children }) {
       />
 
       {hasAccessibleMenu && (
-        <Sidebar
-          items={accessibleMenuItems}
-          activeMenu={activeMenu}
-          setActiveMenu={setActiveMenu}
-          expanded={homeSidebarExpanded}
-          mobileOpen={mobileOpen}
-          onMobileSubOpen={(item) => {
-            setActiveMenu(item);
-            setMobilePanel('sub');
-            setMobileOpen(true);
-          }}
-          onMobileClose={() => {
-            setMobileOpen(false);
-            setMobilePanel('main');
-          }}
-        />
+        <div ref={sidebarShellRef}>
+          <Sidebar
+            items={accessibleMenuItems}
+            activeMenu={activeMenu}
+            setActiveMenu={setActiveMenu}
+            expanded={homeSidebarExpanded}
+            mobileOpen={mobileOpen}
+            onRequestOpen={() => setPinnedSidebarOpen(true)}
+            onMobileSubOpen={(item) => {
+              setActiveMenu(item);
+              setMobilePanel('sub');
+              setMobileOpen(true);
+            }}
+            onMobileClose={() => {
+              setMobileOpen(false);
+              setMobilePanel('main');
+            }}
+          />
+        </div>
       )}
 
       {/* Desktop SubSidebar panel */}

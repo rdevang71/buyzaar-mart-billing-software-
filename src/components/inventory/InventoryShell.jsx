@@ -37,21 +37,21 @@ export default function InventoryShell({
 
   return (
     <MainLayout>
-      <div className="flex items-center gap-2 text-[12px] text-gray-500 mb-4">
+      <div className="mb-4 flex items-center gap-2 text-[12px] text-slate-500">
         {breadcrumb.map((item, index) => (
           <span key={item.label} className="flex items-center gap-2">
-            <span className={index === breadcrumb.length - 1 ? 'font-semibold text-gray-900' : 'text-blue-600'}>
+            <span className={index === breadcrumb.length - 1 ? 'font-semibold text-slate-900' : 'text-indigo-600'}>
               {item.label}
             </span>
-            {index < breadcrumb.length - 1 && <i className="ti ti-chevron-right text-[11px] text-gray-400" />}
+            {index < breadcrumb.length - 1 && <i className="ti ti-chevron-right text-[11px] text-slate-400" />}
           </span>
         ))}
       </div>
 
-      <div className="flex items-start justify-between gap-4 mb-5">
+      <div className="mb-5 flex items-start justify-between gap-4 rounded-3xl border border-slate-200 bg-white/85 p-5 shadow-[0_1px_12px_rgba(15,23,42,0.04)]">
         <div>
-          <h1 className="text-[28px] font-semibold text-gray-900 leading-tight">{title}</h1>
-          <p className="text-[12.5px] text-gray-400 mt-1">{subtitle}</p>
+          <h1 className="text-[28px] font-black tracking-tight text-slate-900 leading-tight">{title}</h1>
+          <p className="mt-1 text-[12.5px] text-slate-400">{subtitle}</p>
         </div>
 
         {actions.length > 0 && (
@@ -61,10 +61,10 @@ export default function InventoryShell({
                 key={action.label}
                 type={action.type || 'button'}
                 onClick={action.onClick}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-medium transition-colors ${
+                className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-medium transition-colors ${
                   index === actions.length - 1 && action.primary
-                    ? 'bg-blue-600 text-white hover:bg-blue-700'
-                    : 'border border-blue-300 text-blue-600 hover:bg-blue-50'
+                    ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                    : 'border border-indigo-200 text-indigo-600 hover:bg-indigo-50'
                 }`}
               >
                 {action.label}
@@ -77,14 +77,14 @@ export default function InventoryShell({
       {stats.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
           {stats.map((stat) => (
-            <div key={stat.label} className="bg-white rounded-2xl border border-gray-200 p-4 min-h-[98px] flex flex-col justify-between shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-              <p className="text-[12px] font-medium tracking-wide text-gray-400 uppercase">{stat.label}</p>
+            <div key={stat.label} className="min-h-[98px] flex flex-col justify-between rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+              <p className="text-[12px] font-medium tracking-wide text-slate-400 uppercase">{stat.label}</p>
               {stat.value ? (
-                <div className="text-[28px] font-semibold text-blue-600 leading-none">{stat.value}</div>
+                <div className="text-[28px] font-black text-indigo-600 leading-none">{stat.value}</div>
               ) : (
-                <div className="w-8 h-1 rounded-full bg-blue-600/80" />
+                <div className="h-1 w-8 rounded-full bg-indigo-600/80" />
               )}
-              <p className="text-[12.5px] text-gray-400">{stat.note}</p>
+              <p className="text-[12.5px] text-slate-400">{stat.note}</p>
             </div>
           ))}
         </div>
@@ -92,17 +92,17 @@ export default function InventoryShell({
 
       {insights.length > 0 && (
         <>
-          <div className="inline-flex items-center rounded-full bg-orange-50 px-3 py-1 text-[12px] font-semibold text-orange-500 mb-2">
+          <div className="mb-2 inline-flex items-center rounded-full bg-amber-50 px-3 py-1 text-[12px] font-semibold text-amber-600">
             AI INSIGHTS
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-5">
             {insights.map((insight) => (
-              <div key={insight.title} className="bg-[#fff7ef] border border-orange-300 rounded-xl p-4 min-h-[130px]">
-                <h3 className="text-[13px] font-semibold text-orange-900">{insight.title}</h3>
-                <p className="text-[12px] text-orange-900/85 mt-2 leading-5">{insight.text}</p>
+              <div key={insight.title} className="min-h-[130px] rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
+                <h3 className="text-[13px] font-semibold text-amber-900">{insight.title}</h3>
+                <p className="mt-2 text-[12px] leading-5 text-amber-900/85">{insight.text}</p>
                 {renderActionElement(
                   insight,
-                  'mt-4 inline-flex items-center px-4 py-2 rounded-md bg-black text-white text-[12px] font-semibold',
+                  'mt-4 inline-flex items-center rounded-xl bg-slate-900 px-4 py-2 text-[12px] font-semibold text-white',
                   insight.button
                 )}
               </div>
@@ -114,16 +114,16 @@ export default function InventoryShell({
       {cards.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
           {cards.map((card) => (
-            <div key={card.title} className="bg-white rounded-xl border border-gray-200 min-h-[78px] shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+            <div key={card.title} className="min-h-[78px] rounded-2xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
               {renderActionElement(
                 card,
-                'w-full h-full p-4 flex items-center justify-between text-left hover:bg-blue-50/50 rounded-xl transition-colors',
+                'flex h-full w-full items-center justify-between rounded-2xl p-4 text-left transition-colors hover:bg-indigo-50/50',
                 <>
                   <span>
-                    <span className="text-[13px] font-semibold text-gray-900 block">{card.title}</span>
-                    <span className="text-[12px] text-gray-400 mt-1 block">{card.text}</span>
+                    <span className="block text-[13px] font-semibold text-slate-900">{card.title}</span>
+                    <span className="mt-1 block text-[12px] text-slate-400">{card.text}</span>
                   </span>
-                  <i className="ti ti-chevron-right text-gray-400 text-[16px]" />
+                  <i className="ti ti-chevron-right text-slate-400 text-[16px]" />
                 </>
               )}
             </div>
@@ -132,28 +132,28 @@ export default function InventoryShell({
       )}
 
       {showTable && tableHeaders.length > 0 && (
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200 justify-between flex-wrap">
-          <div className="flex items-center gap-2 flex-1 min-w-[260px] max-w-[340px] bg-gray-50 rounded-lg px-3 py-2">
-            <i className="ti ti-search text-gray-400 text-[16px]" />
+      <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+          <div className="flex min-w-[260px] max-w-[340px] flex-1 items-center gap-2 rounded-xl bg-slate-50 px-3 py-2">
+            <i className="ti ti-search text-slate-400 text-[16px]" />
             <input
               type="text"
               placeholder={searchPlaceholder}
               value={typeof onSearchChange === 'function' ? (searchValue || '') : undefined}
               onChange={typeof onSearchChange === 'function' ? (e) => onSearchChange(e.target.value) : undefined}
-              className="flex-1 bg-transparent text-[13px] text-gray-700 outline-none placeholder:text-gray-400"
+              className="flex-1 bg-transparent text-[13px] text-slate-700 outline-none placeholder:text-slate-400"
             />
           </div>
-          <div className="flex items-center gap-2 flex-wrap ml-auto">
+          <div className="ml-auto flex flex-wrap items-center gap-2">
             {Array.isArray(filters) ? filters.map((filter) => (
-              <button key={filter} type="button" className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 text-[12.5px] text-gray-600 hover:bg-gray-50 transition-colors">
-                <i className="ti ti-filter text-[14px] text-blue-500" />
+              <button key={filter} type="button" className="flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-[12.5px] text-slate-600 transition-colors hover:bg-slate-50">
+                <i className="ti ti-filter text-[14px] text-indigo-500" />
                 {filter}
                 <i className="ti ti-chevron-down text-[11px]" />
               </button>
             )) : filters}
-            <button type="button" onClick={onDownload} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
-              <i className="ti ti-download text-gray-500 text-[16px]" />
+            <button type="button" onClick={onDownload} className="rounded-xl border border-slate-200 p-2 transition-colors hover:bg-slate-50">
+              <i className="ti ti-download text-slate-500 text-[16px]" />
             </button>
           </div>
         </div>
@@ -161,9 +161,9 @@ export default function InventoryShell({
         <div className="overflow-x-auto">
           <table className="w-full min-w-[920px]">
             <thead>
-              <tr className="border-b border-gray-100">
+              <tr className="border-b border-slate-100">
                 {tableHeaders.map((header) => (
-                  <th key={header} className="px-4 py-3 text-left text-[11px] font-bold text-gray-500 tracking-wide uppercase">
+                  <th key={header} className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">
                     {header}
                   </th>
                 ))}
@@ -171,10 +171,10 @@ export default function InventoryShell({
             </thead>
             <tbody>
               {tableData.length > 0 ? (
-                tableData.map((row, rowIdx) => (
-                  <tr key={rowIdx} className="border-b border-gray-100 hover:bg-blue-50/50 transition-colors">
+                  tableData.map((row, rowIdx) => (
+                  <tr key={rowIdx} className="border-b border-slate-100 transition-colors hover:bg-indigo-50/50">
                     {tableHeaders.map((header, colIdx) => (
-                      <td key={colIdx} className="px-4 py-3 text-[13px] text-gray-700">
+                      <td key={colIdx} className="px-4 py-3 text-[13px] text-slate-700">
                         {row[header] || '-'}
                       </td>
                     ))}
@@ -182,7 +182,7 @@ export default function InventoryShell({
                 ))
               ) : (
                 <tr>
-                  <td colSpan={tableHeaders.length} className="px-4 py-14 text-center text-[14px] text-blue-700 font-medium">
+                  <td colSpan={tableHeaders.length} className="px-4 py-14 text-center text-[14px] font-medium text-indigo-700">
                     {emptyMessage}
                   </td>
                 </tr>
@@ -191,8 +191,8 @@ export default function InventoryShell({
           </table>
         </div>
 
-        <div className="flex items-center gap-3 px-4 py-3 border-t border-gray-100 text-[12px] text-gray-400">
-          <select className="border border-gray-200 rounded-lg px-3 py-2 bg-white text-[12px] text-gray-600">
+        <div className="flex items-center gap-3 border-t border-slate-100 px-4 py-3 text-[12px] text-slate-400">
+          <select className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] text-slate-600">
             <option>10</option>
           </select>
           <span>Showing {tableData.length ? `1 to ${tableData.length}` : '0 to 0'} of {tableData.length} Results</span>

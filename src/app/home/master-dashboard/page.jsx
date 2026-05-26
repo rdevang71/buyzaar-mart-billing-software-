@@ -29,7 +29,10 @@ export default function MasterDashboardPage() {
     try {
       const res = await fetch('/api/stores');
       const json = await res.json();
-      if (json.success && json.data?.stores) setStores(json.data.stores);
+      const storeList = Array.isArray(json)
+        ? json
+        : json.data?.stores || json.data?.records || json.stores || [];
+      if (Array.isArray(storeList)) setStores(storeList);
     } catch (err) { console.error('Error fetching stores:', err); }
   }
 
@@ -43,7 +46,8 @@ export default function MasterDashboardPage() {
       const res = await fetch(`/api/dashboard/analytics?${params}`, { cache: 'no-store' });
       if (!res.ok) { console.error(`API error: ${res.status}`); setLoading(false); return; }
       const json = await res.json();
-      if (json.success && json.data) { setData(json.data); setLastUpdated(new Date()); }
+      const analyticsData = json?.data || json;
+      if (analyticsData) { setData(analyticsData); setLastUpdated(new Date()); }
     } catch (err) { console.error('Error fetching dashboard data:', err); }
     finally { if (!silent) setLoading(false); }
   }
@@ -207,7 +211,7 @@ export default function MasterDashboardPage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <Card>
-              <CardHeader icon="V" title="Vendor & Payables" />
+              <CardHeader icon="🤝" title="Vendor & Payables" />
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <MiniStat label="Total Vendors" value={data.vendor_summary?.total_vendors || 0} />
                 <MiniStat label="Active" value={data.vendor_summary?.active_vendors || 0} />
@@ -221,7 +225,7 @@ export default function MasterDashboardPage() {
             </Card>
 
             <Card>
-              <CardHeader icon="PO" title="Top Vendors by Purchase" />
+              <CardHeader icon="📋" title="Top Vendors by Purchase" />
               {data.top_vendors?.length > 0 ? (
                 <div className="mt-3 overflow-x-auto">
                   <table className="w-full">

@@ -68,14 +68,14 @@ export default function SubSidebar({ subSidebar, sectionHref, onBackToMain, onCl
         pathname.startsWith(currentSectionHref + '/'));
 
     return (
-      <div ref={scrollRef} className="no-scrollbar flex flex-col h-full overflow-y-auto overflow-x-hidden bg-[#edf3fa] border-r border-slate-200">
+      <div ref={scrollRef} className="no-scrollbar flex flex-col h-full overflow-y-auto overflow-x-hidden bg-slate-50 border-r border-slate-200">
         {(onBackToMain || onClose) && (
-          <div className="md:hidden flex items-center justify-between px-3 py-2.5 border-b border-gray-200 bg-white shrink-0">
+          <div className="md:hidden flex items-center justify-between px-3 py-2.5 border-b border-slate-200 bg-white shrink-0">
             {onBackToMain ? (
               <button
                 type="button"
                 onClick={onBackToMain}
-                className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] font-semibold text-blue-700 hover:bg-blue-50"
+                className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] font-semibold text-indigo-700 hover:bg-indigo-50"
               >
                 <i className="ti ti-arrow-left text-[16px]" />
                 Sections
@@ -87,10 +87,10 @@ export default function SubSidebar({ subSidebar, sectionHref, onBackToMain, onCl
               <button
                 type="button"
                 onClick={onClose}
-                className="p-1.5 rounded-lg hover:bg-gray-100"
+                className="p-1.5 rounded-lg hover:bg-slate-100"
                 aria-label="Close menu"
               >
-                <i className="ti ti-x text-gray-500 text-[16px]" />
+                <i className="ti ti-x text-slate-500 text-[16px]" />
               </button>
             )}
           </div>
@@ -104,14 +104,14 @@ export default function SubSidebar({ subSidebar, sectionHref, onBackToMain, onCl
                 onClick={() => onClose?.()}
                 className={`block text-[13px] font-semibold tracking-tight transition-colors ${
                   sectionActive
-                    ? 'text-orange-500'
-                    : 'text-gray-500 hover:text-gray-800'
+                    ? 'text-indigo-600'
+                      : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
                 {subSidebar.sectionTitle}
               </Link>
             ) : (
-              <p className="text-[13px] font-semibold text-gray-500 tracking-tight">
+              <p className="text-[13px] font-semibold text-slate-500 tracking-tight">
                 {subSidebar.sectionTitle}
               </p>
             )}
@@ -130,14 +130,14 @@ export default function SubSidebar({ subSidebar, sectionHref, onBackToMain, onCl
                 onClick={() => onClose?.()}
                 className={`flex items-center gap-3 px-3 py-3 rounded-lg text-[13px] font-medium transition-colors ${
                   active
-                    ? 'text-orange-500 bg-orange-50 font-semibold'
-                    : 'text-gray-700 hover:text-blue-700 hover:bg-blue-50'
+                    ? 'text-indigo-700 bg-indigo-50 font-semibold'
+                    : 'text-slate-700 hover:text-indigo-700 hover:bg-indigo-50'
                 }`}
               >
                 {item.icon ? (
                   <i
                     className={`ti ${item.icon} text-[18px] w-[22px] text-center flex-shrink-0 ${
-                      active ? 'text-orange-500' : 'text-gray-500'
+                      active ? 'text-indigo-600' : 'text-slate-500'
                     }`}
                   />
                 ) : (
@@ -157,26 +157,26 @@ export default function SubSidebar({ subSidebar, sectionHref, onBackToMain, onCl
     setOpenGroups((prev) => ({ ...prev, [label]: !prev[label] }));
 
   return (
-    <div ref={scrollRef} className="no-scrollbar flex flex-col h-full overflow-y-auto overflow-x-hidden bg-[#edf3fa] border-r border-slate-200">
-      <div className="sticky top-0 z-10 border-b border-slate-200/80 bg-[#edf3fa]/95 px-3 py-3 backdrop-blur">
+    <div ref={scrollRef} className="no-scrollbar flex flex-col h-full overflow-y-auto overflow-x-hidden bg-slate-50 border-r border-slate-200">
+      <div className="sticky top-0 z-10 border-b border-slate-200/80 bg-slate-50/95 px-3 py-3 backdrop-blur">
         <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           {onBackToMain && (
             <button
               type="button"
               onClick={onBackToMain}
-              className="md:hidden -ml-2 rounded-lg p-1.5 text-blue-700 hover:bg-blue-50"
+              className="md:hidden -ml-2 rounded-lg p-1.5 text-indigo-700 hover:bg-indigo-50"
               aria-label="Back to sections"
             >
               <i className="ti ti-arrow-left text-[17px]" />
             </button>
           )}
-          <i className={`ti ${subSidebar.titleIcon} text-blue-700 text-[16px]`} />
+          <i className={`ti ${subSidebar.titleIcon} text-indigo-700 text-[16px]`} />
           <span className="text-[13px] font-black text-slate-900">{subSidebar.title}</span>
         </div>
         {onClose && (
-          <button type="button" onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100">
-            <i className="ti ti-x text-gray-400 text-[14px]" />
+          <button type="button" onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100">
+            <i className="ti ti-x text-slate-400 text-[14px]" />
           </button>
         )}
         </div>
@@ -187,7 +187,7 @@ export default function SubSidebar({ subSidebar, sectionHref, onBackToMain, onCl
             placeholder="Search"
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
-            className="h-9 w-full rounded-xl border border-slate-200 bg-white px-9 text-[12px] outline-none transition focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+            className="h-9 w-full rounded-xl border border-slate-200 bg-white px-9 text-[12px] outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
           />
           <span className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-400">Ctrl K</span>
         </div>
@@ -200,8 +200,8 @@ export default function SubSidebar({ subSidebar, sectionHref, onBackToMain, onCl
             onClick={() => onClose?.()}
             className={`flex items-center gap-2 rounded-lg px-3 py-2.5 text-[13px] font-semibold transition-colors ${
               pathname === currentSectionHref || pathname.startsWith(currentSectionHref + '/')
-                ? 'bg-orange-50 text-orange-500'
-                : 'text-blue-700 hover:bg-blue-50'
+                ? 'bg-indigo-50 text-indigo-600'
+                : 'text-indigo-700 hover:bg-indigo-50'
             }`}
           >
             <i className="ti ti-layout-dashboard text-[16px]" />
@@ -221,7 +221,7 @@ export default function SubSidebar({ subSidebar, sectionHref, onBackToMain, onCl
                 className="w-full flex items-center gap-2 rounded-xl px-2.5 py-2.5 transition-colors hover:bg-white/80"
               >
                 <i className={`ti ${isOpen ? 'ti-chevron-down' : 'ti-chevron-right'} text-amber-500 text-[11px]`} />
-                <i className={`ti ${group.icon} text-blue-700 text-[16px]`} />
+                <i className={`ti ${group.icon} text-indigo-700 text-[16px]`} />
                 <span className="text-[12.5px] font-black text-slate-900 text-left">{group.label}</span>
               </button>
               {isOpen && (
@@ -237,11 +237,11 @@ export default function SubSidebar({ subSidebar, sectionHref, onBackToMain, onCl
                         onClick={() => onClose?.()}
                         className={`relative block rounded-xl px-3 py-2 text-[12.5px] transition-all duration-200
                           ${active
-                            ? 'text-blue-700 font-bold bg-white shadow-sm'
-                            : 'text-slate-600 hover:text-blue-900 hover:bg-white/70'
+                            ? 'text-indigo-700 font-bold bg-white shadow-sm'
+                            : 'text-slate-600 hover:text-indigo-900 hover:bg-white/70'
                           }`}
                       >
-                        {active && <span className="absolute -left-[13px] top-1/2 h-5 w-[2px] -translate-y-1/2 rounded-full bg-blue-600" />}
+                        {active && <span className="absolute -left-[13px] top-1/2 h-5 w-[2px] -translate-y-1/2 rounded-full bg-indigo-600" />}
                         {item.label}
                       </Link>
                     );
