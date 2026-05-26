@@ -8,6 +8,7 @@ export default function Sidebar({
   activeMenu,
   setActiveMenu,
   expanded = false,
+  onRequestOpen,
   mobileOpen,
   onMobileClose,
   onMobileSubOpen,
@@ -27,6 +28,13 @@ export default function Sidebar({
   };
 
   const handleClick = (e, item) => {
+    if (item.label === 'Home') {
+      onRequestOpen?.();
+      setActiveMenu(null);
+      onMobileClose?.();
+      return;
+    }
+
     if (item.subSidebar) {
       const isMobile =
         typeof window !== 'undefined' &&
@@ -169,14 +177,18 @@ export default function Sidebar({
       ) : (
       <aside className="hidden md:flex fixed left-0 top-[56px] h-[calc(100vh-56px)] w-[64px] flex-col items-center overflow-hidden border-r border-slate-200/80 bg-white/95 z-40 shadow-[2px_0_18px_rgba(15,23,42,0.04)]">
         <div className="flex w-full justify-center border-b border-slate-100 px-2 py-3">
-          <Link
-            href="/home"
-            onClick={() => setActiveMenu(null)}
+          <button
+            type="button"
+            onClick={() => {
+              setActiveMenu(null);
+              onRequestOpen?.();
+            }}
             className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-[0_10px_22px_rgba(37,99,235,0.2)] transition-all hover:bg-blue-700 hover:shadow-[0_12px_26px_rgba(37,99,235,0.26)]"
-            title="Home"
+            title="Open sidebar"
+            aria-label="Open sidebar"
           >
             <span className="text-[20px] font-black leading-none">B</span>
-          </Link>
+          </button>
         </div>
         <div className="no-scrollbar flex-1 space-y-2 overflow-y-auto overflow-x-hidden px-2 py-3">
           {items.map((item) => (

@@ -29,7 +29,10 @@ export default function MasterDashboardPage() {
     try {
       const res = await fetch('/api/stores');
       const json = await res.json();
-      if (json.success && json.data?.stores) setStores(json.data.stores);
+      const storeList = Array.isArray(json)
+        ? json
+        : json.data?.stores || json.data?.records || json.stores || [];
+      if (Array.isArray(storeList)) setStores(storeList);
     } catch (err) { console.error('Error fetching stores:', err); }
   }
 
@@ -43,7 +46,8 @@ export default function MasterDashboardPage() {
       const res = await fetch(`/api/dashboard/analytics?${params}`, { cache: 'no-store' });
       if (!res.ok) { console.error(`API error: ${res.status}`); setLoading(false); return; }
       const json = await res.json();
-      if (json.success && json.data) { setData(json.data); setLastUpdated(new Date()); }
+      const analyticsData = json?.data || json;
+      if (analyticsData) { setData(analyticsData); setLastUpdated(new Date()); }
     } catch (err) { console.error('Error fetching dashboard data:', err); }
     finally { if (!silent) setLoading(false); }
   }
