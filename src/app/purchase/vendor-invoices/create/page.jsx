@@ -3,12 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import MainLayout from '@/components/MainLayout';
-
-async function fetchVendors() {
-  const res = await fetch('/api/vendors', { cache: 'no-store' });
-  if (!res.ok) throw new Error('Failed to fetch vendors');
-  return res.json();
-}
+import { fetchLookup, normalizeVendors } from '@/lib/purchaseLookups';
 
 async function createVendorInvoice(payload) {
   const res = await fetch('/api/vendor-invoices', {
@@ -40,9 +35,12 @@ export default function CreateVendorInvoicePage() {
 
   useEffect(() => {
     setLoadingVendors(true);
-    fetchVendors()
-      .then((data) => setVendors(Array.isArray(data) ? data : []))
-      .catch(() => setVendors([]))
+    fetchLookup('/api/vendors')
+      .then((data) => setVendors(normalizeVendors(data)))
+      .catch((err) => {
+        console.error(err);
+        setVendors([]);
+      })
       .finally(() => setLoadingVendors(false));
   }, []);
 

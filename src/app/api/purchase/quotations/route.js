@@ -118,8 +118,25 @@ export async function POST(request) {
     if (!vendorId) return NextResponse.json({ error: 'Vendor is required' }, { status: 400 });
     if (!storeId) return NextResponse.json({ error: 'Store is required' }, { status: 400 });
     if (!items.length) return NextResponse.json({ error: 'At least one item is required' }, { status: 400 });
-    const storeCheck = requireStore(auth.user, storeId);
-    if (storeCheck.error) return storeCheck.error;
+
+    const vendorCheck = await query(
+      `SELECT id FROM vendors WHERE id = $1 AND COALESCE(is_active, TRUE) = TRUE LIMIT 1`,
+      [vendorId]
+    );
+    if (!vendorCheck.rows.length) {
+      return NextResponse.json({ error: 'Selected vendor was not found' }, { status: 404 });
+    }
+
+    const selectedStoreCheck = await query(
+      `SELECT id FROM stores WHERE id = $1 AND COALESCE(is_active, TRUE) = TRUE LIMIT 1`,
+      [storeId]
+    );
+    if (!selectedStoreCheck.rows.length) {
+      return NextResponse.json({ error: 'Selected store was not found' }, { status: 404 });
+    }
+
+    const storeAccessCheck = requireStore(auth.user, storeId);
+    if (storeAccessCheck.error) return storeAccessCheck.error;
 
     await client.query('BEGIN');
     const quote = await client.query(
