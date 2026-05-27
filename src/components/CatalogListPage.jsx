@@ -5,6 +5,214 @@ import Link from 'next/link';
 import * as XLSX from 'xlsx';
 
 const PAGE_SIZES = [10, 25, 50, 100];
+const TEMPLATE_ROW_LIMIT = 5001;
+const OPTIONS_SHEET_NAME = 'Options';
+
+function escapeXml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function crc32(bytes) {
+  let crc = -1;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit++) {
+      crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+    }
+  }
+  return (crc ^ -1) >>> 0;
+}
+
+function writeUint16(out, value) {
+  out.push(value & 255, (value >>> 8) & 255);
+}
+
+function writeUint32(out, value) {
+  out.push(value & 255, (value >>> 8) & 255, (value >>> 16) & 255, (value >>> 24) & 255);
+}
+
+function readUint16(bytes, offset) {
+  return bytes[offset] | (bytes[offset + 1] << 8);
+}
+
+function readUint32(bytes, offset) {
+  return (
+    bytes[offset] |
+    (bytes[offset + 1] << 8) |
+    (bytes[offset + 2] << 16) |
+    (bytes[offset + 3] << 24)
+  ) >>> 0;
+}
+
+async function inflateRaw(data) {
+  if (typeof DecompressionStream === 'undefined') {
+    throw new Error('Your browser cannot add Excel dropdowns. Please use a Chromium-based browser.');
+  }
+  const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+async function readZipEntries(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const decoder = new TextDecoder();
+  let eocd = -1;
+  for (let i = bytes.length - 22; i >= 0; i--) {
+    if (readUint32(bytes, i) === 0x06054b50) {
+      eocd = i;
+      break;
+    }
+  }
+  if (eocd < 0) throw new Error('Invalid XLSX file');
+
+  const entryCount = readUint16(bytes, eocd + 10);
+  let centralOffset = readUint32(bytes, eocd + 16);
+  const entries = new Map();
+
+  for (let i = 0; i < entryCount; i++) {
+    if (readUint32(bytes, centralOffset) !== 0x02014b50) throw new Error('Invalid XLSX directory');
+    const method = readUint16(bytes, centralOffset + 10);
+    const compressedSize = readUint32(bytes, centralOffset + 20);
+    const fileNameLength = readUint16(bytes, centralOffset + 28);
+    const extraLength = readUint16(bytes, centralOffset + 30);
+    const commentLength = readUint16(bytes, centralOffset + 32);
+    const localOffset = readUint32(bytes, centralOffset + 42);
+    const name = decoder.decode(bytes.slice(centralOffset + 46, centralOffset + 46 + fileNameLength));
+
+    const localNameLength = readUint16(bytes, localOffset + 26);
+    const localExtraLength = readUint16(bytes, localOffset + 28);
+    const dataStart = localOffset + 30 + localNameLength + localExtraLength;
+    const compressed = bytes.slice(dataStart, dataStart + compressedSize);
+    let data;
+    if (method === 0) data = compressed;
+    else if (method === 8) data = await inflateRaw(compressed);
+    else throw new Error(`Unsupported XLSX compression method ${method}`);
+
+    entries.set(name, data);
+    centralOffset += 46 + fileNameLength + extraLength + commentLength;
+  }
+
+  return entries;
+}
+
+function writeZipEntries(entries) {
+  const encoder = new TextEncoder();
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+
+  for (const [name, data] of entries.entries()) {
+    const nameBytes = encoder.encode(name);
+    const checksum = crc32(data);
+    const local = [];
+    writeUint32(local, 0x04034b50);
+    writeUint16(local, 20);
+    writeUint16(local, 0);
+    writeUint16(local, 0);
+    writeUint16(local, 0);
+    writeUint16(local, 0);
+    writeUint32(local, checksum);
+    writeUint32(local, data.length);
+    writeUint32(local, data.length);
+    writeUint16(local, nameBytes.length);
+    writeUint16(local, 0);
+    local.push(...nameBytes);
+    localParts.push(new Uint8Array(local), data);
+
+    const central = [];
+    writeUint32(central, 0x02014b50);
+    writeUint16(central, 20);
+    writeUint16(central, 20);
+    writeUint16(central, 0);
+    writeUint16(central, 0);
+    writeUint16(central, 0);
+    writeUint16(central, 0);
+    writeUint32(central, checksum);
+    writeUint32(central, data.length);
+    writeUint32(central, data.length);
+    writeUint16(central, nameBytes.length);
+    writeUint16(central, 0);
+    writeUint16(central, 0);
+    writeUint16(central, 0);
+    writeUint16(central, 0);
+    writeUint32(central, 0);
+    writeUint32(central, offset);
+    central.push(...nameBytes);
+    centralParts.push(new Uint8Array(central));
+
+    offset += local.length + data.length;
+  }
+
+  const centralOffset = offset;
+  const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
+  const end = [];
+  writeUint32(end, 0x06054b50);
+  writeUint16(end, 0);
+  writeUint16(end, 0);
+  writeUint16(end, entries.size);
+  writeUint16(end, entries.size);
+  writeUint32(end, centralSize);
+  writeUint32(end, centralOffset);
+  writeUint16(end, 0);
+
+  return new Blob([...localParts, ...centralParts, new Uint8Array(end)], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+}
+
+function patchWorksheetValidations(xml, validations) {
+  const dataValidations = [
+    `<dataValidations count="${validations.length}">`,
+    ...validations.map((validation) => (
+      `<dataValidation type="list" allowBlank="1" showErrorMessage="1" sqref="${escapeXml(validation.range)}">` +
+      `<formula1>${escapeXml(validation.formula)}</formula1>` +
+      '</dataValidation>'
+    )),
+    '</dataValidations>',
+  ].join('');
+  const withoutExisting = xml.replace(/<dataValidations[\s\S]*?<\/dataValidations>/, '');
+  if (withoutExisting.includes('</sheetData>')) {
+    return withoutExisting.replace('</sheetData>', `</sheetData>${dataValidations}`);
+  }
+  return withoutExisting.replace('</worksheet>', `${dataValidations}</worksheet>`);
+}
+
+async function saveWorkbookWithValidations(workbook, fileName, validations) {
+  const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array', compression: true });
+  const entries = await readZipEntries(buffer);
+  const worksheetPath = 'xl/worksheets/sheet1.xml';
+  const worksheet = entries.get(worksheetPath);
+  if (!worksheet) throw new Error('Template worksheet not found');
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  entries.set(worksheetPath, encoder.encode(patchWorksheetValidations(decoder.decode(worksheet), validations)));
+
+  const url = URL.createObjectURL(writeZipEntries(entries));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function fetchTaxNames() {
+  try {
+    const res = await fetch('/api/catalog/taxes?pageSize=500');
+    const json = await res.json();
+    if (!json.success) return [];
+    return [...new Set((json.data?.records || [])
+      .map((tax) => String(tax.name || '').trim())
+      .filter(Boolean))];
+  } catch {
+    return [];
+  }
+}
 
 export default function CatalogListPage({
   breadcrumbs = [],
@@ -138,27 +346,36 @@ export default function CatalogListPage({
         ws[ref].s = { font: { bold: true, color: { rgb: '9F1239' } } };
       }
     });
+    const taxNames = bulkImportType === 'products' ? await fetchTaxNames() : [];
     const includeTaxCol = headers.indexOf('include_tax');
+    const taxNameCol = headers.indexOf('tax_name');
     const stockTypeCol = headers.indexOf('stock_item_type');
     const validations = [];
     if (includeTaxCol >= 0) {
       validations.push({
-        sqref: `${XLSX.utils.encode_col(includeTaxCol)}2:${XLSX.utils.encode_col(includeTaxCol)}5001`,
-        type: 'list',
-        allowBlank: true,
-        formulae: ['"Yes,No"'],
+        range: `${XLSX.utils.encode_col(includeTaxCol)}2:${XLSX.utils.encode_col(includeTaxCol)}${TEMPLATE_ROW_LIMIT}`,
+        formula: '"Yes,No"',
+      });
+    }
+    if (taxNameCol >= 0 && taxNames.length) {
+      validations.push({
+        range: `${XLSX.utils.encode_col(taxNameCol)}2:${XLSX.utils.encode_col(taxNameCol)}${TEMPLATE_ROW_LIMIT}`,
+        formula: `'${OPTIONS_SHEET_NAME}'!$A$2:$A$${taxNames.length + 1}`,
       });
     }
     if (stockTypeCol >= 0) {
       validations.push({
-        sqref: `${XLSX.utils.encode_col(stockTypeCol)}2:${XLSX.utils.encode_col(stockTypeCol)}5001`,
-        type: 'list',
-        allowBlank: true,
-        formulae: ['"batched,unbatched"'],
+        range: `${XLSX.utils.encode_col(stockTypeCol)}2:${XLSX.utils.encode_col(stockTypeCol)}${TEMPLATE_ROW_LIMIT}`,
+        formula: '"batched,unbatched"',
       });
     }
-    if (validations.length) ws['!dataValidation'] = validations;
     XLSX.utils.book_append_sheet(wb, ws, 'Template');
+    if (bulkImportType === 'products' && taxNames.length) {
+      const options = XLSX.utils.aoa_to_sheet([['tax_name'], ...taxNames.map((name) => [name])]);
+      XLSX.utils.book_append_sheet(wb, options, OPTIONS_SHEET_NAME);
+      const optionSheet = wb.Workbook?.Sheets?.find((sheet) => sheet.name === OPTIONS_SHEET_NAME);
+      if (optionSheet) optionSheet.Hidden = 1;
+    }
     if (bulkImportType === 'products') {
       const info = XLSX.utils.aoa_to_sheet([
         ['Field', 'Requirement / allowed values'],
@@ -166,12 +383,16 @@ export default function CatalogListPage({
         ['selling_price', 'Required'],
         ['unit', 'Required: PCS, KG, or LTR'],
         ['include_tax', 'Yes/No. Use Yes when GST is already included in selling_price.'],
-        ['tax_name', 'Required when include_tax is Yes. Must match an existing GST slab name.'],
+        ['tax_name', taxNames.length ? 'Choose from dropdown. Required when include_tax is Yes.' : 'Required when include_tax is Yes. Must match an existing GST slab name.'],
         ['stock_item_type', 'batched/unbatched'],
       ]);
       XLSX.utils.book_append_sheet(wb, info, 'Instructions');
     }
-    XLSX.writeFile(wb, getTemplateFileName());
+    if (bulkImportType === 'products' && validations.length) {
+      await saveWorkbookWithValidations(wb, getTemplateFileName(), validations);
+    } else {
+      XLSX.writeFile(wb, getTemplateFileName());
+    }
     setBulkOpen(false);
   };
 
