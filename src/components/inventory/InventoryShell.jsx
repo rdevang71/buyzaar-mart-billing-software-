@@ -1,5 +1,8 @@
+'use client';
+
 import MainLayout from '@/components/MainLayout';
 import Link from 'next/link';
+import { useMemo, useState } from 'react';
 
 export default function InventoryShell({
   title,
@@ -19,6 +22,16 @@ export default function InventoryShell({
   emptyMessage = 'No Records Found',
   showTable = true,
 }) {
+  const [localSearch, setLocalSearch] = useState('');
+  const activeSearch = typeof onSearchChange === 'function' ? (searchValue || '') : localSearch;
+  const visibleTableData = useMemo(() => {
+    const q = String(activeSearch || '').trim().toLowerCase();
+    if (!q) return tableData;
+    return tableData.filter((row) =>
+      Object.values(row || {}).some((value) => String(value ?? '').toLowerCase().includes(q))
+    );
+  }, [activeSearch, tableData]);
+
   const renderActionElement = (item, className, content) => {
     if (item.href) {
       return (
@@ -139,8 +152,11 @@ export default function InventoryShell({
             <input
               type="text"
               placeholder={searchPlaceholder}
-              value={typeof onSearchChange === 'function' ? (searchValue || '') : undefined}
-              onChange={typeof onSearchChange === 'function' ? (e) => onSearchChange(e.target.value) : undefined}
+              value={activeSearch}
+              onChange={(e) => {
+                if (typeof onSearchChange === 'function') onSearchChange(e.target.value);
+                else setLocalSearch(e.target.value);
+              }}
               className="flex-1 bg-transparent text-[13px] text-slate-700 outline-none placeholder:text-slate-400"
             />
           </div>
@@ -170,8 +186,8 @@ export default function InventoryShell({
               </tr>
             </thead>
             <tbody>
-              {tableData.length > 0 ? (
-                  tableData.map((row, rowIdx) => (
+              {visibleTableData.length > 0 ? (
+                  visibleTableData.map((row, rowIdx) => (
                   <tr key={rowIdx} className="border-b border-slate-100 transition-colors hover:bg-indigo-50/50">
                     {tableHeaders.map((header, colIdx) => (
                       <td key={colIdx} className="px-4 py-3 text-[13px] text-slate-700">
@@ -195,7 +211,7 @@ export default function InventoryShell({
           <select className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] text-slate-600">
             <option>10</option>
           </select>
-          <span>Showing {tableData.length ? `1 to ${tableData.length}` : '0 to 0'} of {tableData.length} Results</span>
+          <span>Showing {visibleTableData.length ? `1 to ${visibleTableData.length}` : '0 to 0'} of {visibleTableData.length} Results</span>
         </div>
       </div>
       )}

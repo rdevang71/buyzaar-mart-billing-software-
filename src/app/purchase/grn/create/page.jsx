@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import MainLayout from '@/components/MainLayout';
 
@@ -53,6 +53,7 @@ export default function CreateGrnPage() {
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [loadingStores, setLoadingStores] = useState(false);
   const [poId, setPoId] = useState('');
+  const [poSearch, setPoSearch] = useState('');
   const [destination, setDestination] = useState('');
   const [vendorName, setVendorName] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
@@ -71,13 +72,26 @@ export default function CreateGrnPage() {
       .finally(() => setLoadingStores(false));
   }, []);
 
+  const filteredPurchaseOrders = useMemo(() => {
+    const q = poSearch.trim().toLowerCase();
+    if (!q) return purchaseOrders;
+    return purchaseOrders.filter((po) =>
+      [po.id, po.transactionId, po.destinationName, po.vendorName, po.invoiceNumber, po.status]
+        .some((value) => String(value ?? '').toLowerCase().includes(q))
+    );
+  }, [poSearch, purchaseOrders]);
+
   const selectedPo = purchaseOrders.find((po) => String(po.id) === String(poId) || String(po.transactionId) === String(poId));
+  const selectedPoLabel = selectedPo
+    ? `${selectedPo.transactionId || `PO-${selectedPo.id}`} - ${selectedPo.destinationName || 'Destination'} - ${selectedPo.vendorName || 'Vendor'}`
+    : '';
   useEffect(() => {
     if (!selectedPo) return;
     setDestination(selectedPo.destinationId ? String(selectedPo.destinationId) : '');
     setVendorName(selectedPo.vendorName || '');
     setInvoiceNumber(selectedPo.invoiceNumber === '—' ? '' : selectedPo.invoiceNumber || '');
     setInvoiceDate(normalizeDate(selectedPo.invoiceDate));
+    setPoSearch(selectedPoLabel);
   }, [selectedPo]);
 
   const handleSubmit = async () => {
@@ -115,18 +129,43 @@ export default function CreateGrnPage() {
 
           <div className="mb-4">
             <label className="block text-sm text-gray-700 font-medium mb-1">Purchase Order ID <span className="text-red-500">*</span></label>
-              <select
-                value={poId}
-                onChange={(e) => setPoId(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-[13px] text-gray-800 bg-white placeholder:text-gray-400 focus:outline-none focus:border-blue-500"
-              >
-                <option value="">Select Purchase Order</option>
-                {purchaseOrders.map((po) => (
-                  <option key={po.id} value={po.id}>
-                    {po.transactionId} - {po.destinationName || 'Destination'} - {po.vendorName || 'Vendor'}
-                  </option>
-                ))}
-              </select>
+            <div className="relative">
+              <div className="mt-1 flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 focus-within:border-blue-500">
+                <i className="ti ti-search text-[16px] text-gray-400" />
+                <input
+                  value={poSearch}
+                  onChange={(event) => {
+                    setPoSearch(event.target.value);
+                    setPoId('');
+                    setDestination('');
+                    setVendorName('');
+                    setInvoiceNumber('');
+                    setInvoiceDate('');
+                  }}
+                  placeholder="Search PO ID, destination, vendor, invoice"
+                  className="w-full bg-transparent text-[13px] text-gray-800 outline-none placeholder:text-gray-400"
+                />
+              </div>
+              {(!poId || poSearch !== selectedPoLabel) && (
+                <div className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                  {filteredPurchaseOrders.length > 0 ? (
+                    filteredPurchaseOrders.slice(0, 50).map((po) => (
+                      <button
+                        key={po.id}
+                        type="button"
+                        onClick={() => setPoId(String(po.id))}
+                        className="block w-full px-3 py-2 text-left text-[13px] text-gray-800 hover:bg-blue-50"
+                      >
+                        <span className="font-semibold">{po.transactionId || `PO-${po.id}`}</span>
+                        <span className="text-gray-500"> - {po.destinationName || 'Destination'} - {po.vendorName || 'Vendor'}</span>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="px-3 py-3 text-[13px] text-gray-500">No purchase orders found</div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="mb-4">

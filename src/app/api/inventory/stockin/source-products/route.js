@@ -80,7 +80,7 @@ export async function GET(request) {
     const auth = await requireAuth(request);
     if (auth.error) return auth.error;
 
-    const permissionCheck = requirePermission(auth.user, 'VIEW_INVENTORY', 'MANAGE_INVENTORY');
+    const permissionCheck = requirePermission(auth.user, 'VIEW_INVENTORY', 'MANAGE_INVENTORY', 'MANAGE_PURCHASE_ORDERS', 'VIEW_PRODUCTS', 'MANAGE_PRODUCTS');
     if (permissionCheck.error) return permissionCheck.error;
 
     const { searchParams } = new URL(request.url);
@@ -104,6 +104,7 @@ export async function GET(request) {
           COALESCE(p.name, '') ILIKE $${params.length}
           OR COALESCE(p.sku, '') ILIKE $${params.length}
           OR COALESCE(p.barcode, '') ILIKE $${params.length}
+          OR COALESCE(p.product_id, '') ILIKE $${params.length}
         )`);
       }
       params.push(pageSize);
@@ -185,6 +186,7 @@ export async function GET(request) {
         COALESCE(p.name, '') ILIKE $${params.length}
         OR COALESCE(p.sku, '') ILIKE $${params.length}
         OR COALESCE(p.barcode, '') ILIKE $${params.length}
+        OR COALESCE(p.product_id, '') ILIKE $${params.length}
       )`);
     }
     params.push(pageSize);

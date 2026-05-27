@@ -136,6 +136,7 @@ export default function PurchaseOrdersPage() {
   const [vendors, setVendors] = useState([]);
   const [loadingList, setLoadingList] = useState(true);
   const [records, setRecords] = useState([]);
+  const [search, setSearch] = useState('');
   const [saving, setSaving] = useState(false);
   const [reqSaving, setReqSaving] = useState(false);
   const [requisitions, setRequisitions] = useState([]);
@@ -246,14 +247,24 @@ export default function PurchaseOrdersPage() {
     })();
 
     return records.filter((row) => {
+      const q = search.trim().toLowerCase();
+      const searchMatch = !q || [
+        row.id,
+        row.transactionId,
+        row.destinationName,
+        row.vendorName,
+        row.invoiceNumber,
+        row.shipmentMode,
+        row.status,
+      ].some((value) => String(value ?? '').toLowerCase().includes(q));
       const destinationMatch = filters.destination === 'all' || String(row.destinationId) === String(filters.destination);
       const vendorMatch = filters.vendor === 'all' || String(row.vendorId) === String(filters.vendor);
       const statusMatch = filters.status === 'all' || String(row.status || '').toLowerCase() === String(filters.status).toLowerCase();
       const dateMatch = isWithinRange(row.confirmedAt || row.createdAt || row.invoiceDate, range);
 
-      return destinationMatch && vendorMatch && statusMatch && dateMatch;
+      return searchMatch && destinationMatch && vendorMatch && statusMatch && dateMatch;
     });
-  }, [filters, records]);
+  }, [filters, records, search]);
 
   const tableData = useMemo(() => mapRecordsToTable(filteredRecords), [filteredRecords]);
 
@@ -414,6 +425,8 @@ export default function PurchaseOrdersPage() {
             <input
               type="text"
               placeholder="Search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
               className="flex-1 bg-transparent text-[13px] text-gray-700 outline-none placeholder:text-gray-400"
             />
           </div>

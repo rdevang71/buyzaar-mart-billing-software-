@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import MainLayout from '@/components/MainLayout';
 
@@ -37,15 +37,16 @@ function mapRecordsToTable(records) {
 }
 
 export default function GrnListPage() {
-  const [tableData, setTableData] = useState([]);
+  const [records, setRecords] = useState([]);
+  const [search, setSearch] = useState('');
   const [loadingList, setLoadingList] = useState(true);
   const router = useRouter();
 
   useEffect(() => {
     setLoadingList(true);
     fetchGrnList()
-      .then((data) => setTableData(mapRecordsToTable(data)))
-      .catch(() => setTableData([]))
+      .then((data) => setRecords(Array.isArray(data) ? data : []))
+      .catch(() => setRecords([]))
       .finally(() => setLoadingList(false));
   }, []);
 
@@ -61,6 +62,14 @@ export default function GrnListPage() {
     'Reference Transaction Type',
     'Reference ID',
   ];
+  const tableData = useMemo(() => {
+    const mapped = mapRecordsToTable(records);
+    const q = search.trim().toLowerCase();
+    if (!q) return mapped;
+    return mapped.filter((row) =>
+      Object.values(row).some((value) => String(value ?? '').toLowerCase().includes(q))
+    );
+  }, [records, search]);
 
   return (
     <MainLayout>
@@ -88,7 +97,13 @@ export default function GrnListPage() {
         <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200">
           <div className="flex items-center gap-2 flex-1 min-w-[260px] max-w-[340px] bg-gray-50 rounded-lg px-3 py-2">
             <i className="ti ti-search text-gray-400 text-[16px]" />
-            <input type="text" placeholder="Search" className="flex-1 bg-transparent text-[13px] text-gray-700 outline-none placeholder:text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              className="flex-1 bg-transparent text-[13px] text-gray-700 outline-none placeholder:text-gray-400"
+            />
           </div>
         </div>
 
