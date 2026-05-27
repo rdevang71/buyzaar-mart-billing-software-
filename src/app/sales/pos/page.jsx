@@ -126,7 +126,26 @@ function normalizeProduct(p) {
     categoryName: p.categoryName || p.category_name || 'N/A',
     taxRate: toNumber(p.taxRate ?? p.tax_rate, 0),
     allowDiscountOnPos: Boolean(p.allow_discount_on_pos ?? p.allowDiscountOnPos),
+    includeTax: Boolean(p.includeTax ?? p.include_tax),
   };
+}
+
+function calculateGstLine(item, canManageDiscounts = true) {
+  const qty = toNumber(item.qty, 1);
+  const sellingPrice = toNumber(item.sellingPrice ?? item.selling_price);
+  const discountAmount = canManageDiscounts && item.allowDiscountOnPos ? toNumber(item.discountAmount) : 0;
+  const gross = Math.max(0, qty * sellingPrice - discountAmount);
+  const rate = toNumber(item.taxRate || 0);
+  if (!rate || gross <= 0) return { gstAmount: 0, exclusiveGstAmount: 0, lineTotal: gross };
+  if (item.includeTax) {
+    return {
+      gstAmount: gross - (gross / (1 + rate / 100)),
+      exclusiveGstAmount: 0,
+      lineTotal: gross,
+    };
+  }
+  const gstAmount = (gross * rate) / 100;
+  return { gstAmount, exclusiveGstAmount: gstAmount, lineTotal: gross + gstAmount };
 }
 
 // ============================================================================
@@ -728,15 +747,12 @@ export default function POSPage() {
   const cartTotals = useMemo(() => {
     const subtotal = cart.reduce((sum, item) => sum + item.qty * item.sellingPrice, 0);
     const lineDiscount = canManageDiscounts ? cart.reduce((sum, item) => sum + (item.allowDiscountOnPos ? toNumber(item.discountAmount) : 0), 0) : 0;
-    const taxTotal = cart.reduce((sum, item) => {
-      const itemDiscount = canManageDiscounts && item.allowDiscountOnPos ? toNumber(item.discountAmount) : 0;
-      const taxable = Math.max(0, item.qty * item.sellingPrice - itemDiscount);
-      return sum + (taxable * toNumber(item.taxRate || 0)) / 100;
-    }, 0);
+    const gstTotal = cart.reduce((sum, item) => sum + calculateGstLine(item, canManageDiscounts).gstAmount, 0);
+    const exclusiveGstTotal = cart.reduce((sum, item) => sum + calculateGstLine(item, canManageDiscounts).exclusiveGstAmount, 0);
     const discount = (canApplyOrderDiscount ? toNumber(orderDiscount) : 0) + lineDiscount;
     const roundValue = toNumber(roundOff);
-    const grandTotal = Math.max(0, subtotal - discount + taxTotal + roundValue);
-    return { subtotal, lineDiscount, taxTotal, discount, roundValue, grandTotal };
+    const grandTotal = Math.max(0, subtotal - discount + exclusiveGstTotal + roundValue);
+    return { subtotal, lineDiscount, taxTotal: gstTotal, exclusiveGstTotal, discount, roundValue, grandTotal };
   }, [cart, canApplyOrderDiscount, canManageDiscounts, orderDiscount, roundOff]);
 
   const normalizedPayments = useMemo(() => {
@@ -872,7 +888,7 @@ export default function POSPage() {
           <div class="totals">
             <div><span>Subtotal</span><strong>${formatCurrency(bill.subtotal || receipt.subtotal || 0)}</strong></div>
             ${receiptConfig.showDiscount ? `<div><span>Discount</span><strong>${formatCurrency(bill.discount_total || bill.discountTotal || receipt.discount || 0)}</strong></div>` : ''}
-            ${receiptConfig.showTaxBreakup ? `<div><span>Tax</span><strong>${formatCurrency(bill.tax_total || bill.totalTax || receipt.taxTotal || 0)}</strong></div>` : ''}
+            ${receiptConfig.showTaxBreakup ? `<div><span>GST</span><strong>${formatCurrency(bill.tax_total || bill.totalTax || receipt.taxTotal || 0)}</strong></div>` : ''}
             <div class="grand"><span>Total</span><span>${formatCurrency(bill.grand_total || bill.grandTotal || receipt.grandTotal || 0)}</span></div>
             <div><span>Paid By</span><strong>${paymentText}</strong></div>
           </div>
@@ -996,12 +1012,7 @@ export default function POSPage() {
       ...item,
       name: item.name,
       selling_price: item.sellingPrice,
-      line_total:
-        item.qty * item.sellingPrice -
-        toNumber(item.discountAmount) +
-        (Math.max(0, item.qty * item.sellingPrice - toNumber(item.discountAmount)) *
-          toNumber(item.taxRate)) /
-          100,
+      line_total: calculateGstLine(item, canManageDiscounts).lineTotal,
     }));
 
     setReceiptData({
@@ -1044,7 +1055,7 @@ export default function POSPage() {
         payments: normalizedPayments,
         items: cart.map((item) => ({
           productId: item.id, name: item.name, qty: item.qty, sellingPrice: item.sellingPrice,
-          mrp: item.mrp, taxRate: item.taxRate || 0,
+          mrp: item.mrp, taxRate: item.taxRate || 0, includeTax: item.includeTax,
           discountAmount: canManageDiscounts && item.allowDiscountOnPos ? toNumber(item.discountAmount) : 0,
         })),
         orderDiscount: canApplyOrderDiscount ? toNumber(orderDiscount) : 0,
@@ -1087,12 +1098,7 @@ export default function POSPage() {
           ...item,
           name: item.name,
           selling_price: item.sellingPrice,
-          line_total:
-            item.qty * item.sellingPrice -
-            toNumber(item.discountAmount) +
-            (Math.max(0, item.qty * item.sellingPrice - toNumber(item.discountAmount)) *
-              toNumber(item.taxRate)) /
-              100,
+          line_total: calculateGstLine(item, canManageDiscounts).lineTotal,
         }));
 
         // 6. Show receipt modal so cashier can print immediately
@@ -1122,7 +1128,7 @@ export default function POSPage() {
         const savedBill = json.data?.bill;
         const receiptItems = cart.map((item) => ({
           ...item, name: item.name, selling_price: item.sellingPrice,
-          line_total: (item.qty * item.sellingPrice) - toNumber(item.discountAmount) + ((Math.max(0, item.qty * item.sellingPrice - toNumber(item.discountAmount)) * toNumber(item.taxRate)) / 100),
+          line_total: calculateGstLine(item, canManageDiscounts).lineTotal,
         }));
         showToast(json.data?.message || `Bill ${payload.invoiceNumber} created!`);
         setRecentBills((current) => [savedBill, ...current].filter(Boolean).slice(0, 10));
@@ -1476,8 +1482,8 @@ export default function POSPage() {
                     )}
                     {cartTotals.taxTotal > 0 && (
                       <div className="flex justify-between text-xs text-slate-500">
-                        <span>Tax</span>
-                        <span className="font-semibold text-slate-700">+{formatCurrency(cartTotals.taxTotal)}</span>
+                        <span>GST</span>
+                        <span className="font-semibold text-slate-700">{formatCurrency(cartTotals.taxTotal)}</span>
                       </div>
                     )}
                     <div className="flex justify-between items-center pt-2 border-t border-slate-200">
@@ -1827,7 +1833,7 @@ export default function POSPage() {
                 <div className="space-y-1 text-xs">
                   <div className="flex justify-between text-slate-600"><span>Subtotal</span><strong className="text-slate-900">{formatCurrency(receiptData.bill?.subtotal || receiptData.subtotal || 0)}</strong></div>
                   <div className="flex justify-between text-slate-600"><span>Discount</span><strong className="text-slate-900">{formatCurrency(receiptData.bill?.discount_total || receiptData.bill?.discountTotal || receiptData.discount || 0)}</strong></div>
-                  <div className="flex justify-between text-slate-600"><span>Tax</span><strong className="text-slate-900">{formatCurrency(receiptData.bill?.tax_total || receiptData.bill?.totalTax || receiptData.taxTotal || 0)}</strong></div>
+                  <div className="flex justify-between text-slate-600"><span>GST</span><strong className="text-slate-900">{formatCurrency(receiptData.bill?.tax_total || receiptData.bill?.totalTax || receiptData.taxTotal || 0)}</strong></div>
                   <div className="flex justify-between pt-2 border-t border-slate-200 text-base font-black text-indigo-700">
                     <span>Total</span>
                     <span>{formatCurrency(receiptData.bill?.grand_total || receiptData.bill?.grandTotal || receiptData.grandTotal || 0)}</span>

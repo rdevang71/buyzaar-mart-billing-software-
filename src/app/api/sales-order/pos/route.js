@@ -105,6 +105,25 @@ async function ensureProductDiscountSchema() {
     ALTER TABLE products
       ADD COLUMN IF NOT EXISTS allow_discount_on_pos BOOLEAN NOT NULL DEFAULT FALSE;
   `);
+  await query(`
+    ALTER TABLE products
+      ADD COLUMN IF NOT EXISTS include_tax BOOLEAN NOT NULL DEFAULT FALSE;
+  `);
+}
+
+function calculateGstLine({ qty, sellingPrice, discountAmount, taxRate, includeTax }) {
+  const gross = Math.max(0, qty * sellingPrice - discountAmount);
+  const rate = toNumber(taxRate);
+  if (!rate || gross <= 0) return { gstAmount: 0, exclusiveGstAmount: 0, lineTotal: gross };
+  if (includeTax) {
+    return {
+      gstAmount: gross - (gross / (1 + rate / 100)),
+      exclusiveGstAmount: 0,
+      lineTotal: gross,
+    };
+  }
+  const gstAmount = (gross * rate) / 100;
+  return { gstAmount, exclusiveGstAmount: gstAmount, lineTotal: gross + gstAmount };
 }
 
 function getAvailableStockSql(storeParam = '$1') {
@@ -186,6 +205,7 @@ export async function POST(req) {
            p.mrp,
            p.cost_price,
            p.allow_discount_on_pos,
+           p.include_tax,
            COALESCE(NULLIF(ps.selling_price, 0), p.selling_price, 0) AS selling_price,
            COALESCE(t.rate, 0) AS tax_rate,
            ${getAvailableStockSql('$2')} AS available_stock
@@ -249,6 +269,7 @@ export async function POST(req) {
 
     let subtotal = 0;
     let totalTax = 0;
+    let exclusiveTaxTotal = 0;
 
     for (const item of normalizedItems) {
       const qty = toNumber(item.qty);
@@ -256,14 +277,16 @@ export async function POST(req) {
       const discountAmount = allowDiscounts && item.dbProduct?.allow_discount_on_pos ? toNumber(item.discountAmount) : 0;
       const taxRate = toNumber(item.taxRate, toNumber(item.dbProduct.tax_rate));
       const lineAmount = qty * sellingPrice;
+      const lineGst = calculateGstLine({ qty, sellingPrice, discountAmount, taxRate, includeTax: item.dbProduct?.include_tax });
       subtotal += lineAmount;
-      totalTax += (Math.max(0, lineAmount - discountAmount) * taxRate) / 100;
+      totalTax += lineGst.gstAmount;
+      exclusiveTaxTotal += lineGst.exclusiveGstAmount;
     }
 
     const allowOrderDiscount = allowDiscounts && normalizedItems.length > 0 && normalizedItems.every((item) => item.dbProduct?.allow_discount_on_pos);
     const totalDiscount = (allowOrderDiscount ? toNumber(orderDiscount) : 0) +
       normalizedItems.reduce((sum, item) => sum + (allowDiscounts && item.dbProduct?.allow_discount_on_pos ? toNumber(item.discountAmount) : 0), 0);
-    const grandTotal = Math.max(0, subtotal - totalDiscount + totalTax + toNumber(roundOff));
+    const grandTotal = Math.max(0, subtotal - totalDiscount + exclusiveTaxTotal + toNumber(roundOff));
     const normalizedPayments = (Array.isArray(payments) && payments.length ? payments : [{ method: paymentMode, amount: grandTotal, referenceNo: '' }])
       .map((payment) => ({
         method: String(payment.method || paymentMode || 'cash').trim().toLowerCase(),
@@ -382,8 +405,13 @@ export async function POST(req) {
       const sellingPrice = toNumber(item.sellingPrice, toNumber(item.dbProduct.selling_price));
       const discountAmount = allowDiscounts && item.dbProduct?.allow_discount_on_pos ? toNumber(item.discountAmount) : 0;
       const taxRate = toNumber(item.taxRate, toNumber(item.dbProduct.tax_rate));
-      const lineTax = (Math.max(0, qty * sellingPrice - discountAmount) * taxRate) / 100;
-      const lineTotal = Math.max(0, qty * sellingPrice - discountAmount + lineTax);
+      const { gstAmount: lineTax, lineTotal } = calculateGstLine({
+        qty,
+        sellingPrice,
+        discountAmount,
+        taxRate,
+        includeTax: item.dbProduct?.include_tax,
+      });
       const allocations = await allocateBatchStock(client, {
         productId: item.productId,
         storeId: Number(storeId),
@@ -577,7 +605,7 @@ export async function GET(req) {
     const params = [];
     let productsSql = `
       SELECT
-        p.id, p.name, p.sku, p.barcode, p.mrp, p.selling_price, p.cost_price, p.allow_discount_on_pos,
+        p.id, p.name, p.sku, p.barcode, p.mrp, p.selling_price, p.cost_price, p.allow_discount_on_pos, p.include_tax,
         c.name AS "categoryName",
         b.name AS "brandName",
         ${getAvailableStockSql('$1')} AS "availableStock",

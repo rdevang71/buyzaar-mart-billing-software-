@@ -444,7 +444,7 @@ export default function CreateProductPage() {
           </div>
         </Card>
 
-        <Card title="Pricing Information" description="Add prices, taxes and product flags.">
+        <Card title="Pricing Information" description="Add prices, GST and product flags.">
           <div className="grid gap-5 lg:grid-cols-2">
             <div className="space-y-4">
               <div className="grid gap-4 sm:grid-cols-3">
@@ -463,9 +463,9 @@ export default function CreateProductPage() {
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <Label>Tax</Label>
+                  <Label>GST</Label>
                   <select value={form.tax_id} onChange={(event) => set('tax_id', event.target.value)} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500">
-                    <option value="">Select tax</option>
+                    <option value="">Select GST</option>
                     {taxes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                   </select>
                 </div>
@@ -484,13 +484,13 @@ export default function CreateProductPage() {
                 ['is_sellable_on_pos', 'Is Sellable on POS'],
                 ['allow_variable_pricing', 'Allow Variable Pricing'],
                 ['allow_discount_on_pos', 'Allow Discount on POS'],
-                ['include_tax', 'Include Tax'],
+                ['include_tax', 'GST Included'],
               ].map(([key, label]) => (
                 <label key={key} className="flex items-start gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
                   <input type="checkbox" checked={form[key]} onChange={(event) => set(key, event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                   <span>
                     <span className="block font-medium text-gray-800">{label}</span>
-                    <span className="mt-0.5 block text-xs text-gray-500">{label === 'Is Sellable on POS' ? 'Allow product to be sellable on POS' : label === 'Allow Variable Pricing' ? 'Allow product for variable pricing' : label === 'Allow Discount on POS' ? 'Permit admin discount while billing this product' : 'Capture tax inclusive price'}</span>
+                    <span className="mt-0.5 block text-xs text-gray-500">{label === 'Is Sellable on POS' ? 'Allow product to be sellable on POS' : label === 'Allow Variable Pricing' ? 'Allow product for variable pricing' : label === 'Allow Discount on POS' ? 'Permit admin discount while billing this product' : 'Selling price already includes GST'}</span>
                   </span>
                 </label>
               ))}
@@ -511,7 +511,7 @@ export default function CreateProductPage() {
                 ['Brand', selectedBrand?.name || '—'],
                 ['Manufacturer', selectedManufacturer?.name || '—'],
                 ['Department', selectedDepartment?.name || '—'],
-                ['Tax', selectedTax?.name || '—'],
+                ['GST', selectedTax?.name || '—'],
                 ['Charge', selectedCharge?.name || '—'],
               ].map(([label, value]) => (
                 <div key={label} className="flex gap-2">

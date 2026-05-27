@@ -111,8 +111,9 @@ export default function CatalogListPage({
             'unit',
             'is_active',
             'is_service',
-          'allow_discount_on_pos',
-          'image_url',
+            'allow_discount_on_pos',
+            'include_tax',
+            'image_url',
             'manage_inventory_enabled',
             'inventory_store_name',
             'opening_stock_qty',
@@ -128,7 +129,48 @@ export default function CatalogListPage({
     const headers = [...baseHeaders];
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([headers]);
+    const requiredHeaders = new Set(['name', 'selling_price', 'unit']);
+    headers.forEach((header, index) => {
+      const ref = XLSX.utils.encode_cell({ r: 0, c: index });
+      if (!ws[ref]) return;
+      ws[ref].c = [{ t: requiredHeaders.has(header) ? 'Required field' : 'Optional field' }];
+      if (requiredHeaders.has(header)) {
+        ws[ref].s = { font: { bold: true, color: { rgb: '9F1239' } } };
+      }
+    });
+    const includeTaxCol = headers.indexOf('include_tax');
+    const stockTypeCol = headers.indexOf('stock_item_type');
+    const validations = [];
+    if (includeTaxCol >= 0) {
+      validations.push({
+        sqref: `${XLSX.utils.encode_col(includeTaxCol)}2:${XLSX.utils.encode_col(includeTaxCol)}5001`,
+        type: 'list',
+        allowBlank: true,
+        formulae: ['"Yes,No"'],
+      });
+    }
+    if (stockTypeCol >= 0) {
+      validations.push({
+        sqref: `${XLSX.utils.encode_col(stockTypeCol)}2:${XLSX.utils.encode_col(stockTypeCol)}5001`,
+        type: 'list',
+        allowBlank: true,
+        formulae: ['"batched,unbatched"'],
+      });
+    }
+    if (validations.length) ws['!dataValidation'] = validations;
     XLSX.utils.book_append_sheet(wb, ws, 'Template');
+    if (bulkImportType === 'products') {
+      const info = XLSX.utils.aoa_to_sheet([
+        ['Field', 'Requirement / allowed values'],
+        ['name', 'Required'],
+        ['selling_price', 'Required'],
+        ['unit', 'Required: PCS, KG, or LTR'],
+        ['include_tax', 'Yes/No. Use Yes when GST is already included in selling_price.'],
+        ['tax_name', 'Required when include_tax is Yes. Must match an existing GST slab name.'],
+        ['stock_item_type', 'batched/unbatched'],
+      ]);
+      XLSX.utils.book_append_sheet(wb, info, 'Instructions');
+    }
     XLSX.writeFile(wb, getTemplateFileName());
     setBulkOpen(false);
   };

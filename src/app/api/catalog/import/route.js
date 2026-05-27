@@ -9,6 +9,10 @@ async function ensureProductDiscountSchema() {
     ALTER TABLE products
       ADD COLUMN IF NOT EXISTS allow_discount_on_pos BOOLEAN NOT NULL DEFAULT FALSE;
   `);
+  await query(`
+    ALTER TABLE products
+      ADD COLUMN IF NOT EXISTS include_tax BOOLEAN NOT NULL DEFAULT FALSE;
+  `);
 }
 
 function normalizeText(value) {
@@ -34,6 +38,11 @@ function nullableText(value) {
 function normalizeUnit(value) {
   const unit = normalizeText(value).toUpperCase() || 'PCS';
   return ['PCS', 'KG', 'LTR'].includes(unit) ? unit : 'PCS';
+}
+
+function normalizeStockItemType(value) {
+  const type = normalizeText(value).toLowerCase() || 'unbatched';
+  return type === 'batched' ? 'batched' : 'unbatched';
 }
 
 function toNumber(value, fallback = 0) {
@@ -171,12 +180,21 @@ async function insertProductWithIntegrations(client, row, user) {
   if (!name) {
     throw new Error('name is required');
   }
+  if (row.selling_price === '' || row.selling_price === null || row.selling_price === undefined) {
+    throw new Error('selling_price is required');
+  }
+  if (!normalizeText(row.unit)) {
+    throw new Error('unit is required');
+  }
 
   const rowErrors = [];
   validateMoneyField(row, 'mrp', 'MRP', rowErrors);
   validateMoneyField(row, 'selling_price', 'Selling price', rowErrors);
   validateMoneyField(row, 'cost_price', 'Cost price', rowErrors);
   validateMoneyField(row, 'opening_stock_qty', 'Opening stock quantity', rowErrors);
+  if (normalizeText(row.stock_item_type) && !['batched', 'unbatched'].includes(normalizeText(row.stock_item_type).toLowerCase())) {
+    rowErrors.push('stock_item_type must be batched or unbatched');
+  }
   if (rowErrors.length) throw new Error(rowErrors.join(', '));
 
   const categoryId = await ensureReferenceId(client, 'categories', row.category_name);
@@ -186,6 +204,7 @@ async function insertProductWithIntegrations(client, row, user) {
   const departmentId = await ensureReferenceId(client, 'departments', row.department_name);
   const taxId = await resolveIdByName(client, 'taxes', row.tax_name);
   const inventoryStoreId = await resolveIdByName(client, 'stores', row.inventory_store_name);
+  const includeTax = toBoolean(row.include_tax, false);
 
   const referenceErrors = [];
   if (normalizeText(row.category_name) && !categoryId) referenceErrors.push(`Category "${row.category_name}" not found`);
@@ -193,7 +212,8 @@ async function insertProductWithIntegrations(client, row, user) {
   if (normalizeText(row.brand_name) && !brandId) referenceErrors.push(`Brand "${row.brand_name}" not found`);
   if (normalizeText(row.manufacturer_name) && !manufacturerId) referenceErrors.push(`Manufacturer "${row.manufacturer_name}" not found`);
   if (normalizeText(row.department_name) && !departmentId) referenceErrors.push(`Department "${row.department_name}" not found`);
-  if (normalizeText(row.tax_name) && !taxId) referenceErrors.push(`Tax "${row.tax_name}" not found`);
+  if (normalizeText(row.tax_name) && !taxId) referenceErrors.push(`GST "${row.tax_name}" not found`);
+  if (includeTax && !taxId) referenceErrors.push('GST slab is required when include_tax is Yes');
   if (inventoryStoreId) {
     const storeCheck = requireStore(user, inventoryStoreId);
     if (storeCheck.error) referenceErrors.push(`No access to inventory store "${row.inventory_store_name}"`);
@@ -206,13 +226,13 @@ async function insertProductWithIntegrations(client, row, user) {
       category_id, sub_category_id, brand_id, manufacturer_id,
       department_id, income_head_id, tax_id,
       mrp, selling_price, cost_price, unit,
-      is_active, is_service, image_url, allow_discount_on_pos
+      is_active, is_service, image_url, allow_discount_on_pos, include_tax
     ) VALUES (
       $1, $2, $3, $4, $5,
       $6, $7, $8, $9,
       $10, $11, $12,
       $13, $14, $15, COALESCE($16, 'PCS'),
-      COALESCE($17, true), COALESCE($18, false), $19, COALESCE($20, false)
+      COALESCE($17, true), COALESCE($18, false), $19, COALESCE($20, false), COALESCE($21, false)
     ) RETURNING *`,
     [
       nullableText(row.product_id),
@@ -235,6 +255,7 @@ async function insertProductWithIntegrations(client, row, user) {
       toBoolean(row.is_service, false),
       nullableText(row.image_url),
       toBoolean(row.allow_discount_on_pos, false),
+      includeTax,
     ]
   );
 
@@ -294,12 +315,12 @@ async function insertProductWithIntegrations(client, row, user) {
           disable_billing_on_zero: toBoolean(row.disable_billing_on_zero, true),
           disable_sales_on_expiry: toBoolean(row.disable_sales_on_expiry, false),
           inventory_method: normalizeText(row.inventory_method) || 'direct',
-          stock_item_type: normalizeText(row.stock_item_type) || 'unbatched',
+          stock_item_type: normalizeStockItemType(row.stock_item_type),
           default_low_stock_value: toNumber(row.default_low_stock_value, 0),
           flags: {
             is_sellable_on_pos: toBoolean(row.is_sellable_on_pos, true),
             allow_variable_pricing: toBoolean(row.allow_variable_pricing, false),
-            include_tax: toBoolean(row.include_tax, false),
+            include_tax: includeTax,
             charge_name: nullableText(row.charge_name),
             selected_color: nullableText(row.selected_color),
           },

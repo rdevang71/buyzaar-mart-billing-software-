@@ -6,6 +6,10 @@ async function ensureProductDiscountSchema() {
     ALTER TABLE products
       ADD COLUMN IF NOT EXISTS allow_discount_on_pos BOOLEAN NOT NULL DEFAULT FALSE;
   `);
+  await query(`
+    ALTER TABLE products
+      ADD COLUMN IF NOT EXISTS include_tax BOOLEAN NOT NULL DEFAULT FALSE;
+  `);
 }
 
 function normalizeUnit(value) {
@@ -17,7 +21,7 @@ const SELECT_PRODUCT = `
   SELECT
     p.id, p.product_id, p.name, p.description, p.barcode, p.sku,
     p.mrp, p.selling_price, p.cost_price, p.unit,
-    p.is_active, p.is_service, p.image_url, p.allow_discount_on_pos,
+    p.is_active, p.is_service, p.image_url, p.allow_discount_on_pos, p.include_tax,
     p.category_id, p.sub_category_id, p.brand_id,
     p.manufacturer_id, p.department_id, p.income_head_id, p.tax_id,
     p.created_at, p.updated_at,
@@ -53,7 +57,7 @@ export async function GET(request, { params }) {
       `${SELECT_PRODUCT} WHERE p.id = $1`,
       [productId]
     );
-    if (!result.rows.length) return notFound('Product not found');
+    if (!result.rows.length) return notFoundError('Product not found');
     return successResponse(result.rows[0]);
   } catch (err) {
     return errorResponse(err.message);
@@ -98,8 +102,9 @@ export async function PUT(request, { params }) {
         is_service      = $18,
         image_url       = $19,
         allow_discount_on_pos = $20,
+        include_tax     = $21,
         updated_at      = NOW()
-       WHERE id = $21
+       WHERE id = $22
        RETURNING *`,
       [
         body.product_id    || null,
@@ -122,11 +127,12 @@ export async function PUT(request, { params }) {
         body.is_service    ?? false,
         body.image_url     || null,
         body.allow_discount_on_pos ?? false,
+        body.include_tax ?? false,
         productId,
       ]
     );
 
-    if (!result.rows.length) return notFound('Product not found');
+    if (!result.rows.length) return notFoundError('Product not found');
     return successResponse(result.rows[0], 'Product updated successfully');
   } catch (err) {
     if (err.code === '23505') {
@@ -149,7 +155,7 @@ export async function DELETE(request, { params }) {
       `DELETE FROM products WHERE id = $1 RETURNING id`,
       [productId]
     );
-    if (!result.rows.length) return notFound('Product not found');
+    if (!result.rows.length) return notFoundError('Product not found');
     return successResponse({ id: productId }, 'Product deleted successfully');
   } catch (err) {
     return errorResponse(err.message);
