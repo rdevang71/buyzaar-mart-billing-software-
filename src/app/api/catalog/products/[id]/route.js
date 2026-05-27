@@ -8,6 +8,11 @@ async function ensureProductDiscountSchema() {
   `);
 }
 
+function normalizeUnit(value) {
+  const unit = String(value || 'PCS').trim().toUpperCase();
+  return ['PCS', 'KG', 'LTR'].includes(unit) ? unit : 'PCS';
+}
+
 const SELECT_PRODUCT = `
   SELECT
     p.id, p.product_id, p.name, p.description, p.barcode, p.sku,
@@ -112,7 +117,7 @@ export async function PUT(request, { params }) {
         body.mrp           || 0,
         body.selling_price || 0,
         body.cost_price    || 0,
-        body.unit          || 'PCS',
+        normalizeUnit(body.unit),
         body.is_active     ?? true,
         body.is_service    ?? false,
         body.image_url     || null,

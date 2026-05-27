@@ -39,6 +39,8 @@ const initialForm = {
   image_url: '',
 };
 
+const UNIT_OPTIONS = ['PCS', 'KG', 'LTR'];
+
 const createEmptyStoreRow = () => ({ enabled: true, selling_price: '', mrp: '', low_stock_value: '' });
 
 function Card({ title, description, children, action }) {
@@ -138,7 +140,7 @@ export default function EditProductPage() {
               mrp: product.mrp ?? '',
               selling_price: product.selling_price ?? '',
               cost_price: product.cost_price ?? '',
-              unit: product.unit || 'PCS',
+              unit: UNIT_OPTIONS.includes(String(product.unit || '').toUpperCase()) ? String(product.unit).toUpperCase() : 'PCS',
               is_active: product.is_active ?? true,
               is_service: product.is_service ?? false,
               image_url: product.image_url || '',
@@ -423,8 +425,10 @@ export default function EditProductPage() {
               </select>
             </div>
             <div>
-              <Label>Unit</Label>
-              <input type="text" value={form.unit} onChange={(event) => set('unit', event.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500" />
+              <Label required>Unit</Label>
+              <select value={form.unit} onChange={(event) => set('unit', event.target.value)} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500">
+                {UNIT_OPTIONS.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
+              </select>
             </div>
             <div className="flex flex-wrap items-center gap-4 pt-6">
               {[

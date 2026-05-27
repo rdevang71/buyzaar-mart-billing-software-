@@ -13,6 +13,11 @@ async function ensureProductDiscountSchema() {
   `);
 }
 
+function normalizeUnit(value) {
+  const unit = String(value || 'PCS').trim().toUpperCase();
+  return ['PCS', 'KG', 'LTR'].includes(unit) ? unit : 'PCS';
+}
+
 // ─── GET /api/catalog/products ───────────────────────────────
 export async function GET(request) {
   try {
@@ -67,7 +72,7 @@ export async function GET(request) {
     }
 
     if (search) {
-      conditions.push(`(p.name ILIKE $${i} OR p.barcode ILIKE $${i} OR p.sku ILIKE $${i})`);
+      conditions.push(`(p.name ILIKE $${i} OR p.barcode ILIKE $${i} OR p.sku ILIKE $${i} OR p.product_id ILIKE $${i})`);
       params.push(`%${search}%`);
       i++;
     }
@@ -203,7 +208,7 @@ export async function POST(request) {
           body.mrp || 0,
           body.selling_price || 0,
           body.cost_price || 0,
-          body.unit || 'PCS',
+          normalizeUnit(body.unit),
           body.is_active ?? true,
           body.is_service ?? false,
           body.image_url || null,
@@ -280,15 +285,6 @@ export async function POST(request) {
               inventory_method: body.inventory_method || 'direct',
               stock_item_type: body.stock_item_type || 'unbatched',
               default_low_stock_value: Number(body.default_low_stock_value || 0),
-              dimensions: {
-                length: body.length || '',
-                width: body.width || '',
-                height: body.height || '',
-              },
-              weight: {
-                unit: body.weight_unit || 'kilogram',
-                value: Number(body.weight_value || 0),
-              },
             }),
           ]
         );

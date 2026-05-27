@@ -102,6 +102,7 @@ function LineItemsContent() {
         const sourceType = String(draft?.meta?.sourceType || 'warehouse').toLowerCase();
         const endpoint = '/api/inventory/stockin/source-products';
         params.set('source', sourceType === 'vendor' ? 'vendor' : 'warehouse');
+        params.set('destinationType', String(draft?.destinationLocationType || '').toLowerCase());
         if (sourceType === 'vendor') {
           params.set('vendorIds', selectedVendorIds.join(','));
         }

@@ -121,12 +121,6 @@ export default function CatalogListPage({
             'disable_sales_on_expiry',
             'inventory_method',
             'stock_item_type',
-            'dimension_unit',
-            'length',
-            'width',
-            'height',
-            'weight_unit',
-            'weight_value',
           ];
 
     // Keep template headers strictly aligned with the product creation form.

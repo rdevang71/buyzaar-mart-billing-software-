@@ -31,6 +31,11 @@ function nullableText(value) {
   return text || null;
 }
 
+function normalizeUnit(value) {
+  const unit = normalizeText(value).toUpperCase() || 'PCS';
+  return ['PCS', 'KG', 'LTR'].includes(unit) ? unit : 'PCS';
+}
+
 function toNumber(value, fallback = 0) {
   if (value === '' || value === null || value === undefined) return fallback;
   const num = Number(value);
@@ -225,7 +230,7 @@ async function insertProductWithIntegrations(client, row, user) {
       toNumber(row.mrp, 0),
       toNumber(row.selling_price, 0),
       toNumber(row.cost_price, 0),
-      normalizeText(row.unit) || 'PCS',
+      normalizeUnit(row.unit),
       toBoolean(row.is_active, true),
       toBoolean(row.is_service, false),
       nullableText(row.image_url),
@@ -291,16 +296,6 @@ async function insertProductWithIntegrations(client, row, user) {
           inventory_method: normalizeText(row.inventory_method) || 'direct',
           stock_item_type: normalizeText(row.stock_item_type) || 'unbatched',
           default_low_stock_value: toNumber(row.default_low_stock_value, 0),
-          dimensions: {
-            unit: normalizeText(row.dimension_unit) || 'metre',
-            length: toNumber(row.length, 0),
-            width: toNumber(row.width, 0),
-            height: toNumber(row.height, 0),
-          },
-          weight: {
-            unit: normalizeText(row.weight_unit) || 'kilogram',
-            value: toNumber(row.weight_value, 0),
-          },
           flags: {
             is_sellable_on_pos: toBoolean(row.is_sellable_on_pos, true),
             allow_variable_pricing: toBoolean(row.allow_variable_pricing, false),

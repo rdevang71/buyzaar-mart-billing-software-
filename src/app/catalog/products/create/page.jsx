@@ -44,14 +44,10 @@ const initialForm = {
   disable_sales_on_expiry: false,
   inventory_method: 'direct',
   stock_item_type: 'unbatched',
-  dimension_unit: 'metre',
-  length: '',
-  width: '',
-  height: '',
-  weight_unit: 'kilogram',
-  weight_value: '',
   image_url: '',
 };
+
+const UNIT_OPTIONS = ['PCS', 'KG', 'LTR'];
 
 const createEmptyStoreRow = () => ({ enabled: true, selling_price: '', mrp: '', low_stock_value: '' });
 
@@ -240,12 +236,6 @@ export default function CreateProductPage() {
           disable_sales_on_expiry: form.disable_sales_on_expiry,
           inventory_method: form.inventory_method,
           stock_item_type: form.stock_item_type,
-          dimension_unit: form.dimension_unit,
-          length: form.length || '',
-          width: form.width || '',
-          height: form.height || '',
-          weight_unit: form.weight_unit,
-          weight_value: Number(form.weight_value || 0),
         }),
       });
       const json = await response.json();
@@ -435,8 +425,10 @@ export default function CreateProductPage() {
               </select>
             </div>
             <div>
-              <Label>Unit</Label>
-              <input type="text" value={form.unit} onChange={(event) => set('unit', event.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500" />
+              <Label required>Unit</Label>
+              <select value={form.unit} onChange={(event) => set('unit', event.target.value)} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500">
+                {UNIT_OPTIONS.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
+              </select>
             </div>
             <div className="flex flex-wrap items-center gap-4 pt-6">
               {[
@@ -676,44 +668,6 @@ export default function CreateProductPage() {
                         <span>Unbatched Product</span>
                       </label>
                     </div>
-                  </div>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-4">
-                  <div>
-                    <Label>Unit & Dimensions</Label>
-                    <select value={form.dimension_unit} onChange={(event) => set('dimension_unit', event.target.value)} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500">
-                      <option value="metre">Metre</option>
-                      <option value="cm">Centimetre</option>
-                      <option value="inch">Inch</option>
-                    </select>
-                  </div>
-                  <div>
-                    <Label>Length</Label>
-                    <input type="number" min="0" value={form.length} onChange={(event) => set('length', event.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500" />
-                  </div>
-                  <div>
-                    <Label>Width</Label>
-                    <input type="number" min="0" value={form.width} onChange={(event) => set('width', event.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500" />
-                  </div>
-                  <div>
-                    <Label>Height</Label>
-                    <input type="number" min="0" value={form.height} onChange={(event) => set('height', event.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500" />
-                  </div>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <Label>Weight Unit</Label>
-                    <select value={form.weight_unit} onChange={(event) => set('weight_unit', event.target.value)} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500">
-                      <option value="kilogram">Kilogram</option>
-                      <option value="gram">Gram</option>
-                      <option value="pound">Pound</option>
-                    </select>
-                  </div>
-                  <div>
-                    <Label>Weight Value</Label>
-                    <input type="number" min="0" value={form.weight_value} onChange={(event) => set('weight_value', event.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500" />
                   </div>
                 </div>
 

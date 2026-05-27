@@ -106,14 +106,19 @@ export async function POST(request) {
         INSERT INTO stock_in (method, destination_id, apply_taxes, add_products_prefill, meta, status, reference_type, reference_id, vendor_id, vendor_name, invoice_number, invoice_date, created_at)
         VALUES ($1, $2, $3, $4, $5, 'draft', 'purchase_order', $6, $7, $8, $9, $10, NOW())
         RETURNING id`;
+      const vendorId = payload.vendorId || payload.vendor || po?.vendor_id || null;
       const values = [
         'purchase_order',
         payload.destination || po?.destination_id || null,
         payload.applyTaxes ?? true,
         payload.addProductsPrefill ?? false,
-        JSON.stringify(payload),
+        JSON.stringify({
+          ...payload,
+          sourceType: 'vendor',
+          vendorIds: vendorId ? [vendorId] : [],
+        }),
         po?.id || payload.poId || null,
-        payload.vendorId || payload.vendor || po?.vendor_id || null,
+        vendorId,
         payload.vendorName || po?.vendor_name || null,
         payload.invoiceNumber || po?.invoice_number || null,
         payload.invoiceDate || po?.invoice_date || null,

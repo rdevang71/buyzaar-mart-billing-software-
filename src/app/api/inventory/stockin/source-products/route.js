@@ -18,6 +18,58 @@ function parseIds(value) {
     .filter(Number.isFinite);
 }
 
+async function fetchCatalogProducts({ search, pageSize, vendorIds = [] }) {
+  const params = [];
+  const filters = [`COALESCE(p.is_active, TRUE) = TRUE`];
+  if (search) {
+    params.push(`%${search}%`);
+    filters.push(`(
+      COALESCE(p.name, '') ILIKE $${params.length}
+      OR COALESCE(p.sku, '') ILIKE $${params.length}
+      OR COALESCE(p.barcode, '') ILIKE $${params.length}
+      OR COALESCE(p.product_id, '') ILIKE $${params.length}
+    )`);
+  }
+  params.push(pageSize);
+
+  const vendorNameSelect = vendorIds.length
+    ? `(SELECT STRING_AGG(DISTINCT v.name, ', ') FROM vendors v WHERE v.id = ANY($${params.length + 1}::int[])) AS vendor_names,`
+    : `NULL::text AS vendor_names,`;
+  if (vendorIds.length) params.push(vendorIds);
+
+  const res = await query(
+    `SELECT
+       p.id,
+       p.product_id,
+       p.name,
+       p.sku,
+       p.barcode,
+       p.mrp,
+       p.selling_price,
+       COALESCE(p.cost_price, 0) AS cost_price,
+       c.name AS "categoryName",
+       b.name AS "brandName",
+       COALESCE(t.rate, 0) AS "taxRate",
+       0::numeric AS "availableStock",
+       ${vendorNameSelect}
+       NULL::timestamptz AS last_supplied_at
+     FROM products p
+     LEFT JOIN categories c ON c.id = p.category_id
+     LEFT JOIN brands b ON b.id = p.brand_id
+     LEFT JOIN taxes t ON t.id = p.tax_id
+     WHERE ${filters.join(' AND ')}
+     ORDER BY p.name ASC
+     LIMIT $${search ? 2 : 1}`,
+    params
+  );
+
+  return res.rows.map((row) => ({
+    ...row,
+    cost_price: toNumber(row.cost_price),
+    availableStock: 0,
+  }));
+}
+
 export async function GET(request) {
   try {
     await ensureStockInSchema();
@@ -34,11 +86,15 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const source = String(searchParams.get('source') || 'warehouse').toLowerCase();
     const search = String(searchParams.get('search') || '').trim();
+    const destinationType = String(searchParams.get('destinationType') || '').toLowerCase();
     const vendorIds = parseIds(searchParams.get('vendorIds') || searchParams.get('vendor_ids'));
     const pageSize = Math.min(Math.max(Number(searchParams.get('pageSize') || 30), 1), 100);
 
     if (source === 'vendor') {
-      if (!vendorIds.length) return successResponse({ records: [] });
+      if (!vendorIds.length) {
+        const records = await fetchCatalogProducts({ search, pageSize });
+        return successResponse({ records });
+      }
 
       const params = [vendorIds];
       const filters = [`COALESCE(p.is_active, TRUE) = TRUE`];
@@ -99,13 +155,22 @@ export async function GET(request) {
         params
       );
 
-      return successResponse({
-        records: res.rows.map((row) => ({
+      const records = res.rows.map((row) => ({
           ...row,
           cost_price: toNumber(row.cost_price),
           availableStock: 0,
-        })),
+        }));
+
+      if (records.length) return successResponse({ records });
+
+      return successResponse({
+        records: await fetchCatalogProducts({ search, pageSize, vendorIds }),
       });
+    }
+
+    if (destinationType === 'warehouse') {
+      const records = await fetchCatalogProducts({ search, pageSize });
+      return successResponse({ records });
     }
 
     const params = [];
