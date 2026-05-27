@@ -278,7 +278,7 @@ export async function PUT(request) {
        LEFT JOIN purchase_orders po ON po.id = vi.purchase_order_id
        LEFT JOIN stock_in si ON si.id = vi.stock_in_id
        WHERE vi.id = $1
-       FOR UPDATE`,
+       FOR UPDATE OF vi`,
       [invoiceId]
     );
     const invoice = invoiceRes.rows[0];
