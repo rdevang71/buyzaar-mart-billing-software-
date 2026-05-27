@@ -79,7 +79,7 @@ export async function GET(request) {
       );
 
       const totalPages = Math.max(1, Math.ceil(total / pageSize));
-      return successResponse({ stores: res.rows, page, pageSize, total, totalPages }, 'Stores fetched');
+      return successResponse({ stores: res.rows, records: res.rows, page, pageSize, total, totalPages }, 'Stores fetched');
     }
 
     const where = [];
@@ -97,7 +97,7 @@ export async function GET(request) {
        ORDER BY name`,
       params
     );
-    return successResponse({ stores: res.rows }, 'Stores fetched');
+    return successResponse({ stores: res.rows, records: res.rows }, 'Stores fetched');
   } catch (err) {
     console.error(err);
     return errorResponse('Failed to fetch stores');

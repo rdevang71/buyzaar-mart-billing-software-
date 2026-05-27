@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import MainLayout from '@/components/MainLayout';
 import { validatePhoneNumber } from '@/lib/phoneValidator';
+import { fetchLookup, normalizeVendors } from '@/lib/purchaseLookups';
 
 const tableHeaders = ['S. No.', 'Vendor Name', 'Mobile Number', 'Email Address', 'Address', 'Actions'];
 
@@ -17,6 +18,7 @@ function isValidEmail(value) {
 export default function VendorsPage() {
   const [vendors, setVendors] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
@@ -47,16 +49,17 @@ export default function VendorsPage() {
 
   const fetchVendors = async () => {
     setLoading(true);
+    setError('');
     try {
       const params = new URLSearchParams();
       if (search.trim()) params.set('search', search.trim());
       params.set('includeInactive', 'true');
-      const res = await fetch(`/api/vendors?${params.toString()}`);
-      const data = await res.json();
-      setVendors(Array.isArray(data) ? data : []);
+      const data = await fetchLookup(`/api/vendors?${params.toString()}`);
+      setVendors(normalizeVendors(data));
     } catch (err) {
       console.error('Failed to fetch vendors', err);
       setVendors([]);
+      setError(err.message || 'Failed to fetch vendors');
     } finally {
       setLoading(false);
     }
@@ -137,6 +140,11 @@ export default function VendorsPage() {
 
       {/* Table */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+        {error && (
+          <div className="border-b border-red-100 bg-red-50 px-4 py-3 text-[12px] font-semibold text-red-600">
+            {error}
+          </div>
+        )}
         <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200 justify-between flex-wrap">
           <div className="flex items-center gap-2 flex-1 min-w-[260px] max-w-[340px] bg-gray-50 rounded-lg px-3 py-2">
             <i className="ti ti-search text-gray-400 text-[16px]" />

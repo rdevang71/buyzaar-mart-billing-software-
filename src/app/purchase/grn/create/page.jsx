@@ -3,18 +3,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import MainLayout from '@/components/MainLayout';
+import { fetchLookup, normalizeStores } from '@/lib/purchaseLookups';
 
 async function fetchStores() {
-  const res = await fetch('/api/stores');
-  if (!res.ok) throw new Error('Failed to fetch stores');
-  const data = await res.json();
-  if (Array.isArray(data)) return data;
-  if (Array.isArray(data?.data?.stores)) return data.data.stores;
-  if (Array.isArray(data?.data?.records)) return data.data.records;
-  if (Array.isArray(data?.stores)) return data.stores;
-  if (Array.isArray(data?.records)) return data.records;
-  if (data?.success && Array.isArray(data.data)) return data.data;
-  return [];
+  return normalizeStores(await fetchLookup('/api/stores'));
 }
 
 async function fetchPurchaseOrders() {
@@ -52,6 +44,7 @@ export default function CreateGrnPage() {
   const [stores, setStores] = useState([]);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [loadingStores, setLoadingStores] = useState(false);
+  const [error, setError] = useState('');
   const [poId, setPoId] = useState('');
   const [poSearch, setPoSearch] = useState('');
   const [destination, setDestination] = useState('');
@@ -63,12 +56,23 @@ export default function CreateGrnPage() {
 
   useEffect(() => {
     setLoadingStores(true);
-    Promise.all([fetchStores(), fetchPurchaseOrders()])
-      .then(([storeData, poData]) => {
-        setStores(storeData || []);
-        setPurchaseOrders(poData || []);
+    setError('');
+    Promise.allSettled([fetchStores(), fetchPurchaseOrders()])
+      .then(([storeResult, poResult]) => {
+        if (storeResult.status === 'fulfilled') {
+          setStores(storeResult.value || []);
+        } else {
+          setStores([]);
+          setError(storeResult.reason?.message || 'Failed to load stores');
+        }
+
+        if (poResult.status === 'fulfilled') {
+          setPurchaseOrders(poResult.value || []);
+        } else {
+          setPurchaseOrders([]);
+          setError((current) => current || poResult.reason?.message || 'Failed to load purchase orders');
+        }
       })
-      .catch(() => setStores([]))
       .finally(() => setLoadingStores(false));
   }, []);
 
@@ -126,6 +130,7 @@ export default function CreateGrnPage() {
       <div className="max-w-3xl mx-auto">
         <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
           <h1 className="text-2xl font-semibold text-gray-900 mb-4">Create Purchase GRN</h1>
+          {error && <div className="mb-4 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-[12px] font-semibold text-red-600">{error}</div>}
 
           <div className="mb-4">
             <label className="block text-sm text-gray-700 font-medium mb-1">Purchase Order ID <span className="text-red-500">*</span></label>

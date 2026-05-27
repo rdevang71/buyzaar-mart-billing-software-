@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import MainLayout from '@/components/MainLayout';
+import { fetchLookup, normalizeVendors } from '@/lib/purchaseLookups';
 
 const tableHeaders = [
   'Invoice ID',
@@ -46,12 +47,6 @@ function mapRecordsToTable(records) {
 async function fetchVendorInvoices() {
   const res = await fetch('/api/vendor-invoices', { cache: 'no-store' });
   if (!res.ok) throw new Error('Failed to fetch vendor invoices');
-  return res.json();
-}
-
-async function fetchVendors() {
-  const res = await fetch('/api/vendors', { cache: 'no-store' });
-  if (!res.ok) throw new Error('Failed to fetch vendors');
   return res.json();
 }
 
@@ -109,15 +104,21 @@ export default function InvoiceSettlementPage() {
   const loadData = () => {
     setLoading(true);
     setError('');
-    Promise.all([fetchVendorInvoices(), fetchVendors()])
-      .then(([invoiceData, vendorData]) => {
-        setRecords(Array.isArray(invoiceData) ? invoiceData : []);
-        setVendors(Array.isArray(vendorData) ? vendorData : []);
-      })
-      .catch((err) => {
-        setError(err.message || 'Failed to load invoice settlements');
-        setRecords([]);
-        setVendors([]);
+    Promise.allSettled([fetchVendorInvoices(), fetchLookup('/api/vendors')])
+      .then(([invoiceResult, vendorResult]) => {
+        if (invoiceResult.status === 'fulfilled') {
+          setRecords(Array.isArray(invoiceResult.value) ? invoiceResult.value : []);
+        } else {
+          setError(invoiceResult.reason?.message || 'Failed to load invoice settlements');
+          setRecords([]);
+        }
+
+        if (vendorResult.status === 'fulfilled') {
+          setVendors(normalizeVendors(vendorResult.value));
+        } else {
+          setError((current) => current || vendorResult.reason?.message || 'Failed to load vendors');
+          setVendors([]);
+        }
       })
       .finally(() => setLoading(false));
   };

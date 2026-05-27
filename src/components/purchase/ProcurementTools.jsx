@@ -16,8 +16,10 @@ function dateText(value) {
 
 function normalizeList(payload) {
   if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.stores)) return payload.stores;
   if (Array.isArray(payload?.records)) return payload.records;
   if (Array.isArray(payload?.data?.records)) return payload.data.records;
+  if (Array.isArray(payload?.data?.stores)) return payload.data.stores;
   if (Array.isArray(payload?.data)) return payload.data;
   return [];
 }
@@ -157,17 +159,28 @@ function useLookups() {
   const [vendors, setVendors] = useState([]);
   const [products, setProducts] = useState([]);
 
+  const loadLookup = useCallback(async (url) => {
+    const response = await fetch(url, { credentials: 'include', cache: 'no-store' });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) return [];
+    return payload;
+  }, []);
+
   useEffect(() => {
     Promise.all([
-      fetch('/api/stores', { credentials: 'include', cache: 'no-store' }).then((r) => r.json()).catch(() => []),
-      fetch('/api/vendors', { credentials: 'include', cache: 'no-store' }).then((r) => r.json()).catch(() => []),
-      fetch('/api/catalog/products?pageSize=500', { credentials: 'include', cache: 'no-store' }).then((r) => r.json()).catch(() => []),
+      loadLookup('/api/stores'),
+      loadLookup('/api/vendors'),
+      loadLookup('/api/catalog/products?pageSize=500'),
     ]).then(([s, v, p]) => {
       setStores(normalizeList(s));
       setVendors(normalizeList(v));
       setProducts(normalizeList(p));
+    }).catch(() => {
+      setStores([]);
+      setVendors([]);
+      setProducts([]);
     });
-  }, []);
+  }, [loadLookup]);
 
   return { stores, vendors, products };
 }
@@ -188,6 +201,12 @@ export function VendorQuotationsPage() {
   const filtered = useMemo(() => rows, [rows]);
 
   const save = async () => {
+    if (!form.vendorId) return alert('Select a vendor');
+    if (!form.storeId) return alert('Select a store');
+    if (!form.productId) return alert('Select a product');
+    if (!Number(form.qty) || Number(form.qty) <= 0) return alert('Qty must be greater than 0');
+    if (Number(form.quotedPrice) < 0) return alert('Quoted price cannot be negative');
+
     const product = products.find((p) => String(p.id) === String(form.productId));
     const res = await fetch('/api/purchase/quotations', {
       method: 'POST',

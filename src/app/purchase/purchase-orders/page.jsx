@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import MainLayout from '@/components/MainLayout';
+import { fetchLookup, normalizeStores, normalizeVendors } from '@/lib/purchaseLookups';
 
 const tableHeaders = [
   'Purchase Order ID',
@@ -84,33 +85,6 @@ function isWithinRange(value, range) {
   return true;
 }
 
-async function fetchLookups() {
-  const [storesRes, vendorsRes] = await Promise.all([
-    fetch('/api/stores'),
-    fetch('/api/vendors'),
-  ]);
-  return {
-    stores: storesRes.ok ? await storesRes.json() : [],
-    vendors: vendorsRes.ok ? await vendorsRes.json() : [],
-  };
-}
-
-function normalizeStores(data) {
-  if (Array.isArray(data)) return data;
-  if (Array.isArray(data?.data?.stores)) return data.data.stores;
-  if (Array.isArray(data?.stores)) return data.stores;
-  if (Array.isArray(data?.records)) return data.records;
-  return [];
-}
-
-function normalizeVendors(data) {
-  if (Array.isArray(data)) return data;
-  if (Array.isArray(data?.data?.records)) return data.data.records;
-  if (Array.isArray(data?.vendors)) return data.vendors;
-  if (Array.isArray(data?.records)) return data.records;
-  return [];
-}
-
 async function fetchPurchaseOrders() {
   const res = await fetch('/api/purchase-orders');
   if (!res.ok) throw new Error('Failed to fetch purchase orders');
@@ -178,14 +152,10 @@ export default function PurchaseOrdersPage() {
 
   useEffect(() => {
     setLoadingLookups(true);
-    fetchLookups()
-      .then(({ stores: storeData, vendors: vendorData }) => {
-        setStores(normalizeStores(storeData));
-        setVendors(normalizeVendors(vendorData));
-      })
-      .catch(() => {
-        setStores([]);
-        setVendors([]);
+    Promise.allSettled([fetchLookup('/api/stores'), fetchLookup('/api/vendors')])
+      .then(([storeResult, vendorResult]) => {
+        setStores(storeResult.status === 'fulfilled' ? normalizeStores(storeResult.value) : []);
+        setVendors(vendorResult.status === 'fulfilled' ? normalizeVendors(vendorResult.value) : []);
       })
       .finally(() => setLoadingLookups(false));
   }, []);
@@ -194,14 +164,10 @@ export default function PurchaseOrdersPage() {
     if (!showModal) return;
     if (stores.length > 0 || vendors.length > 0 || loadingLookups) return;
     setLoadingLookups(true);
-    fetchLookups()
-      .then(({ stores: storeData, vendors: vendorData }) => {
-        setStores(normalizeStores(storeData));
-        setVendors(normalizeVendors(vendorData));
-      })
-      .catch(() => {
-        setStores([]);
-        setVendors([]);
+    Promise.allSettled([fetchLookup('/api/stores'), fetchLookup('/api/vendors')])
+      .then(([storeResult, vendorResult]) => {
+        setStores(storeResult.status === 'fulfilled' ? normalizeStores(storeResult.value) : []);
+        setVendors(vendorResult.status === 'fulfilled' ? normalizeVendors(vendorResult.value) : []);
       })
       .finally(() => setLoadingLookups(false));
   }, [showModal, stores.length, vendors.length, loadingLookups]);
