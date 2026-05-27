@@ -4,6 +4,7 @@ import { ensureCustomersSchema } from '@/lib/customersSchema';
 import { ensureInvoiceSalesOrdersSchema } from '@/lib/invoiceSalesOrdersSchema';
 import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
 import { ensureStoresSchema } from '@/lib/storesSchema';
+import { getStoreScope, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 function parsePositiveInteger(value, fallback) {
   const n = Number(value);
@@ -16,9 +17,18 @@ function normalizeText(value) {
   return text.length > 0 ? text : null;
 }
 
-function buildCreditQuery({ store, search, page, pageSize }) {
+function buildCreditQuery({ store, search, page, pageSize, storeIds }) {
   const params = [];
   const where = [];
+
+  if (Array.isArray(storeIds)) {
+    if (!storeIds.length) {
+      where.push('1 = 0');
+    } else {
+      params.push(storeIds);
+      where.push(`store_id = ANY($${params.length}::int[])`);
+    }
+  }
 
   if (store && store.toLowerCase() !== 'all') {
     params.push(store);
@@ -148,13 +158,26 @@ export async function POST(request) {
       ensureSalesBillingSchema(),
       ensureInvoiceSalesOrdersSchema(),
     ]);
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'VIEW_CUSTOMERS', 'MANAGE_CUSTOMERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const body = await request.json().catch(() => ({}));
     const page = parsePositiveInteger(body.page, 1);
     const pageSize = parsePositiveInteger(body.pageSize, 10);
     const store = normalizeText(body.store);
     const search = normalizeText(body.search);
-    const { sql, params } = buildCreditQuery({ store, search, page, pageSize });
+    let storeIds = null;
+    if (store && store.toLowerCase() !== 'all' && /^\d+$/.test(store)) {
+      const storeCheck = requireStore(auth.user, Number(store));
+      if (storeCheck.error) return storeCheck.error;
+    } else {
+      const scope = getStoreScope(auth.user);
+      if (scope.error) return scope.error;
+      storeIds = scope.storeIds;
+    }
+    const { sql, params } = buildCreditQuery({ store, search, page, pageSize, storeIds });
 
     const res = await query(sql, params);
     const rows = res.rows.map((r) => ({
@@ -192,13 +215,26 @@ export async function GET(request) {
       ensureSalesBillingSchema(),
       ensureInvoiceSalesOrdersSchema(),
     ]);
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'VIEW_CUSTOMERS', 'MANAGE_CUSTOMERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const url = new URL(request.url);
     const page = parsePositiveInteger(url.searchParams.get('page'), 1);
     const pageSize = parsePositiveInteger(url.searchParams.get('pageSize'), 10);
     const store = normalizeText(url.searchParams.get('store'));
     const search = normalizeText(url.searchParams.get('search'));
-    const { sql, params } = buildCreditQuery({ store, search, page, pageSize });
+    let storeIds = null;
+    if (store && store.toLowerCase() !== 'all' && /^\d+$/.test(store)) {
+      const storeCheck = requireStore(auth.user, Number(store));
+      if (storeCheck.error) return storeCheck.error;
+    } else {
+      const scope = getStoreScope(auth.user);
+      if (scope.error) return scope.error;
+      storeIds = scope.storeIds;
+    }
+    const { sql, params } = buildCreditQuery({ store, search, page, pageSize, storeIds });
     const res = await query(sql, params);
     const total = res.rows.length ? Number(res.rows[0].total_count || 0) : 0;
 

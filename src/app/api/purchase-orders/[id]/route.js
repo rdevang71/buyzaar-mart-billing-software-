@@ -3,6 +3,7 @@ import { query } from '@/lib/db';
 import { ensureStockInSchema } from '@/lib/stockInSchema';
 import { ensureVendorsSchema } from '@/lib/vendorsSchema';
 import { ensurePurchaseOrderSchema } from '@/lib/purchaseOrderSchema';
+import { requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 function normalizePurchaseOrderLookup(value) {
   const raw = decodeURIComponent(String(value || '')).replace(/^#/, '').trim();
@@ -17,6 +18,10 @@ export async function GET(request, { params }) {
     await ensureStockInSchema();
     await ensureVendorsSchema();
     await ensurePurchaseOrderSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_PURCHASE_ORDERS', 'MANAGE_VENDORS');
+    if (permissionCheck.error) return permissionCheck.error;
     const { numericId, transactionId } = normalizePurchaseOrderLookup(id);
 
     const res = await query(
@@ -38,6 +43,8 @@ export async function GET(request, { params }) {
     }
 
     const row = res.rows[0];
+    const storeCheck = requireStore(auth.user, row.destination_id);
+    if (storeCheck.error) return storeCheck.error;
     const meta = typeof row.meta === 'object' && row.meta ? row.meta : {};
     const itemsRes = await query(
       `SELECT poi.id, poi.product_id, COALESCE(poi.product_name, p.name) AS product_name,

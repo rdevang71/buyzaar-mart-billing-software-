@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { ensureCustomersSchema } from '@/lib/customersSchema';
 import { ensureCustomerCreditAdvancedConfigsSchema } from '@/lib/customerCreditAdvancedConfigsSchema';
+import { getAssignedStoreIds, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 function parsePositiveInteger(value, fallback) {
   const n = Number(value);
@@ -37,6 +38,10 @@ function mapManageRow(row, index, page, pageSize) {
 export async function GET(request) {
   try {
     await Promise.all([ensureCustomersSchema(), ensureCustomerCreditAdvancedConfigsSchema()]);
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'VIEW_CUSTOMERS', 'MANAGE_CUSTOMERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const url = new URL(request.url);
     const page = parsePositiveInteger(url.searchParams.get('page'), 1);
@@ -54,6 +59,13 @@ export async function GET(request) {
         OR TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')) ILIKE $${idx}
         OR COALESCE(c.mobile_number, '') ILIKE $${idx}
       )`);
+    }
+
+    if (auth.user.role !== 'super_admin') {
+      const assignedStores = getAssignedStoreIds(auth.user);
+      if (!assignedStores.length) return NextResponse.json({ rows: [], pagination: { page, pageSize, total: 0, totalPages: 1 } });
+      params.push(assignedStores);
+      where.push(`COALESCE(cfg.store_id, c.store_id) = ANY($${params.length}::int[])`);
     }
 
     const offset = (page - 1) * pageSize;
@@ -104,6 +116,10 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     await ensureCustomerCreditAdvancedConfigsSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_CUSTOMERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const body = await request.json().catch(() => ({}));
     const customerId = parsePositiveInteger(body.customerId, 0);
@@ -114,6 +130,16 @@ export async function POST(request) {
     if (!customerId) {
       return NextResponse.json({ error: 'customerId is required' }, { status: 400 });
     }
+
+    const current = await query(
+      `SELECT COALESCE(cfg.store_id, c.store_id) AS store_id
+       FROM customers c
+       LEFT JOIN customer_credit_advanced_configs cfg ON cfg.customer_id = c.id
+       WHERE c.id = $1`,
+      [customerId]
+    );
+    const storeCheck = requireStore(auth.user, current.rows[0]?.store_id);
+    if (storeCheck.error) return storeCheck.error;
 
     const res = await query(
       `UPDATE customer_credit_advanced_configs

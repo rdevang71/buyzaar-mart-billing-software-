@@ -3,6 +3,7 @@ import { query } from '@/lib/db';
 import { ensureCustomersSchema } from '@/lib/customersSchema';
 import { ensureCustomerMessageHistorySchema } from '@/lib/customerMessageHistorySchema';
 import { ensureStockInSchema } from '@/lib/stockInSchema';
+import { getAssignedStoreIds, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 function parsePositiveInteger(value, fallback) {
   const n = Number(value);
@@ -65,6 +66,10 @@ export async function GET(request) {
       ensureCustomerMessageHistorySchema(),
       ensureStockInSchema(),
     ]);
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'VIEW_CUSTOMERS', 'MANAGE_CUSTOMERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const url = new URL(request.url);
     const page = parsePositiveInteger(url.searchParams.get('page'), 1);
@@ -92,6 +97,13 @@ export async function GET(request) {
       params.push(store);
       const idx = params.length;
       where.push(`(CAST(mh.store_id AS TEXT) = $${idx} OR LOWER(COALESCE(s.name, '')) = LOWER($${idx}))`);
+    }
+
+    if (auth.user.role !== 'super_admin') {
+      const assignedStores = getAssignedStoreIds(auth.user);
+      if (!assignedStores.length) return NextResponse.json({ rows: [], pagination: { page, pageSize, total: 0, totalPages: 1 } });
+      params.push(assignedStores);
+      where.push(`mh.store_id = ANY($${params.length}::int[])`);
     }
 
     if (messageType && messageType.toLowerCase() !== 'all') {
@@ -185,6 +197,10 @@ export async function POST(request) {
       ensureCustomerMessageHistorySchema(),
       ensureStockInSchema(),
     ]);
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_CUSTOMERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const body = await request.json().catch(() => ({}));
     const customerId = body.customerId == null || body.customerId === '' ? null : parsePositiveInteger(body.customerId, 0);
@@ -201,6 +217,12 @@ export async function POST(request) {
     if (!messageText) {
       return NextResponse.json({ error: 'messageText is required' }, { status: 400 });
     }
+
+    if (!storeId) {
+      return NextResponse.json({ error: 'storeId is required' }, { status: 400 });
+    }
+    const storeCheck = requireStore(auth.user, storeId);
+    if (storeCheck.error) return storeCheck.error;
 
     const result = await query(
       `

@@ -1,10 +1,15 @@
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { ensureStockInSchema } from '@/lib/stockInSchema';
+import { requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 export async function GET(request, { params }) {
   try {
     await ensureStockInSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_PURCHASE_ORDERS', 'MANAGE_VENDORS');
+    if (permissionCheck.error) return permissionCheck.error;
     const id = params?.id || null;
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
 
@@ -20,6 +25,8 @@ export async function GET(request, { params }) {
 
     if (!res.rows.length) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     const row = res.rows[0];
+    const storeCheck = requireStore(auth.user, row.destination_id);
+    if (storeCheck.error) return storeCheck.error;
     return NextResponse.json({ ...row, items: row.items });
   } catch (err) {
     console.error('[grns [id] GET]', err.message);

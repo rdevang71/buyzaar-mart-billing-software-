@@ -4,7 +4,7 @@ import { ensureCustomersSchema } from '@/lib/customersSchema';
 import { ensureInvoiceSalesOrdersSchema } from '@/lib/invoiceSalesOrdersSchema';
 import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
 import { ensureStockInSchema } from '@/lib/stockInSchema';
-import { requireAuth, requirePermission } from '@/lib/api-protection';
+import { getAssignedStoreIds, requireAuth, requirePermission } from '@/lib/api-protection';
 
 function parsePositiveInteger(value, fallback) {
   const number = Number(value);
@@ -79,6 +79,15 @@ export async function GET(request) {
     if (store && store.toLowerCase() !== 'all') {
       params.push(store);
       orderFilters.push(`(CAST(store_id AS TEXT) = $${params.length} OR LOWER(COALESCE(store_name, '')) = LOWER($${params.length}))`);
+    }
+
+    if (auth.user.role !== 'super_admin') {
+      const assignedStores = getAssignedStoreIds(auth.user);
+      if (!assignedStores.length) {
+        return NextResponse.json({ rows: [], pagination: { page, pageSize, total: 0, totalPages: 1 } });
+      }
+      params.push(assignedStores);
+      orderFilters.push(`store_id = ANY($${params.length}::int[])`);
     }
 
     if (search) {

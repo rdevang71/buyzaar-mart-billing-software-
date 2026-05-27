@@ -8,10 +8,9 @@
  */
 
 import { NextResponse } from 'next/server';
-import { cookies }      from 'next/headers';
-import { verifyToken }  from '@/lib/auth-enhanced';
 import { query }        from '@/lib/db';
 import { ensureSettingsSchema } from '@/lib/settingsSchema';
+import { requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 const DEFAULT_PAYMENT_MODES = [
   { id: 1, name: 'Cash', code: 'cash' },
@@ -75,21 +74,18 @@ async function loadPaymentModes(storeId) {
 
 export async function GET(request) {
   // ── Auth ────────────────────────────────────────────────────────────────
-  const cookieStore = await cookies();
-  const token = cookieStore.get('access_token')?.value ||
-                cookieStore.get('auth_token')?.value;
-
-  if (!token) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const payload = verifyToken(token);
-  if (!payload?.sub) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const auth = await requireAuth(request);
+  if (auth.error) return auth.error;
+  const permissionCheck = requirePermission(auth.user, 'MANAGE_POS', 'VIEW_PRODUCTS', 'MANAGE_PRODUCTS');
+  if (permissionCheck.error) return permissionCheck.error;
 
   const { searchParams } = new URL(request.url);
-  const storeId = searchParams.get('storeId') || null;
+  const storeId = Number(searchParams.get('storeId') || searchParams.get('store_id') || 0) || null;
+  if (!storeId) {
+    return NextResponse.json({ error: 'storeId is required' }, { status: 400 });
+  }
+  const storeCheck = requireStore(auth.user, storeId);
+  if (storeCheck.error) return storeCheck.error;
 
   // ── Products (with store-specific pricing when storeId provided) ─────────
   const productsResult = await query(
@@ -104,9 +100,10 @@ export async function GET(request) {
        COALESCE(ps.mrp,           p.mrp,            0) AS mrp,
        COALESCE(ps.is_active, TRUE)                    AS saleability_active
      FROM products p
-     LEFT JOIN product_saleability ps
+     INNER JOIN product_saleability ps
        ON ps.product_id = p.id AND ps.store_id = $1
      WHERE p.is_active = TRUE
+       AND ps.is_active = TRUE
      ORDER BY p.name
      LIMIT 3000`,
     [storeId]

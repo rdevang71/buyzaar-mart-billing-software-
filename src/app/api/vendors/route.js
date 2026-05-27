@@ -4,6 +4,7 @@ import { ensureStockInSchema } from '@/lib/stockInSchema';
 import { ensureStockOutSchema } from '@/lib/stockOutSchema';
 import { ensureVendorsSchema } from '@/lib/vendorsSchema';
 import { validatePhoneNumber } from '@/lib/phoneValidator';
+import { requireAuth, requirePermission } from '@/lib/api-protection';
 
 function mapVendor(r) {
   return {
@@ -35,6 +36,10 @@ export async function GET(req) {
     await ensureStockInSchema();
     await ensureStockOutSchema();
     await ensureVendorsSchema();
+    const auth = await requireAuth(req);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_VENDORS', 'MANAGE_PURCHASE_ORDERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const { searchParams } = new URL(req.url);
     const search = String(searchParams.get('search') || '').trim();
@@ -78,6 +83,10 @@ export async function GET(req) {
 export async function POST(req) {
   try {
     await ensureVendorsSchema();
+    const auth = await requireAuth(req);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_VENDORS');
+    if (permissionCheck.error) return permissionCheck.error;
     const body = await req.json();
     const {
       name,

@@ -5,6 +5,7 @@ import { getClient, query } from '@/lib/db';
 import { ensureEmployeesSchema } from '@/lib/employeesSchema';
 import { ensureUsersTable, normalizePhone } from '@/lib/userAuth';
 import { validatePhoneNumber } from '@/lib/phoneValidator';
+import { requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 // FIXED: Properly handle date strings without timezone corruption
 function toDate(value) {
@@ -141,9 +142,27 @@ function mapEmployeeRow(row) {
   };
 }
 
-export async function GET() {
+export async function GET(request) {
   try {
     await ensureEmployeesSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_USERS', 'VIEW_USERS');
+    if (permissionCheck.error) return permissionCheck.error;
+
+    const params = [];
+    const whereClauses = [];
+    if (auth.user.role !== 'super_admin') {
+      const assignedStores = (auth.user.assigned_stores || []).map(Number).filter(Number.isFinite);
+      if (!assignedStores.length) return NextResponse.json([]);
+      params.push(assignedStores);
+      whereClauses.push(`EXISTS (
+        SELECT 1 FROM user_stores us
+        WHERE us.user_id = e.user_id
+          AND us.is_active = TRUE
+          AND us.store_id = ANY($${params.length}::int[])
+      )`);
+    }
 
     const res = await query(
       `SELECT e.id,
@@ -174,7 +193,9 @@ export async function GET() {
               e.contractor_name,
               e.created_at
        FROM employees e
-       ORDER BY e.created_at DESC, e.id DESC`
+       ${whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : ''}
+       ORDER BY e.created_at DESC, e.id DESC`,
+      params
     );
 
     return NextResponse.json(res.rows.map(mapEmployeeRow));
@@ -188,6 +209,11 @@ export async function POST(request) {
   const client = await getClient();
   try {
     await ensureEmployeesSchema();
+    await ensureUsersTable();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_USERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const body = await request.json();
     const username = toString(body.username);
@@ -221,6 +247,15 @@ export async function POST(request) {
     const employmentType = toString(body.employment_type || body.employmentType);
     const employmentStatus = toString(body.employment_status || body.employmentStatus) || 'Active';
     const contractorName = toString(body.contractor_name || body.contractorName);
+
+    if (systemRole === 'super_admin' && auth.user.role !== 'super_admin') {
+      return NextResponse.json({ error: 'Only Super Admin can create Super Admin users' }, { status: 403 });
+    }
+
+    for (const storeId of assignedStores) {
+      const storeCheck = requireStore(auth.user, storeId);
+      if (storeCheck.error) return storeCheck.error;
+    }
 
     const validationError = validateEmployeeInput({
       username,

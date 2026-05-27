@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { ensureCustomerLoyaltySettingsSchema } from '@/lib/customerLoyaltySettingsSchema';
+import { requireAuth, requirePermission } from '@/lib/api-protection';
 
 function parseBoolean(value, fallback = false) {
   if (value === true || value === 'true' || value === 1 || value === '1') return true;
@@ -67,9 +68,13 @@ const DEFAULT_SETTINGS = {
   expiryDays: 365,
 };
 
-export async function GET() {
+export async function GET(request) {
   try {
     await ensureCustomerLoyaltySettingsSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'VIEW_CUSTOMERS', 'MANAGE_CUSTOMERS');
+    if (permissionCheck.error) return permissionCheck.error;
     const res = await query(
       `SELECT * FROM customer_loyalty_settings WHERE settings_key = 'default' ORDER BY id DESC LIMIT 1`
     );
@@ -88,6 +93,10 @@ export async function GET() {
 export async function POST(request) {
   try {
     await ensureCustomerLoyaltySettingsSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_CUSTOMERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const body = await request.json().catch(() => ({}));
     const payload = {

@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { query, getClient } from '@/lib/db';
 import { ensureEmployeesSchema } from '@/lib/employeesSchema';
 import { ensureUsersTable, normalizePhone, normalizeEmail } from '@/lib/userAuth';
+import { requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 function toDate(value) {
   if (!value) return null;
@@ -98,6 +99,11 @@ export async function PUT(request, { params }) {
   const client = await getClient();
   try {
     await ensureEmployeesSchema();
+    await ensureUsersTable();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_USERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const employeeId = await resolveEmployeeId(params);
     if (!employeeId) {
@@ -137,6 +143,15 @@ export async function PUT(request, { params }) {
     const employmentStatus = toString(body.employment_status || body.employmentStatus) || 'Active';
     const contractorName = toString(body.contractor_name || body.contractorName);
 
+    if (systemRole === 'super_admin' && auth.user.role !== 'super_admin') {
+      return NextResponse.json({ error: 'Only Super Admin can assign Super Admin role' }, { status: 403 });
+    }
+
+    for (const storeId of assignedStores) {
+      const storeCheck = requireStore(auth.user, storeId);
+      if (storeCheck.error) return storeCheck.error;
+    }
+
     const validationError = validateEmployeeInput({
       username,
       firstName,
@@ -159,6 +174,20 @@ export async function PUT(request, { params }) {
     if (!existing) {
       await client.query('ROLLBACK');
       return NextResponse.json({ error: 'Employee not found' }, { status: 404 });
+    }
+
+    if (auth.user.role !== 'super_admin' && existing.user_id) {
+      const targetStores = await client.query(
+        `SELECT store_id FROM user_stores WHERE user_id = $1 AND is_active = TRUE`,
+        [existing.user_id]
+      );
+      for (const row of targetStores.rows) {
+        const storeCheck = requireStore(auth.user, row.store_id);
+        if (storeCheck.error) {
+          await client.query('ROLLBACK');
+          return storeCheck.error;
+        }
+      }
     }
 
     const employeeRes = await client.query(
@@ -275,6 +304,10 @@ export async function PUT(request, { params }) {
 export async function DELETE(request, { params }) {
   try {
     await ensureEmployeesSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_USERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const employeeId = await resolveEmployeeId(params);
     if (!employeeId) {
@@ -282,8 +315,19 @@ export async function DELETE(request, { params }) {
     }
 
     const res = await query(
-      `DELETE FROM employees WHERE id = $1 RETURNING id`,
-      [employeeId]
+      `DELETE FROM employees e
+       WHERE e.id = $1
+         AND (
+           $2::boolean = TRUE
+           OR EXISTS (
+             SELECT 1 FROM user_stores us
+             WHERE us.user_id = e.user_id
+               AND us.is_active = TRUE
+               AND us.store_id = ANY($3::int[])
+           )
+         )
+       RETURNING id`,
+      [employeeId, auth.user.role === 'super_admin', auth.user.assigned_stores || []]
     );
 
     if (!res.rows.length) {

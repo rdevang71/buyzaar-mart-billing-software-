@@ -2,6 +2,7 @@ import { query } from '@/lib/db';
 import { ensureInvoiceSalesOrdersSchema } from '@/lib/invoiceSalesOrdersSchema';
 import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
 import { ensureCustomersSchema } from '@/lib/customersSchema';
+import { getAssignedStoreIds, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 const VIEW_FILTER_SQL = {
   'invoice-sales-order': "(iso.invoice_id IS NOT NULL OR LOWER(COALESCE(iso.status, '')) LIKE 'invoiced%')",
@@ -247,6 +248,10 @@ export async function listSalesOrderRows(view, request) {
     ensureSalesBillingSchema(),
     ensureCustomersSchema(),
   ]);
+  const auth = await requireAuth(request);
+  if (auth.error) return [];
+  const permissionCheck = requirePermission(auth.user, 'VIEW_SALES', 'MANAGE_SALES', 'MANAGE_POS');
+  if (permissionCheck.error) return [];
 
   const url = request instanceof Request ? new URL(request.url) : new URL(String(request || 'http://localhost'));
   const normalizedView = normalizeView(view);
@@ -266,6 +271,13 @@ export async function listSalesOrderRows(view, request) {
     isoWhereClauses.push(`(s.name = $${params.length} OR CAST(iso.store_id AS TEXT) = $${params.length})`);
   }
 
+  if (auth.user.role !== 'super_admin') {
+    const assignedStores = getAssignedStoreIds(auth.user);
+    if (!assignedStores.length) return [];
+    params.push(assignedStores);
+    isoWhereClauses.push(`iso.store_id = ANY($${params.length}::int[])`);
+  }
+
   const selects = [buildInvoiceSalesOrderSql(`WHERE ${isoWhereClauses.join(' AND ')}`)];
   const shouldIncludeSalesBills = ['invoice-sales-order', 'invoice-conversion-tracker'].includes(normalizedView);
 
@@ -280,6 +292,11 @@ export async function listSalesOrderRows(view, request) {
     if (storeFilter) {
       params.push(storeFilter);
       salesBillWhereClauses.push(`(s.name = $${params.length} OR CAST(sb.store_id AS TEXT) = $${params.length})`);
+    }
+
+    if (auth.user.role !== 'super_admin') {
+      params.push(getAssignedStoreIds(auth.user));
+      salesBillWhereClauses.push(`sb.store_id = ANY($${params.length}::int[])`);
     }
 
     selects.push(buildSalesBillSql(`WHERE ${salesBillWhereClauses.join(' AND ')}`));
@@ -348,6 +365,10 @@ function buildBulkActionUpdate(action) {
 
 export async function applySalesOrderBulkAction(view, request) {
   await ensureInvoiceSalesOrdersSchema();
+  const auth = await requireAuth(request);
+  if (auth.error) return { error: 'Authentication required', status: 401 };
+  const permissionCheck = requirePermission(auth.user, 'MANAGE_SALES', 'MANAGE_POS');
+  if (permissionCheck.error) return { error: 'Access denied', status: 403 };
 
   const body = await request.json();
   const ids = normalizeIds(body.ids || body.selectedRowIds || []);
@@ -363,12 +384,19 @@ export async function applySalesOrderBulkAction(view, request) {
     return { error: 'Unsupported bulk action', status: 400 };
   }
 
+  const updateParams = [update.status, ids];
+  const storeGuard =
+    auth.user.role === 'super_admin'
+      ? ''
+      : ` AND store_id = ANY($${updateParams.push(getAssignedStoreIds(auth.user))}::int[])`;
+
   const res = await query(
     `UPDATE invoice_sales_orders
      SET status = $1,
          ${update.extraSql},
          updated_at = NOW()
      WHERE id = ANY($2::bigint[])
+       ${storeGuard}
      RETURNING ('SO-' || id::text) AS id,
                'sales_order' AS source,
                sales_order_id,
@@ -406,7 +434,7 @@ export async function applySalesOrderBulkAction(view, request) {
                NULL::text AS store_name,
                created_at,
                GREATEST(COALESCE(gross_bill, 0) + COALESCE(additional_charge_value, 0) - COALESCE(total_discount, 0) - COALESCE(write_off_amount, 0), 0) AS grand_total`,
-    [update.status, ids]
+    updateParams
   );
 
   return {

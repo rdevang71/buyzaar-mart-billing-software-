@@ -3,6 +3,7 @@ import { getClient, query } from '@/lib/db';
 import { ensureCustomersSchema } from '@/lib/customersSchema';
 import { ensureInvoiceSalesOrdersSchema } from '@/lib/invoiceSalesOrdersSchema';
 import { ensureCustomerOrderSettlementsSchema } from '@/lib/customerOrderSettlementsSchema';
+import { getAssignedStoreIds, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 function parsePositiveInteger(value, fallback) {
   const num = Number(value);
@@ -53,6 +54,7 @@ async function listUnsettledRows(filters) {
     orderType,
     customerId,
     search,
+    storeIds,
   } = filters;
 
   const params = [];
@@ -62,6 +64,15 @@ async function listUnsettledRows(filters) {
     params.push(store);
     const idx = params.length;
     where.push(`(CAST(base.store_id AS TEXT) = $${idx} OR LOWER(COALESCE(base.store_name, '')) = LOWER($${idx}))`);
+  }
+
+  if (Array.isArray(storeIds)) {
+    if (!storeIds.length) {
+      where.push('1 = 0');
+    } else {
+      params.push(storeIds);
+      where.push(`base.store_id = ANY($${params.length}::int[])`);
+    }
   }
 
   if (orderType && orderType.toLowerCase() !== 'all') {
@@ -169,6 +180,10 @@ export async function GET(request) {
       ensureInvoiceSalesOrdersSchema(),
       ensureCustomerOrderSettlementsSchema(),
     ]);
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'VIEW_CUSTOMERS', 'MANAGE_CUSTOMERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const url = new URL(request.url);
     const filters = {
@@ -178,6 +193,7 @@ export async function GET(request) {
       orderType: normalizeText(url.searchParams.get('orderType')),
       customerId: normalizeText(url.searchParams.get('customerId')),
       search: normalizeText(url.searchParams.get('search')),
+      storeIds: auth.user.role === 'super_admin' ? null : getAssignedStoreIds(auth.user),
     };
 
     const data = await listUnsettledRows(filters);
@@ -202,6 +218,10 @@ export async function POST(request) {
       ensureInvoiceSalesOrdersSchema(),
       ensureCustomerOrderSettlementsSchema(),
     ]);
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_CUSTOMERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const body = await request.json().catch(() => ({}));
     const ids = Array.isArray(body.ids)
@@ -225,6 +245,7 @@ export async function POST(request) {
       `
         SELECT
           iso.id,
+          iso.store_id,
           COALESCE(NULLIF(iso.invoice_id, ''), iso.sales_order_id) AS order_id,
           GREATEST(
             COALESCE(iso.gross_bill, 0)
@@ -255,6 +276,14 @@ export async function POST(request) {
     if (!selectedRows.length) {
       await client.query('ROLLBACK');
       return NextResponse.json({ error: 'No matching orders found' }, { status: 404 });
+    }
+
+    for (const row of selectedRows) {
+      const storeCheck = requireStore(auth.user, row.store_id);
+      if (storeCheck.error) {
+        await client.query('ROLLBACK');
+        return storeCheck.error;
+      }
     }
 
     const totalDue = selectedRows.reduce((acc, row) => acc + Number(row.amount_due || 0), 0);
@@ -333,6 +362,7 @@ export async function POST(request) {
       orderType: normalizeText(body.orderType),
       customerId: normalizeText(body.customerId),
       search: normalizeText(body.search),
+      storeIds: auth.user.role === 'super_admin' ? null : getAssignedStoreIds(auth.user),
     });
 
     return NextResponse.json({

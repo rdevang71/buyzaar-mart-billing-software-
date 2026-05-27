@@ -3,6 +3,7 @@ import { query } from '@/lib/db';
 import { ensureCustomersSchema } from '@/lib/customersSchema';
 import { ensureInvoiceSalesOrdersSchema } from '@/lib/invoiceSalesOrdersSchema';
 import { ensureCustomerCreditAdvancedConfigsSchema } from '@/lib/customerCreditAdvancedConfigsSchema';
+import { getAssignedStoreIds, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 function parsePositiveInteger(value, fallback) {
   const n = Number(value);
@@ -51,6 +52,10 @@ export async function GET(request) {
       ensureInvoiceSalesOrdersSchema(),
       ensureCustomerCreditAdvancedConfigsSchema(),
     ]);
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'VIEW_CUSTOMERS', 'MANAGE_CUSTOMERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const url = new URL(request.url);
     const page = parsePositiveInteger(url.searchParams.get('page'), 1);
@@ -81,6 +86,13 @@ export async function GET(request) {
         OR s.name = $${idx}
         OR CAST(cfg.store_id AS TEXT) = $${idx}
       )`);
+    }
+
+    if (auth.user.role !== 'super_admin') {
+      const assignedStores = getAssignedStoreIds(auth.user);
+      if (!assignedStores.length) return NextResponse.json({ rows: [], pagination: { page, pageSize, total: 0, totalPages: 1 } });
+      params.push(assignedStores);
+      where.push(`cfg.store_id = ANY($${params.length}::int[])`);
     }
 
     if (dateFrom && dateTo) {
@@ -157,6 +169,10 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     await Promise.all([ensureCustomersSchema(), ensureCustomerCreditAdvancedConfigsSchema()]);
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_CUSTOMERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const body = await request.json().catch(() => ({}));
     const region = normalizeText(body.region) || 'All';
@@ -168,6 +184,11 @@ export async function POST(request) {
     if (!items.length) {
       return NextResponse.json({ error: 'At least one customer configuration is required' }, { status: 400 });
     }
+    if (!storeId) {
+      return NextResponse.json({ error: 'storeId is required' }, { status: 400 });
+    }
+    const storeCheck = requireStore(auth.user, storeId);
+    if (storeCheck.error) return storeCheck.error;
 
     const saved = [];
 

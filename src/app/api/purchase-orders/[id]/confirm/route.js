@@ -3,6 +3,7 @@ import { getClient } from '@/lib/db';
 import { ensureStockInSchema } from '@/lib/stockInSchema';
 import { ensureVendorsSchema } from '@/lib/vendorsSchema';
 import { ensurePurchaseOrderSchema } from '@/lib/purchaseOrderSchema';
+import { requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 function normalizePurchaseOrderLookup(value) {
   const raw = decodeURIComponent(String(value || '')).replace(/^#/, '').trim();
@@ -17,6 +18,10 @@ export async function POST(request, { params }) {
     await ensureStockInSchema();
     await ensureVendorsSchema();
     await ensurePurchaseOrderSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_PURCHASE_ORDERS');
+    if (permissionCheck.error) return permissionCheck.error;
     const { numericId, transactionId } = normalizePurchaseOrderLookup(id);
 
     const body = await request.json();
@@ -45,7 +50,7 @@ export async function POST(request, { params }) {
       await client.query('BEGIN');
 
       const draft = await client.query(
-        `SELECT id, status
+        `SELECT id, status, destination_id
          FROM purchase_orders
          WHERE id = COALESCE($1::int, -1)
             OR UPPER(transaction_id) = $2`,
@@ -56,6 +61,12 @@ export async function POST(request, { params }) {
         return NextResponse.json({ error: 'Purchase order not found' }, { status: 404 });
       }
       const purchaseOrderId = draft.rows[0].id;
+      const destinationId = form.destination || draft.rows[0].destination_id;
+      const storeCheck = requireStore(auth.user, destinationId);
+      if (storeCheck.error) {
+        await client.query('ROLLBACK');
+        return storeCheck.error;
+      }
       if (draft.rows[0].status === 'confirmed') {
         await client.query('ROLLBACK');
         return NextResponse.json({ error: 'Already confirmed' }, { status: 409 });

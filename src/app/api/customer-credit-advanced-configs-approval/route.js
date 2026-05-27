@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { ensureCustomersSchema } from '@/lib/customersSchema';
 import { ensureCustomerCreditAdvancedConfigsSchema } from '@/lib/customerCreditAdvancedConfigsSchema';
+import { getAssignedStoreIds, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 function parsePositiveInteger(value, fallback) {
   const n = Number(value);
@@ -42,6 +43,10 @@ export async function GET(request) {
       ensureCustomersSchema(),
       ensureCustomerCreditAdvancedConfigsSchema(),
     ]);
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'VIEW_CUSTOMERS', 'MANAGE_CUSTOMERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const url = new URL(request.url);
     const page = parsePositiveInteger(url.searchParams.get('page'), 1);
@@ -74,6 +79,13 @@ export async function GET(request) {
         OR COALESCE(cfg.region_name, '') = $${idx}
         OR COALESCE(s.name, '') = $${idx}
       )`);
+    }
+
+    if (auth.user.role !== 'super_admin') {
+      const assignedStores = getAssignedStoreIds(auth.user);
+      if (!assignedStores.length) return NextResponse.json({ rows: [], pagination: { page, pageSize, total: 0, totalPages: 1 } });
+      params.push(assignedStores);
+      where.push(`cfg.store_id = ANY($${params.length}::int[])`);
     }
 
     if (status && status.toLowerCase() !== 'all') {
@@ -154,6 +166,10 @@ export async function GET(request) {
 export async function PATCH(request) {
   try {
     await ensureCustomerCreditAdvancedConfigsSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_CUSTOMERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const body = await request.json().catch(() => ({}));
     const id = parsePositiveInteger(body.id, 0);
@@ -167,6 +183,10 @@ export async function PATCH(request) {
     if (!nextStatus || !allowedStatuses.includes(nextStatus)) {
       return NextResponse.json({ error: 'Valid status is required' }, { status: 400 });
     }
+
+    const current = await query('SELECT store_id FROM customer_credit_advanced_configs WHERE id = $1', [id]);
+    const storeCheck = requireStore(auth.user, current.rows[0]?.store_id);
+    if (storeCheck.error) return storeCheck.error;
 
     const updated = await query(
       `

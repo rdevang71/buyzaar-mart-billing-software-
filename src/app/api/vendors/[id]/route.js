@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { ensureVendorsSchema } from '@/lib/vendorsSchema';
 import { validatePhoneNumber } from '@/lib/phoneValidator';
+import { requireAuth, requirePermission } from '@/lib/api-protection';
 
 function mapVendor(r) {
   return {
@@ -58,9 +59,13 @@ function normalizePayload(body) {
   };
 }
 
-export async function GET(_request, context) {
+export async function GET(request, context) {
   try {
     await ensureVendorsSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_VENDORS', 'MANAGE_PURCHASE_ORDERS');
+    if (permissionCheck.error) return permissionCheck.error;
     const { id } = await context.params;
     const res = await query(
       `SELECT id, name, company, short_code, business, address_1, address_2, city, state, pincode, country,
@@ -80,6 +85,10 @@ export async function GET(_request, context) {
 export async function PUT(request, context) {
   try {
     await ensureVendorsSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_VENDORS');
+    if (permissionCheck.error) return permissionCheck.error;
     const { id } = await context.params;
     const payload = normalizePayload(await request.json());
     const res = await query(
@@ -135,9 +144,13 @@ export async function PUT(request, context) {
   }
 }
 
-export async function DELETE(_request, context) {
+export async function DELETE(request, context) {
   try {
     await ensureVendorsSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_VENDORS');
+    if (permissionCheck.error) return permissionCheck.error;
     const { id } = await context.params;
     const usage = await query(
       `SELECT

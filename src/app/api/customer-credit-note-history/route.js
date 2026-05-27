@@ -3,6 +3,7 @@ import { query } from '@/lib/db';
 import { ensureCustomersSchema } from '@/lib/customersSchema';
 import { ensureInvoiceSalesOrdersSchema } from '@/lib/invoiceSalesOrdersSchema';
 import { ensureStockInSchema } from '@/lib/stockInSchema';
+import { getAssignedStoreIds, requireAuth, requirePermission } from '@/lib/api-protection';
 
 function parsePositiveInteger(value, fallback) {
   const num = Number(value);
@@ -70,6 +71,10 @@ export async function GET(request) {
       ensureInvoiceSalesOrdersSchema(),
       ensureStockInSchema(),
     ]);
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'VIEW_CUSTOMERS', 'MANAGE_CUSTOMERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const { searchParams } = new URL(request.url);
     const page = parsePositiveInteger(searchParams.get('page'), 1);
@@ -96,6 +101,15 @@ export async function GET(request) {
     if (store && store.toLowerCase() !== 'all') {
       params.push(store);
       whereClauses.push(`(CAST(iso.store_id AS TEXT) = $${params.length} OR LOWER(COALESCE(s.name, '')) = LOWER($${params.length}))`);
+    }
+
+    if (auth.user.role !== 'super_admin') {
+      const assignedStores = getAssignedStoreIds(auth.user);
+      if (!assignedStores.length) {
+        return NextResponse.json({ rows: [], pagination: { page, pageSize, total: 0, totalPages: 1 } });
+      }
+      params.push(assignedStores);
+      whereClauses.push(`iso.store_id = ANY($${params.length}::int[])`);
     }
 
     if (customer) {

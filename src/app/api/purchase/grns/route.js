@@ -2,11 +2,23 @@ import { NextResponse } from 'next/server';
 import { query, getClient } from '@/lib/db';
 import { ensureStockInSchema } from '@/lib/stockInSchema';
 import { ensurePurchaseOrderSchema } from '@/lib/purchaseOrderSchema';
+import { appendStoreScope, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
-export async function GET() {
+export async function GET(request) {
   try {
     await ensureStockInSchema();
     await ensurePurchaseOrderSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_PURCHASE_ORDERS', 'MANAGE_VENDORS');
+    if (permissionCheck.error) return permissionCheck.error;
+
+    const where = [`s.reference_type = 'purchase_order'`];
+    const params = [];
+    const scope = appendStoreScope(where, params, 's.destination_id', auth.user);
+    if (scope.error) return scope.error;
+    const whereSql = `WHERE ${where.join(' AND ')}`;
+
     const res = await query(
       `SELECT
         s.id,
@@ -29,10 +41,11 @@ export async function GET() {
       FROM stock_in s
       LEFT JOIN stores st ON st.id = s.destination_id
       LEFT JOIN stock_in_items si ON si.stock_in_id = s.id
-      WHERE s.reference_type = 'purchase_order'
+      ${whereSql}
       GROUP BY s.id, st.name
       ORDER BY s.confirmed_at DESC NULLS LAST, s.created_at DESC
-      LIMIT 200`
+      LIMIT 200`,
+      params
     );
 
     const records = res.rows.map((row) => {
@@ -66,6 +79,10 @@ export async function POST(request) {
   try {
     await ensureStockInSchema();
     await ensurePurchaseOrderSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_PURCHASE_ORDERS');
+    if (permissionCheck.error) return permissionCheck.error;
     const payload = await request.json();
     const client = await getClient();
     try {
@@ -88,6 +105,11 @@ export async function POST(request) {
           await client.query('ROLLBACK');
           return NextResponse.json({ error: 'Purchase order not found' }, { status: 404 });
         }
+        const poStoreCheck = requireStore(auth.user, po.destination_id);
+        if (poStoreCheck.error) {
+          await client.query('ROLLBACK');
+          return poStoreCheck.error;
+        }
 
         const itemsRes = await client.query(
           `SELECT poi.product_id, COALESCE(poi.product_name, p.name) AS product_name,
@@ -107,9 +129,15 @@ export async function POST(request) {
         VALUES ($1, $2, $3, $4, $5, 'draft', 'purchase_order', $6, $7, $8, $9, $10, NOW())
         RETURNING id`;
       const vendorId = payload.vendorId || payload.vendor || po?.vendor_id || null;
+      const destinationId = payload.destination || po?.destination_id || null;
+      const storeCheck = requireStore(auth.user, destinationId);
+      if (storeCheck.error) {
+        await client.query('ROLLBACK');
+        return storeCheck.error;
+      }
       const values = [
         'purchase_order',
-        payload.destination || po?.destination_id || null,
+        destinationId,
         payload.applyTaxes ?? true,
         payload.addProductsPrefill ?? false,
         JSON.stringify({

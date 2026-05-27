@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { ensureUserCounterSessionSchema } from '@/lib/userCounterSessionSchema';
 import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
-import { extractAuthUser, requireStore } from '@/lib/api-protection';
+import { extractAuthUser, requirePermission, requireStore } from '@/lib/api-protection';
 
 function parseDate(value) {
   if (!value) return null;
@@ -50,6 +50,8 @@ export async function GET(request) {
     if (auth.error || !auth.user) {
       return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 });
     }
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_POS', 'VIEW_REPORTS', 'MANAGE_USERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const url = new URL(request.url);
     const dateFrom = parseDate(url.searchParams.get('dateFrom'));
@@ -70,6 +72,8 @@ export async function GET(request) {
     }
 
     if (Number.isFinite(storeId) && storeId > 0) {
+      const storeCheck = requireStore(auth.user, storeId);
+      if (storeCheck.error) return storeCheck.error;
       params.push(storeId);
       whereClauses.push(`ucs.store_id = $${params.length}`);
     }
@@ -138,6 +142,8 @@ export async function POST(request) {
     if (auth.error || !auth.user) {
       return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 });
     }
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_POS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const body = await request.json();
     const userId = Number(body.userId || body.user_id);
@@ -154,10 +160,9 @@ export async function POST(request) {
       return NextResponse.json({ error: 'User id is required' }, { status: 400 });
     }
 
-    if (storeId) {
-      const storeCheck = requireStore(auth.user, storeId);
-      if (storeCheck.error) return storeCheck.error;
-    }
+    if (!storeId) return NextResponse.json({ error: 'Store is required' }, { status: 400 });
+    const storeCheck = requireStore(auth.user, storeId);
+    if (storeCheck.error) return storeCheck.error;
 
     const sessionId = `SESSION-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     if (deviceUid || counterUid) {

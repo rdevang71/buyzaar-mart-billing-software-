@@ -1,11 +1,16 @@
 import { query } from '@/lib/db';
 import { successResponse, errorResponse, notFound, validationError } from '@/lib/apiResponse';
 import { ensureCatalogExtrasSchema } from '@/lib/catalogExtrasSchema';
+import { getAssignedStoreIds, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 // ─── GET /api/catalog/charges ───────────────────────────────
 export async function GET(request) {
   try {
     await ensureCatalogExtrasSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'VIEW_PRODUCTS', 'MANAGE_PRODUCTS');
+    if (permissionCheck.error) return permissionCheck.error;
     // Ensure charges table has extended columns (in case schema migrations ran earlier)
     try {
       const ensureColumn = async (colName, sql) => {
@@ -34,13 +39,25 @@ export async function GET(request) {
     const pageSize = parseInt(searchParams.get('pageSize') || '10');
     const offset   = (page - 1) * pageSize;
 
-    const whereClause = search
-      ? `WHERE t.name ILIKE $3`
-      : '';
+    const filters = [];
+    const params = [];
+    if (auth.user.role !== 'super_admin') {
+      const assignedStores = getAssignedStoreIds(auth.user);
+      if (!assignedStores.length) filters.push('1 = 0');
+      else {
+        params.push(assignedStores);
+        filters.push(`(t.store_id IS NULL OR t.store_id = ANY($${params.length}::int[]))`);
+      }
+    }
+    if (search) {
+      params.push(`%${search}%`);
+      filters.push(`t.name ILIKE $${params.length}`);
+    }
+    const whereClause = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
 
     const countResult = await query(
       `SELECT COUNT(*) FROM charges t ${whereClause}`,
-      search ? [`%${search}%`] : []
+      params
     );
     const total = parseInt(countResult.rows[0].count);
 
@@ -57,10 +74,8 @@ export async function GET(request) {
        LEFT JOIN departments d ON d.id = t.department_id
        ${whereClause}
        ORDER BY t.id DESC
-       LIMIT $1 OFFSET $2`,
-      search
-        ? [pageSize, offset, `%${search}%`]
-        : [pageSize, offset]
+       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, pageSize, offset]
     );
 
     return successResponse({
@@ -79,11 +94,20 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     await ensureCatalogExtrasSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_PRODUCTS');
+    if (permissionCheck.error) return permissionCheck.error;
     const body = await request.json();
     const { name } = body;
 
     if (!name || !name.trim()) {
       return validationError({ name: 'Name is required' });
+    }
+    const storeId = body.store_id || null;
+    if (storeId) {
+      const storeCheck = requireStore(auth.user, storeId);
+      if (storeCheck.error) return storeCheck.error;
     }
 
     const result = await query(
@@ -108,7 +132,7 @@ export async function POST(request) {
         body.apply_on_order_delivery ?? false,
         body.max_order_value || 0,
         body.tax_id || null,
-        body.store_id || null,
+        storeId,
         body.apply_only_online_orders ?? false,
         body.order_type || null,
         body.channel || null,

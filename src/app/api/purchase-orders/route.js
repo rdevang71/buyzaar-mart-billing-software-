@@ -3,6 +3,7 @@ import { query, getClient } from '@/lib/db';
 import { ensureStockInSchema } from '@/lib/stockInSchema';
 import { ensureVendorsSchema } from '@/lib/vendorsSchema';
 import { ensurePurchaseOrderSchema } from '@/lib/purchaseOrderSchema';
+import { appendStoreScope, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 function mapRow(row) {
   return {
@@ -26,11 +27,21 @@ function mapRow(row) {
   };
 }
 
-export async function GET() {
+export async function GET(request) {
   try {
     await ensureStockInSchema();
     await ensureVendorsSchema();
     await ensurePurchaseOrderSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_PURCHASE_ORDERS', 'MANAGE_VENDORS');
+    if (permissionCheck.error) return permissionCheck.error;
+
+    const where = [];
+    const params = [];
+    const scope = appendStoreScope(where, params, 'po.destination_id', auth.user);
+    if (scope.error) return scope.error;
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
     const res = await query(
       `SELECT po.id, po.transaction_id, po.destination_id, po.vendor_id, po.invoice_date, po.expected_delivery_date,
@@ -41,8 +52,10 @@ export async function GET() {
        FROM purchase_orders po
        LEFT JOIN stores st ON st.id = po.destination_id
        LEFT JOIN vendors v ON v.id = po.vendor_id
+       ${whereSql}
        ORDER BY po.confirmed_at DESC NULLS LAST, po.created_at DESC
-       LIMIT 200`
+       LIMIT 200`,
+      params
     );
 
     return NextResponse.json(res.rows.map(mapRow));
@@ -57,6 +70,10 @@ export async function POST(request) {
     await ensureStockInSchema();
     await ensureVendorsSchema();
     await ensurePurchaseOrderSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_PURCHASE_ORDERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const body = await request.json();
     const destinationId = body.destination || body.destinationId || null;
@@ -68,6 +85,8 @@ export async function POST(request) {
     if (!vendorId) {
       return NextResponse.json({ error: 'Vendor is required' }, { status: 400 });
     }
+    const storeCheck = requireStore(auth.user, destinationId);
+    if (storeCheck.error) return storeCheck.error;
 
     const client = await getClient();
     try {

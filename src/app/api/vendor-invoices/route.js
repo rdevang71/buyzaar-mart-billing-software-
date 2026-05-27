@@ -4,6 +4,7 @@ import { ensureVendorsSchema } from '@/lib/vendorsSchema';
 import { ensurePurchaseOrderSchema } from '@/lib/purchaseOrderSchema';
 import { ensureVendorInvoicesSchema } from '@/lib/vendorInvoicesSchema';
 import { ensureStockInSchema } from '@/lib/stockInSchema';
+import { getAssignedStoreIds, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 function mapRow(row) {
   const totalAmount = Number(row.total_amount || 0);
@@ -53,6 +54,10 @@ export async function GET(request) {
     await ensurePurchaseOrderSchema();
     await ensureStockInSchema();
     await ensureVendorInvoicesSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_PURCHASE_ORDERS', 'MANAGE_VENDORS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const { searchParams } = new URL(request.url);
     const vendorId = Number(searchParams.get('vendorId') || 0) || null;
@@ -60,6 +65,15 @@ export async function GET(request) {
     const search = String(searchParams.get('search') || '').trim();
     const params = [];
     const conditions = [];
+    if (auth.user.role !== 'super_admin') {
+      const assignedStores = getAssignedStoreIds(auth.user);
+      if (!assignedStores.length) {
+        conditions.push('1 = 0');
+      } else {
+        params.push(assignedStores);
+        conditions.push(`(po.destination_id = ANY($${params.length}::int[]) OR si.destination_id = ANY($${params.length}::int[]))`);
+      }
+    }
 
     if (vendorId) {
       params.push(vendorId);
@@ -131,6 +145,10 @@ export async function POST(request) {
     await ensurePurchaseOrderSchema();
     await ensureStockInSchema();
     await ensureVendorInvoicesSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_PURCHASE_ORDERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const body = await request.json();
     const vendorId = body.vendor || body.vendorId || null;
@@ -139,6 +157,7 @@ export async function POST(request) {
     const rawAmountPaid = Number(body.amount_paid ?? 0);
     const amountPaid = Math.min(Math.max(Number.isFinite(rawAmountPaid) ? rawAmountPaid : 0, 0), Math.max(totalAmount, 0));
     const purchaseOrderId = Number(body.purchase_order_id || body.purchaseOrderId || 0) || null;
+    const stockInId = Number(body.stock_in_id || body.stockInId || 0) || null;
 
     if (!vendorId) return NextResponse.json({ error: 'Vendor is required' }, { status: 400 });
     if (!Number.isFinite(totalAmount) || totalAmount < 0) return NextResponse.json({ error: 'Amount is required' }, { status: 400 });
@@ -146,6 +165,29 @@ export async function POST(request) {
     const client = await getClient();
     try {
       await client.query('BEGIN');
+      if (purchaseOrderId) {
+        const poRes = await client.query('SELECT destination_id FROM purchase_orders WHERE id = $1', [purchaseOrderId]);
+        const storeCheck = requireStore(auth.user, poRes.rows[0]?.destination_id);
+        if (storeCheck.error) {
+          await client.query('ROLLBACK');
+          return storeCheck.error;
+        }
+      }
+
+      if (stockInId) {
+        const stockRes = await client.query('SELECT destination_id FROM stock_in WHERE id = $1', [stockInId]);
+        const storeCheck = requireStore(auth.user, stockRes.rows[0]?.destination_id);
+        if (storeCheck.error) {
+          await client.query('ROLLBACK');
+          return storeCheck.error;
+        }
+      }
+
+      if (auth.user.role !== 'super_admin' && !purchaseOrderId && !stockInId) {
+        await client.query('ROLLBACK');
+        return NextResponse.json({ error: 'Store-linked purchase order or GRN is required' }, { status: 400 });
+      }
+
       const res = await client.query(
         `INSERT INTO vendor_invoices (
           vendor_id, purchase_order_id, stock_in_id, invoice_number, total_amount, amount_paid,
@@ -155,7 +197,7 @@ export async function POST(request) {
         [
           vendorId,
           purchaseOrderId,
-          Number(body.stock_in_id || body.stockInId || 0) || null,
+          stockInId,
           invoiceNumber,
           totalAmount,
           amountPaid,
@@ -208,6 +250,10 @@ export async function PUT(request) {
     await ensurePurchaseOrderSchema();
     await ensureStockInSchema();
     await ensureVendorInvoicesSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_PURCHASE_ORDERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const body = await request.json();
     const invoiceId = Number(body.invoiceId || body.id || 0);
@@ -225,9 +271,13 @@ export async function PUT(request) {
     await client.query('BEGIN');
 
     const invoiceRes = await client.query(
-      `SELECT id, total_amount, amount_paid
-       FROM vendor_invoices
-       WHERE id = $1
+      `SELECT vi.id, vi.total_amount, vi.amount_paid,
+              po.destination_id AS po_store_id,
+              si.destination_id AS stock_store_id
+       FROM vendor_invoices vi
+       LEFT JOIN purchase_orders po ON po.id = vi.purchase_order_id
+       LEFT JOIN stock_in si ON si.id = vi.stock_in_id
+       WHERE vi.id = $1
        FOR UPDATE`,
       [invoiceId]
     );
@@ -235,6 +285,11 @@ export async function PUT(request) {
     if (!invoice) {
       await client.query('ROLLBACK');
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
+    }
+    const storeCheck = requireStore(auth.user, invoice.po_store_id || invoice.stock_store_id);
+    if (storeCheck.error) {
+      await client.query('ROLLBACK');
+      return storeCheck.error;
     }
 
     const totalAmount = Number(invoice.total_amount || 0);

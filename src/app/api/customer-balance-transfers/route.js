@@ -3,6 +3,7 @@ import { query, getClient } from '@/lib/db';
 import { ensureCustomersSchema } from '@/lib/customersSchema';
 import { ensureCustomerAdvancePaymentsSchema } from '@/lib/customerAdvancePaymentsSchema';
 import { ensureCustomerBalanceTransferSchema } from '@/lib/customerBalanceTransferSchema';
+import { getAssignedStoreIds, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 function parsePositiveInteger(value, fallback) {
   const n = Number(value);
@@ -63,6 +64,15 @@ async function getCustomerBalances(page, pageSize, filters) {
       CAST(balance.store_id AS TEXT) = $${idx}
       OR LOWER(COALESCE(balance.store_name, '')) = LOWER($${idx})
     )`);
+  }
+
+  if (Array.isArray(filters.storeIds)) {
+    if (!filters.storeIds.length) {
+      where.push('1 = 0');
+    } else {
+      params.push(filters.storeIds);
+      where.push(`balance.store_id = ANY($${params.length}::int[])`);
+    }
   }
 
   if (search) {
@@ -165,6 +175,10 @@ export async function GET(request) {
       ensureCustomerAdvancePaymentsSchema(),
       ensureCustomerBalanceTransferSchema(),
     ]);
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'VIEW_CUSTOMERS', 'MANAGE_CUSTOMERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const url = new URL(request.url);
     const page = parsePositiveInteger(url.searchParams.get('page'), 1);
@@ -174,7 +188,13 @@ export async function GET(request) {
     const dateFrom = parseDate(url.searchParams.get('dateFrom'));
     const dateTo = parseDate(url.searchParams.get('dateTo'));
 
-    const data = await getCustomerBalances(page, pageSize, { store, search, dateFrom, dateTo });
+    const data = await getCustomerBalances(page, pageSize, {
+      store,
+      search,
+      dateFrom,
+      dateTo,
+      storeIds: auth.user.role === 'super_admin' ? null : getAssignedStoreIds(auth.user),
+    });
     return NextResponse.json(data);
   } catch (err) {
     console.error('[customer-balance-transfers GET]', err.message);
@@ -190,6 +210,10 @@ export async function POST(request) {
       ensureCustomerAdvancePaymentsSchema(),
       ensureCustomerBalanceTransferSchema(),
     ]);
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_CUSTOMERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const body = await request.json().catch(() => ({}));
     const fromCustomerId = parsePositiveInteger(body.fromCustomerId, 0);
@@ -261,6 +285,15 @@ export async function POST(request) {
       [fromCustomerId]
     );
     const storeId = sourceStoreRes.rows?.[0]?.store_id || null;
+    if (!storeId) {
+      await client.query('ROLLBACK');
+      return NextResponse.json({ error: 'Source customer has no store-linked balance' }, { status: 400 });
+    }
+    const storeCheck = requireStore(auth.user, storeId);
+    if (storeCheck.error) {
+      await client.query('ROLLBACK');
+      return storeCheck.error;
+    }
 
     const result = await client.query(
       `

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { ensureCustomerSmsCreditSchema } from '@/lib/customerSmsCreditSchema';
 import { ensureCustomerMessageHistorySchema } from '@/lib/customerMessageHistorySchema';
+import { requireAuth, requirePermission } from '@/lib/api-protection';
 
 function parseNumber(value, fallback = 0) {
   const num = Number(value);
@@ -47,9 +48,13 @@ async function getSummary() {
   };
 }
 
-export async function GET() {
+export async function GET(request) {
   try {
     await Promise.all([ensureCustomerSmsCreditSchema(), ensureCustomerMessageHistorySchema()]);
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'VIEW_CUSTOMERS', 'MANAGE_CUSTOMERS');
+    if (permissionCheck.error) return permissionCheck.error;
     const summary = await getSummary();
     return NextResponse.json({ summary });
   } catch (err) {
@@ -61,6 +66,10 @@ export async function GET() {
 export async function POST(request) {
   try {
     await Promise.all([ensureCustomerSmsCreditSchema(), ensureCustomerMessageHistorySchema()]);
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_CUSTOMERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const body = await request.json().catch(() => ({}));
     const creditsPurchased = parsePositiveNumber(body.creditsPurchased, 0);

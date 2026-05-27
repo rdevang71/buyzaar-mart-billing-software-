@@ -2,11 +2,16 @@ import { NextResponse } from 'next/server';
 import { ensureUsersTable } from '@/lib/userAuth';
 import { query } from '@/lib/db';
 import { ensureRolesSchema } from '@/lib/rolesSchema';
+import { requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
-export async function GET() {
+export async function GET(request) {
   try {
     await ensureUsersTable();
     await ensureRolesSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_USERS', 'VIEW_USERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const res = await query(
       `SELECT u.id, u.name, u.email, u.phone, u.role, u.is_active,
@@ -38,6 +43,10 @@ export async function PUT(request) {
   try {
     await ensureUsersTable();
     await ensureRolesSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_USERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const body = await request.json();
     const userId = Number(body.id || body.userId);
@@ -52,6 +61,15 @@ export async function PUT(request) {
 
     if (!['super_admin', 'admin', 'manager', 'user'].includes(role)) {
       return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
+    }
+
+    if (auth.user.role !== 'super_admin' && role === 'super_admin') {
+      return NextResponse.json({ error: 'Only Super Admin can assign Super Admin role' }, { status: 403 });
+    }
+
+    for (const storeId of assignedStores) {
+      const storeCheck = requireStore(auth.user, storeId);
+      if (storeCheck.error) return storeCheck.error;
     }
 
     await query('UPDATE users SET role = $1, updated_at = NOW() WHERE id = $2', [role, userId]);
