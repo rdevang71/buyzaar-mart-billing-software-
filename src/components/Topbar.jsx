@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { usePathname, useRouter } from 'next/navigation';
 import { menuItems } from './sidebarConfig';
 import { useUser } from '@/hooks/useUser';
@@ -23,6 +24,7 @@ export default function Topbar({ onMenuOpen, sidebarExpanded = false }) {
   const [passwordSuccess, setPasswordSuccess] = useState('');
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [openNotifications, setOpenNotifications] = useState(false);
+  const [isClient, setIsClient] = useState(false);
   const [returnRequests, setReturnRequests] = useState([]);
   const [lowStockAlerts, setLowStockAlerts] = useState([]);
   const [requisitionRequests, setRequisitionRequests] = useState([]);
@@ -135,6 +137,10 @@ export default function Topbar({ onMenuOpen, sidebarExpanded = false }) {
   }, [loadNotifications, pathname]);
 
   useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  useEffect(() => {
     const handleClickOutside = (event) => {
       if (!profileRef.current) return;
       if (!profileRef.current.contains(event.target)) {
@@ -180,12 +186,26 @@ export default function Topbar({ onMenuOpen, sidebarExpanded = false }) {
       const json = await res.json();
 
       if (!res.ok || !json.success) {
-        if (json.errors && typeof json.errors === 'object') {
-          const firstError = Object.values(json.errors)[0];
-          setPasswordError(String(firstError));
+        if (json.errors) {
+          // `validationError` may return an array of error objects or a single object.
+          if (Array.isArray(json.errors) && json.errors.length) {
+            const firstErr = json.errors[0];
+            if (typeof firstErr === 'object') {
+              const val = Object.values(firstErr)[0];
+              setPasswordError(String(val));
+            } else {
+              setPasswordError(String(firstErr));
+            }
+          } else if (typeof json.errors === 'object') {
+            const firstError = Object.values(json.errors)[0];
+            setPasswordError(String(firstError));
+          } else {
+            setPasswordError(json.message || 'Unable to change password');
+          }
         } else {
           setPasswordError(json.message || 'Unable to change password');
         }
+
         return;
       }
 
@@ -474,78 +494,80 @@ export default function Topbar({ onMenuOpen, sidebarExpanded = false }) {
         </div>
       </div>
 
-      {openChangePassword && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/30 px-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-[18px] font-semibold text-gray-900">Change password</h3>
-              <button
-                type="button"
-                onClick={() => {
-                  setOpenChangePassword(false);
-                  setPasswordError('');
-                  setPasswordSuccess('');
-                }}
-                className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100"
-              >
-                <i className="ti ti-x text-[16px]" />
-              </button>
+      {isClient && openChangePassword &&
+        createPortal(
+          <div className="fixed inset-0 z-[9999] flex items-start md:items-center justify-center bg-black/30 px-4 py-6 overflow-auto">
+            <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl max-h-[calc(100vh-120px)] overflow-auto">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-[18px] font-semibold text-gray-900">Change password</h3>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpenChangePassword(false);
+                    setPasswordError('');
+                    setPasswordSuccess('');
+                  }}
+                  className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100"
+                >
+                  <i className="ti ti-x text-[16px]" />
+                </button>
+              </div>
+
+              <form className="space-y-3" onSubmit={submitChangePassword}>
+                <input
+                  type="password"
+                  name="currentPassword"
+                  value={passwordForm.currentPassword}
+                  onChange={onPasswordChange}
+                  placeholder="Current password"
+                  required
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-[13px] outline-none focus:border-blue-400"
+                />
+                <input
+                  type="password"
+                  name="newPassword"
+                  value={passwordForm.newPassword}
+                  onChange={onPasswordChange}
+                  placeholder="New password (min 8 chars)"
+                  minLength={8}
+                  required
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-[13px] outline-none focus:border-blue-400"
+                />
+                <input
+                  type="password"
+                  name="confirmPassword"
+                  value={passwordForm.confirmPassword}
+                  onChange={onPasswordChange}
+                  placeholder="Confirm new password"
+                  minLength={8}
+                  required
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-[13px] outline-none focus:border-blue-400"
+                />
+
+                {passwordError && (
+                  <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">
+                    {passwordError}
+                  </p>
+                )}
+
+                {passwordSuccess && (
+                  <p className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-[12px] text-green-700">
+                    {passwordSuccess}
+                  </p>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={passwordLoading}
+                  className="w-full rounded-xl bg-blue-600 px-4 py-2.5 text-[13px] font-semibold text-white hover:bg-blue-700"
+                >
+                  {passwordLoading ? 'Updating...' : 'Update password'}
+                </button>
+              </form>
             </div>
-
-            <form className="space-y-3" onSubmit={submitChangePassword}>
-              <input
-                type="password"
-                name="currentPassword"
-                value={passwordForm.currentPassword}
-                onChange={onPasswordChange}
-                placeholder="Current password"
-                required
-                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-[13px] outline-none focus:border-blue-400"
-              />
-              <input
-                type="password"
-                name="newPassword"
-                value={passwordForm.newPassword}
-                onChange={onPasswordChange}
-                placeholder="New password (min 8 chars)"
-                minLength={8}
-                required
-                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-[13px] outline-none focus:border-blue-400"
-              />
-              <input
-                type="password"
-                name="confirmPassword"
-                value={passwordForm.confirmPassword}
-                onChange={onPasswordChange}
-                placeholder="Confirm new password"
-                minLength={8}
-                required
-                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-[13px] outline-none focus:border-blue-400"
-              />
-
-              {passwordError && (
-                <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">
-                  {passwordError}
-                </p>
-              )}
-
-              {passwordSuccess && (
-                <p className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-[12px] text-green-700">
-                  {passwordSuccess}
-                </p>
-              )}
-
-              <button
-                type="submit"
-                disabled={passwordLoading}
-                className="w-full rounded-xl bg-blue-600 px-4 py-2.5 text-[13px] font-semibold text-white hover:bg-blue-700"
-              >
-                {passwordLoading ? 'Updating...' : 'Update password'}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
     </header>
   );
 }
