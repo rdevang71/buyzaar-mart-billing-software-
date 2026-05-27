@@ -3,7 +3,7 @@ import { query, getClient } from '@/lib/db';
 import { ensureStockInSchema } from '@/lib/stockInSchema';
 import { ensureVendorsSchema } from '@/lib/vendorsSchema';
 import { ensurePurchaseOrderSchema } from '@/lib/purchaseOrderSchema';
-import { appendStoreScope, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
+import { appendStoreScope, auditLog, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 function mapRow(row) {
   return {
@@ -113,6 +113,11 @@ export async function POST(request) {
       const transactionId = `PO-${String(id).padStart(4, '0')}`;
       await client.query('UPDATE purchase_orders SET transaction_id = $1 WHERE id = $2', [transactionId, id]);
       await client.query('COMMIT');
+      await auditLog(auth.user.id, 'purchase_order.create', 'purchase_order', id, {
+        transactionId,
+        destinationId,
+        vendorId,
+      });
       return NextResponse.json({ id, transactionId }, { status: 201 });
     } catch (err) {
       await client.query('ROLLBACK');

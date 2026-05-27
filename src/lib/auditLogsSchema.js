@@ -36,6 +36,9 @@ export const ensureAuditLogsSchema = makeSchemaEnsurer('audit_logs', async () =>
   await query(`CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);`);
   await query(`CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);`);
   await query(`CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);`);
+
+  await query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS details JSONB;`);
+  await query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS metadata JSONB;`);
 });
 
 export default { ensureAuditLogsSchema };

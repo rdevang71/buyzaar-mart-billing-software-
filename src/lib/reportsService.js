@@ -11,6 +11,8 @@ import { ensurePurchaseOrderSchema } from '@/lib/purchaseOrderSchema';
 import { ensureStockRequisitionSchema } from '@/lib/stockRequisitionSchema';
 import { ensureStockTransferSchema } from '@/lib/stockTransferSchema';
 import { ensureAuditLogsSchema } from '@/lib/auditLogsSchema';
+import { ensureProcurementSchema } from '@/lib/procurementSchema';
+import { ensureVendorInvoicesSchema } from '@/lib/vendorInvoicesSchema';
 
 const REPORT_ROLES = ['super_admin', 'admin', 'manager'];
 
@@ -126,6 +128,93 @@ const REPORTS = {
       { key: 'current_stock', label: 'Current Stock' },
       { key: 'unit',          label: 'Unit'          },
       { key: 'status',        label: 'Status'        },
+    ],
+  },
+  'purchase/vendor-quotation-comparison': {
+    title: 'Vendor Quotation Comparison',
+    worksheet: 'Vendor Quotes',
+    columns: [
+      { key: 'quote_id', label: 'Quote ID' },
+      { key: 'date', label: 'Date' },
+      { key: 'vendor', label: 'Vendor' },
+      { key: 'store', label: 'Store' },
+      { key: 'items', label: 'Items' },
+      { key: 'amount', label: 'Amount' },
+      { key: 'freight', label: 'Freight' },
+      { key: 'lead_days', label: 'Lead Days' },
+      { key: 'score', label: 'Score' },
+      { key: 'status', label: 'Status' },
+    ],
+  },
+  'purchase/purchase-return-report': {
+    title: 'Purchase Return Report',
+    worksheet: 'Purchase Returns',
+    columns: [
+      { key: 'return_id', label: 'Return ID' },
+      { key: 'date', label: 'Date' },
+      { key: 'vendor', label: 'Vendor' },
+      { key: 'store', label: 'Store' },
+      { key: 'qty', label: 'Qty' },
+      { key: 'amount', label: 'Amount' },
+      { key: 'status', label: 'Status' },
+      { key: 'reason', label: 'Reason' },
+    ],
+  },
+  'purchase/vendor-ledger-report': {
+    title: 'Vendor Ledger Report',
+    worksheet: 'Vendor Ledger',
+    columns: [
+      { key: 'date', label: 'Date' },
+      { key: 'vendor', label: 'Vendor' },
+      { key: 'entry_type', label: 'Type' },
+      { key: 'transaction_id', label: 'Transaction' },
+      { key: 'reference_no', label: 'Reference' },
+      { key: 'debit', label: 'Debit' },
+      { key: 'credit', label: 'Credit' },
+      { key: 'balance', label: 'Balance' },
+      { key: 'remarks', label: 'Remarks' },
+    ],
+  },
+  'purchase/vendor-performance-report': {
+    title: 'Vendor Performance Report',
+    worksheet: 'Vendor Performance',
+    columns: [
+      { key: 'vendor', label: 'Vendor' },
+      { key: 'score', label: 'Score' },
+      { key: 'grade', label: 'Grade' },
+      { key: 'po_count', label: 'POs' },
+      { key: 'purchase_value', label: 'Purchase Value' },
+      { key: 'avg_lead_days', label: 'Lead Days' },
+      { key: 'return_count', label: 'Returns' },
+      { key: 'outstanding', label: 'Outstanding' },
+    ],
+  },
+  'purchase/auto-reorder-suggestions': {
+    title: 'Auto Reorder Suggestions',
+    worksheet: 'Auto Reorder',
+    columns: [
+      { key: 'product', label: 'Product' },
+      { key: 'sku', label: 'SKU' },
+      { key: 'store', label: 'Store' },
+      { key: 'current_stock', label: 'Current Stock' },
+      { key: 'reorder_level', label: 'Reorder Level' },
+      { key: 'suggested_qty', label: 'Suggested Qty' },
+      { key: 'vendor', label: 'Last Vendor' },
+      { key: 'cost', label: 'Cost' },
+    ],
+  },
+  'logs/audit-trail': {
+    title: 'Audit Trail',
+    worksheet: 'Audit Trail',
+    columns: [
+      { key: 'date', label: 'Date' },
+      { key: 'time', label: 'Time' },
+      { key: 'employee', label: 'Employee' },
+      { key: 'action', label: 'Action' },
+      { key: 'resource_type', label: 'Resource Type' },
+      { key: 'resource_id', label: 'Resource ID' },
+      { key: 'status', label: 'Status' },
+      { key: 'remarks', label: 'Remarks' },
     ],
   },
 };
@@ -315,6 +404,8 @@ async function ensureReportSchemas() {
   await ensureStockRequisitionSchema();
   await ensureStockTransferSchema();
   await ensureAuditLogsSchema();
+  await ensureProcurementSchema();
+  await ensureVendorInvoicesSchema();
 }
 
 export function normalizeReportKey(slug) {
@@ -384,6 +475,11 @@ export async function getReportRows(reportKey, filters = {}, user) {
   if (reportKey.startsWith('proforma-invoices/')) return getProformaInvoiceReport(reportKey, filters, user);
   if (reportKey.startsWith('accounting/')) return getAccountingTaxReport(reportKey, filters, user);
   if (reportKey.startsWith('inventory/')) return getInventoryFamilyReport(reportKey, filters, user);
+  if (reportKey === 'purchase/vendor-quotation-comparison') return getVendorQuotationReport(filters, user);
+  if (reportKey === 'purchase/purchase-return-report') return getPurchaseReturnReport(filters, user);
+  if (reportKey === 'purchase/vendor-ledger-report') return getVendorLedgerReport(filters, user);
+  if (reportKey === 'purchase/vendor-performance-report') return getVendorPerformanceReport(filters, user);
+  if (reportKey === 'purchase/auto-reorder-suggestions') return getAutoReorderReport(filters, user);
   if (reportKey.startsWith('purchase/')) return getPurchaseFamilyReport(reportKey, filters, user);
   if (reportKey.startsWith('promotions/')) return getPromotionsFamilyReport(reportKey, filters, user);
   if (reportKey.startsWith('insights/')) return getInsightsFamilyReport(reportKey, filters, user);
@@ -1405,6 +1501,224 @@ async function getStockMovementReport(filters, user) {
   }));
 }
 
+async function getVendorQuotationReport(filters, user) {
+  await ensureProcurementSchema();
+  const range = parseDateRange(filters.date_range);
+  const params = [range.from, range.to];
+  const conditions = [`DATE(vq.quotation_date) BETWEEN $1 AND $2`];
+  addStoreColumnScope({ conditions, params, user, columnName: 'vq.store_id', requestedStoreId: filters.store });
+
+  const res = await query(
+    `SELECT vq.id, vq.transaction_id, vq.quotation_no, vq.quotation_date, vq.delivery_days,
+            vq.freight_amount, vq.status, COALESCE(v.name, 'Vendor') AS vendor,
+            COALESCE(s.name, 'Store') AS store,
+            COUNT(vqi.id)::int AS items,
+            COALESCE(SUM(vqi.qty * vqi.quoted_price + vqi.tax_value), 0) AS amount
+     FROM vendor_quotations vq
+     LEFT JOIN vendors v ON v.id = vq.vendor_id
+     LEFT JOIN stores s ON s.id = vq.store_id
+     LEFT JOIN vendor_quotation_items vqi ON vqi.quotation_id = vq.id
+     WHERE ${conditions.join(' AND ')}
+     GROUP BY vq.id, v.name, s.name
+     ORDER BY vq.quotation_date DESC, vq.created_at DESC
+     LIMIT 1000`,
+    params
+  );
+
+  return res.rows.map((row) => {
+    const amount = number(row.amount);
+    const score = Math.max(0, Math.round(100 - number(row.delivery_days) * 2 - number(row.freight_amount) / Math.max(amount || 1, 1) * 10));
+    return {
+      id: `quote-${row.id}`,
+      quote_id: row.transaction_id || row.quotation_no || `VQ-${String(row.id).padStart(4, '0')}`,
+      date: isoDate(row.quotation_date),
+      vendor: row.vendor,
+      store: row.store,
+      items: number(row.items),
+      amount: money(amount),
+      freight: money(row.freight_amount),
+      lead_days: number(row.delivery_days),
+      score,
+      status: row.status || 'Draft',
+    };
+  });
+}
+
+async function getPurchaseReturnReport(filters, user) {
+  await ensureProcurementSchema();
+  const range = parseDateRange(filters.date_range);
+  const params = [range.from, range.to];
+  const conditions = [`DATE(pr.return_date) BETWEEN $1 AND $2`];
+  addStoreColumnScope({ conditions, params, user, columnName: 'pr.store_id', requestedStoreId: filters.store });
+
+  const res = await query(
+    `SELECT pr.id, pr.transaction_id, pr.return_date, pr.total_qty, pr.total_amount,
+            pr.status, pr.reason, COALESCE(v.name, 'Vendor') AS vendor, COALESCE(s.name, 'Store') AS store
+     FROM purchase_returns pr
+     LEFT JOIN vendors v ON v.id = pr.vendor_id
+     LEFT JOIN stores s ON s.id = pr.store_id
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY pr.return_date DESC, pr.created_at DESC
+     LIMIT 1000`,
+    params
+  );
+
+  return res.rows.map((row) => ({
+    id: `purchase-return-${row.id}`,
+    return_id: row.transaction_id || `PR-${String(row.id).padStart(4, '0')}`,
+    date: isoDate(row.return_date),
+    vendor: row.vendor,
+    store: row.store,
+    qty: number(row.total_qty),
+    amount: money(row.total_amount),
+    status: row.status || 'Draft',
+    reason: row.reason || '',
+  }));
+}
+
+async function getVendorLedgerReport(filters, user) {
+  await ensureProcurementSchema();
+  await ensureVendorInvoicesSchema();
+  const range = parseDateRange(filters.date_range);
+  const params = [range.from, range.to];
+  const conditions = [`DATE(ledger.entry_at) BETWEEN $1 AND $2`];
+  if (user.role !== 'super_admin') {
+    const assignedStores = (user.assigned_stores || []).map(Number).filter(Number.isFinite);
+    if (!assignedStores.length) conditions.push('1 = 0');
+    else {
+      params.push(assignedStores);
+      conditions.push(`(ledger.store_id IS NULL OR ledger.store_id = ANY($${params.length}::int[]))`);
+    }
+  }
+
+  const res = await query(
+    `WITH ledger AS (
+       SELECT vi.created_at AS entry_at, vi.vendor_id, v.name AS vendor_name,
+              COALESCE(po.destination_id, si.destination_id) AS store_id,
+              vi.transaction_id, vi.invoice_number AS reference_no,
+              'Invoice' AS entry_type, vi.total_amount AS debit, 0::numeric AS credit, vi.remarks
+       FROM vendor_invoices vi
+       LEFT JOIN vendors v ON v.id = vi.vendor_id
+       LEFT JOIN purchase_orders po ON po.id = vi.purchase_order_id
+       LEFT JOIN stock_in si ON si.id = vi.stock_in_id
+       UNION ALL
+       SELECT vis.created_at AS entry_at, vi.vendor_id, v.name AS vendor_name,
+              COALESCE(po.destination_id, si.destination_id) AS store_id,
+              vi.transaction_id, vis.reference_no,
+              'Payment' AS entry_type, 0::numeric AS debit, vis.amount AS credit, vis.remarks
+       FROM vendor_invoice_settlements vis
+       JOIN vendor_invoices vi ON vi.id = vis.vendor_invoice_id
+       LEFT JOIN vendors v ON v.id = vi.vendor_id
+       LEFT JOIN purchase_orders po ON po.id = vi.purchase_order_id
+       LEFT JOIN stock_in si ON si.id = vi.stock_in_id
+       UNION ALL
+       SELECT pr.created_at AS entry_at, pr.vendor_id, v.name AS vendor_name,
+              pr.store_id, pr.transaction_id, pr.transaction_id AS reference_no,
+              'Purchase Return' AS entry_type, 0::numeric AS debit, pr.total_amount AS credit, pr.reason AS remarks
+       FROM purchase_returns pr
+       LEFT JOIN vendors v ON v.id = pr.vendor_id
+     )
+     SELECT ledger.*,
+            SUM(debit - credit) OVER (PARTITION BY vendor_id ORDER BY entry_at, transaction_id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS balance
+     FROM ledger
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY entry_at DESC
+     LIMIT 1000`,
+    params
+  );
+
+  return res.rows.map((row, index) => ({
+    id: `vendor-ledger-${index}`,
+    date: isoDate(row.entry_at),
+    vendor: row.vendor_name || 'Vendor',
+    entry_type: row.entry_type,
+    transaction_id: row.transaction_id || '',
+    reference_no: row.reference_no || '',
+    debit: money(row.debit),
+    credit: money(row.credit),
+    balance: money(row.balance),
+    remarks: row.remarks || '',
+  }));
+}
+
+async function getVendorPerformanceReport(filters, user) {
+  const rows = await getPurchaseFamilyReport('purchase/vendor-purchase-summary', filters, user);
+  const byVendor = new Map();
+  rows.forEach((row) => {
+    const current = byVendor.get(row.vendor) || { vendor: row.vendor, po_count: 0, purchase_value: 0, return_count: 0, outstanding: 0 };
+    current.po_count += 1;
+    current.purchase_value += number(String(row.grand_total || row.total_amount || '0').replace(/,/g, ''));
+    byVendor.set(row.vendor, current);
+  });
+  return [...byVendor.values()].map((row, index) => {
+    const score = Math.max(50, Math.min(100, 100 - row.return_count * 5));
+    return {
+      id: `vendor-performance-${index}`,
+      vendor: row.vendor,
+      score,
+      grade: score >= 85 ? 'A' : score >= 70 ? 'B' : 'C',
+      po_count: row.po_count,
+      purchase_value: money(row.purchase_value),
+      avg_lead_days: 0,
+      return_count: row.return_count,
+      outstanding: money(row.outstanding),
+    };
+  });
+}
+
+async function getAutoReorderReport(filters, user) {
+  await ensureProcurementSchema();
+  await ensureInventoryBatchSchema();
+  const params = [];
+  const conditions = ['ps.is_active = TRUE'];
+  addStoreColumnScope({ conditions, params, user, columnName: 'ps.store_id', requestedStoreId: filters.store });
+
+  const res = await query(
+    `WITH stock AS (
+       SELECT product_id, store_id, COALESCE(SUM(available_qty), 0) AS available_qty
+       FROM inventory_batches
+       WHERE status = 'active'
+       GROUP BY product_id, store_id
+     )
+     SELECT p.name AS product, p.sku, COALESCE(s.name, 'Store') AS store,
+            COALESCE(stock.available_qty, 0) AS current_stock,
+            COALESCE(NULLIF(ps.low_stock_value, 0), 10) AS reorder_level,
+            GREATEST(COALESCE(NULLIF(ps.low_stock_value, 0), 10) * 2 - COALESCE(stock.available_qty, 0), 0) AS suggested_qty,
+            COALESCE(p.cost_price, 0) AS cost,
+            last_vendor.vendor_name AS vendor
+     FROM product_saleability ps
+     JOIN products p ON p.id = ps.product_id
+     JOIN stores s ON s.id = ps.store_id
+     LEFT JOIN stock ON stock.product_id = ps.product_id AND stock.store_id = ps.store_id
+     LEFT JOIN LATERAL (
+       SELECT COALESCE(v.name, si.vendor_name) AS vendor_name
+       FROM stock_in_items sii
+       JOIN stock_in si ON si.id = sii.stock_in_id
+       LEFT JOIN vendors v ON v.id = si.vendor_id
+       WHERE sii.product_id = p.id AND si.vendor_id IS NOT NULL
+       ORDER BY si.confirmed_at DESC NULLS LAST, si.created_at DESC
+       LIMIT 1
+     ) last_vendor ON TRUE
+     WHERE ${conditions.join(' AND ')}
+       AND COALESCE(stock.available_qty, 0) <= COALESCE(NULLIF(ps.low_stock_value, 0), 10)
+     ORDER BY suggested_qty DESC, p.name ASC
+     LIMIT 1000`,
+    params
+  );
+
+  return res.rows.map((row, index) => ({
+    id: `auto-reorder-${index}`,
+    product: row.product,
+    sku: row.sku || '',
+    store: row.store,
+    current_stock: number(row.current_stock),
+    reorder_level: number(row.reorder_level),
+    suggested_qty: number(row.suggested_qty),
+    vendor: row.vendor || '',
+    cost: money(row.cost),
+  }));
+}
+
 async function getPurchaseFamilyReport(reportKey, filters, user) {
   await ensureStockInSchema();
   await ensureVendorsSchema();
@@ -1657,6 +1971,7 @@ async function getInsightsFamilyReport(reportKey, filters, user) {
 }
 
 async function getLogsFamilyReport(reportKey, filters, user) {
+  if (reportKey.includes('audit-trail')) return getAuditLogReport(filters, user, '');
   if (reportKey.includes('system')) return getAuditLogReport(filters, user, 'system');
   if (reportKey.includes('order-sync')) return getAuditLogReport(filters, user, 'order');
   if (reportKey.includes('product')) {

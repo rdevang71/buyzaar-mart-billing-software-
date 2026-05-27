@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getClient, query } from '@/lib/db';
 import { ensureProcurementSchema } from '@/lib/procurementSchema';
-import { appendStoreScope, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
+import { appendStoreScope, auditLog, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 function toNum(value, fallback = 0) {
   const parsed = Number(value);
@@ -135,8 +135,19 @@ export async function POST(request) {
       const productId = toNum(item.productId || item.product_id, 0);
       const qty = toNum(item.qty || item.suggestedQty || item.suggested_qty, 0);
       const costPrice = toNum(item.costPrice || item.cost_price, 0);
-      if (!productId || qty <= 0) continue;
+      if (!productId || qty <= 0) {
+        await client.query('ROLLBACK');
+        return NextResponse.json({ error: 'Each item must have a product and quantity greater than zero' }, { status: 400 });
+      }
+      if (costPrice < 0) {
+        await client.query('ROLLBACK');
+        return NextResponse.json({ error: 'Cost price cannot be negative' }, { status: 400 });
+      }
       const product = await client.query('SELECT name, cost_price FROM products WHERE id = $1', [productId]);
+      if (!product.rows[0]) {
+        await client.query('ROLLBACK');
+        return NextResponse.json({ error: `Product ${productId} was not found` }, { status: 404 });
+      }
       const productName = item.productName || item.product_name || product.rows[0]?.name || null;
       const cost = costPrice || toNum(product.rows[0]?.cost_price, 0);
       await client.query(
@@ -156,6 +167,13 @@ export async function POST(request) {
     );
 
     await client.query('COMMIT');
+    await auditLog(auth.user.id, 'purchase_order.auto_reorder_create', 'purchase_order', poId, {
+      transactionId,
+      storeId,
+      vendorId,
+      totalItems,
+      totalCost,
+    });
     return NextResponse.json({ id: poId, transactionId, totalItems, totalCost }, { status: 201 });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});

@@ -35,6 +35,26 @@ function buildQuery(values = {}) {
   return query ? `?${query}` : '';
 }
 
+function csvEscape(value) {
+  const text = String(value ?? '');
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function downloadCsv(filename, rows) {
+  if (!rows.length) return;
+  const keys = Object.keys(rows[0]);
+  const csv = [keys.map(csvEscape).join(','), ...rows.map((row) => keys.map((key) => csvEscape(row[key])).join(','))].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 function PageShell({ title, description, children }) {
   return (
     <MainLayout>
@@ -101,6 +121,15 @@ function Row({ children }) {
 
 function Cell({ children }) {
   return <td className="px-4 py-3 text-[13px] text-gray-700">{children}</td>;
+}
+
+function ActionButton({ children, onClick, tone = 'blue' }) {
+  const styles = tone === 'red'
+    ? 'border-red-200 text-red-600 hover:bg-red-50'
+    : tone === 'green'
+      ? 'border-emerald-200 text-emerald-700 hover:bg-emerald-50'
+      : 'border-blue-200 text-blue-600 hover:bg-blue-50';
+  return <button onClick={onClick} className={`rounded-lg border px-3 py-1.5 text-[12px] font-semibold ${styles}`}>{children}</button>;
 }
 
 function Field({ label, children }) {
@@ -223,9 +252,23 @@ export function VendorQuotationsPage() {
     load();
   };
 
+  const updateStatus = async (id, status) => {
+    const res = await fetch('/api/purchase/quotations', {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, status }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return alert(data.error || 'Failed to update quotation');
+    load();
+  };
+
   return (
     <PageShell title="Vendor Quotation Comparison" description="Capture vendor quotes and compare landed price, lead time and score.">
-      <Toolbar search={search} setSearch={setSearch} />
+      <Toolbar search={search} setSearch={setSearch}>
+        <button onClick={() => downloadCsv('vendor-quotations.csv', filtered)} className="rounded-lg border border-gray-200 px-4 py-2 text-[13px] font-semibold text-gray-700">Export CSV</button>
+      </Toolbar>
       <FilterBar filters={filters} setFilters={setFilters} stores={stores} vendors={vendors} statuses={['Draft', 'Submitted', 'Approved', 'Rejected']} onFetch={load} />
       <div className="mb-4 grid gap-3 rounded-xl border border-gray-200 bg-white p-4 md:grid-cols-4">
         <Field label="Vendor"><SelectInput value={form.vendorId} onChange={(e) => setForm({ ...form, vendorId: e.target.value })}><option value="">Select Vendor</option>{vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}</SelectInput></Field>
@@ -238,8 +281,8 @@ export function VendorQuotationsPage() {
         <Field label="Freight"><TextInput type="number" value={form.freightAmount} onChange={(e) => setForm({ ...form, freightAmount: e.target.value })} /></Field>
         <button onClick={save} className="rounded-lg bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white md:col-span-4">Save Quotation</button>
       </div>
-      <DataTable headers={['Quote', 'Vendor', 'Store', 'Items', 'Amount', 'Lead', 'Freight', 'Score', 'Status']} rows={filtered} renderRow={(row) => (
-        <Row key={row.id}><Cell>{row.transactionId}</Cell><Cell>{row.vendorName}</Cell><Cell>{row.storeName}</Cell><Cell>{row.totalItems}</Cell><Cell>{money(row.totalAmount)}</Cell><Cell>{row.deliveryDays} days</Cell><Cell>{money(row.freightAmount)}</Cell><Cell>{Math.round(row.score)}</Cell><Cell>{row.status}</Cell></Row>
+      <DataTable headers={['Quote', 'Vendor', 'Store', 'Items', 'Amount', 'Lead', 'Freight', 'Score', 'Status', 'Actions']} rows={filtered} renderRow={(row) => (
+        <Row key={row.id}><Cell>{row.transactionId}</Cell><Cell>{row.vendorName}</Cell><Cell>{row.storeName}</Cell><Cell>{row.totalItems}</Cell><Cell>{money(row.totalAmount)}</Cell><Cell>{row.deliveryDays} days</Cell><Cell>{money(row.freightAmount)}</Cell><Cell>{Math.round(row.score)}</Cell><Cell>{row.status}</Cell><Cell><div className="flex gap-2">{row.status === 'Draft' && <ActionButton onClick={() => updateStatus(row.id, 'Submitted')}>Submit</ActionButton>}{['Draft', 'Submitted'].includes(row.status) && <ActionButton tone="green" onClick={() => updateStatus(row.id, 'Approved')}>Approve</ActionButton>}{['Draft', 'Submitted'].includes(row.status) && <ActionButton tone="red" onClick={() => updateStatus(row.id, 'Rejected')}>Reject</ActionButton>}</div></Cell></Row>
       )} />
     </PageShell>
   );
@@ -272,9 +315,23 @@ export function PurchaseReturnsPage() {
     load();
   };
 
+  const updateStatus = async (id, status) => {
+    const res = await fetch('/api/purchase/returns', {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, status }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return alert(data.error || 'Failed to update purchase return');
+    load();
+  };
+
   return (
     <PageShell title="Purchase Returns" description="Record stock returned to vendors and track return value.">
-      <Toolbar search={search} setSearch={setSearch} />
+      <Toolbar search={search} setSearch={setSearch}>
+        <button onClick={() => downloadCsv('purchase-returns.csv', filtered)} className="rounded-lg border border-gray-200 px-4 py-2 text-[13px] font-semibold text-gray-700">Export CSV</button>
+      </Toolbar>
       <FilterBar filters={filters} setFilters={setFilters} stores={stores} vendors={vendors} statuses={['Draft', 'Confirmed', 'Cancelled']} onFetch={load} />
       <div className="mb-4 grid gap-3 rounded-xl border border-gray-200 bg-white p-4 md:grid-cols-4">
         <Field label="Vendor"><SelectInput value={form.vendorId} onChange={(e) => setForm({ ...form, vendorId: e.target.value })}><option value="">Select Vendor</option>{vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}</SelectInput></Field>
@@ -286,8 +343,8 @@ export function PurchaseReturnsPage() {
         <Field label="Reason"><TextInput value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} /></Field>
         <button onClick={save} className="rounded-lg bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white">Save Return</button>
       </div>
-      <DataTable headers={['Return ID', 'Vendor', 'Store', 'Date', 'Qty', 'Amount', 'Status', 'Reason']} rows={filtered} renderRow={(row) => (
-        <Row key={row.id}><Cell>{row.transactionId}</Cell><Cell>{row.vendorName}</Cell><Cell>{row.storeName}</Cell><Cell>{dateText(row.returnDate)}</Cell><Cell>{row.totalQty}</Cell><Cell>{money(row.totalAmount)}</Cell><Cell>{row.status}</Cell><Cell>{row.reason}</Cell></Row>
+      <DataTable headers={['Return ID', 'Vendor', 'Store', 'Date', 'Qty', 'Amount', 'Status', 'Reason', 'Actions']} rows={filtered} renderRow={(row) => (
+        <Row key={row.id}><Cell>{row.transactionId}</Cell><Cell>{row.vendorName}</Cell><Cell>{row.storeName}</Cell><Cell>{dateText(row.returnDate)}</Cell><Cell>{row.totalQty}</Cell><Cell>{money(row.totalAmount)}</Cell><Cell>{row.status}</Cell><Cell>{row.reason}</Cell><Cell><div className="flex gap-2">{row.status === 'Draft' && <ActionButton onClick={() => updateStatus(row.id, 'Submitted')}>Submit</ActionButton>}{['Draft', 'Submitted'].includes(row.status) && <ActionButton tone="green" onClick={() => updateStatus(row.id, 'Confirmed')}>Confirm</ActionButton>}{['Draft', 'Submitted'].includes(row.status) && <ActionButton tone="red" onClick={() => updateStatus(row.id, 'Rejected')}>Reject</ActionButton>}</div></Cell></Row>
       )} />
     </PageShell>
   );
@@ -306,7 +363,9 @@ export function VendorLedgerPage() {
   const filtered = rows;
   return (
     <PageShell title="Vendor Ledger" description="Invoice, payment and purchase return ledger by vendor.">
-      <Toolbar search={search} setSearch={setSearch} />
+      <Toolbar search={search} setSearch={setSearch}>
+        <button onClick={() => downloadCsv('vendor-ledger.csv', filtered)} className="rounded-lg border border-gray-200 px-4 py-2 text-[13px] font-semibold text-gray-700">Export CSV</button>
+      </Toolbar>
       <FilterBar filters={filters} setFilters={setFilters} vendors={vendors} onFetch={load} showStore={false} showStatus={false} />
       <DataTable headers={['Date', 'Vendor', 'Type', 'Transaction', 'Reference', 'Debit', 'Credit', 'Balance', 'Remarks']} rows={filtered} renderRow={(row, index) => (
         <Row key={`${row.transactionId}-${index}`}><Cell>{dateText(row.entryAt)}</Cell><Cell>{row.vendorName}</Cell><Cell>{row.entryType}</Cell><Cell>{row.transactionId}</Cell><Cell>{row.referenceNo}</Cell><Cell>{money(row.debit)}</Cell><Cell>{money(row.credit)}</Cell><Cell>{money(row.balance)}</Cell><Cell>{row.remarks}</Cell></Row>
@@ -328,7 +387,9 @@ export function VendorPerformancePage() {
   const filtered = rows;
   return (
     <PageShell title="Vendor Performance" description="Vendor score based on purchase volume, returns, lead time and outstanding risk.">
-      <Toolbar search={search} setSearch={setSearch} />
+      <Toolbar search={search} setSearch={setSearch}>
+        <button onClick={() => downloadCsv('vendor-performance.csv', filtered)} className="rounded-lg border border-gray-200 px-4 py-2 text-[13px] font-semibold text-gray-700">Export CSV</button>
+      </Toolbar>
       <FilterBar filters={filters} setFilters={setFilters} stores={stores} onFetch={load} showVendor={false} showStatus={false} />
       <DataTable headers={['Vendor', 'Score', 'Grade', 'POs', 'Purchase Value', 'Lead Days', 'Returns', 'Outstanding']} rows={filtered} renderRow={(row) => (
         <Row key={row.vendorId}><Cell>{row.vendorName}</Cell><Cell>{row.score}</Cell><Cell>{row.grade}</Cell><Cell>{row.poCount}</Cell><Cell>{money(row.purchaseValue)}</Cell><Cell>{row.avgLeadDays}</Cell><Cell>{row.returnCount}</Cell><Cell>{money(row.outstanding)}</Cell></Row>
@@ -386,6 +447,7 @@ export function AutoReorderPage() {
         <SelectInput value={storeId} onChange={(e) => { setStoreId(e.target.value); setSelected([]); }}><option value="">Select Store</option>{stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</SelectInput>
         <SelectInput value={vendorId} onChange={(e) => setVendorId(e.target.value)}><option value="">Select Vendor</option>{vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}</SelectInput>
         <button onClick={load} className="rounded-lg border border-blue-200 px-4 py-2 text-[13px] font-semibold text-blue-600">Fetch</button>
+        <button onClick={() => downloadCsv('auto-reorder.csv', visible)} className="rounded-lg border border-gray-200 px-4 py-2 text-[13px] font-semibold text-gray-700">Export CSV</button>
         <button onClick={generatePo} className="rounded-lg bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white">Generate PO</button>
       </Toolbar>
       <DataTable headers={['Select', 'Product', 'Store', 'Current', 'Reorder Level', 'Suggested Qty', 'Last Vendor', 'Cost']} rows={visible} renderRow={(row) => {

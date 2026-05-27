@@ -4,7 +4,7 @@ import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
 import { ensureSalesReturnsSchema } from '@/lib/salesReturnsSchema';
 import { ensureInvoiceSalesOrdersSchema } from '@/lib/invoiceSalesOrdersSchema';
 import { allocateBatchStock, ensureInventoryBatchSchema, getInventoryIssueStrategy } from '@/lib/inventoryBatching';
-import { requireAuth, requireStore } from '@/lib/api-protection';
+import { auditLog, requireAuth, requireStore } from '@/lib/api-protection';
 
 function toNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -239,6 +239,13 @@ export async function POST(req) {
     ]);
 
     await client.query('COMMIT');
+    await auditLog(user.id, 'pos_bill.create', 'sales_bill', bill_id, {
+      billNumber,
+      storeId: Number(store_id),
+      grandTotal,
+      paidAmount,
+      itemCount: normalizedItems.length,
+    });
 
     return successResponse({
       bill_id,

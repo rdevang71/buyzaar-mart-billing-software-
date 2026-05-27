@@ -28,6 +28,7 @@ export default function Topbar({ onMenuOpen, sidebarExpanded = false }) {
   const [returnRequests, setReturnRequests] = useState([]);
   const [lowStockAlerts, setLowStockAlerts] = useState([]);
   const [requisitionRequests, setRequisitionRequests] = useState([]);
+  const [procurementAlerts, setProcurementAlerts] = useState([]);
   const profileRef = useRef(null);
   const notificationRef = useRef(null);
 
@@ -69,8 +70,14 @@ export default function Topbar({ onMenuOpen, sidebarExpanded = false }) {
     user?.role === 'admin' ||
     user?.permissions?.includes('*') ||
     user?.permissions?.includes('MANAGE_INVENTORY');
+  const canReviewProcurement =
+    user?.role === 'super_admin' ||
+    user?.role === 'admin' ||
+    user?.permissions?.includes('*') ||
+    user?.permissions?.includes('MANAGE_PURCHASE_ORDERS') ||
+    user?.permissions?.includes('MANAGE_VENDORS');
   const returnNotificationTitle = canReviewReturns ? 'Return Requests' : 'My Return Updates';
-  const notificationCount = returnRequests.length + lowStockAlerts.length + requisitionRequests.length;
+  const notificationCount = returnRequests.length + lowStockAlerts.length + requisitionRequests.length + procurementAlerts.length;
 
   const loadReturnNotifications = useCallback(async () => {
     if (!user) {
@@ -126,11 +133,27 @@ export default function Topbar({ onMenuOpen, sidebarExpanded = false }) {
     }
   }, [canReviewRequisitions, user]);
 
+  const loadProcurementNotifications = useCallback(async () => {
+    if (!user || !canReviewProcurement) {
+      setProcurementAlerts([]);
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/notifications/procurement', { cache: 'no-store' });
+      const json = await response.json();
+      setProcurementAlerts(Array.isArray(json.alerts) ? json.alerts : []);
+    } catch {
+      setProcurementAlerts([]);
+    }
+  }, [canReviewProcurement, user]);
+
   const loadNotifications = useCallback(() => {
     loadReturnNotifications();
     loadLowStockNotifications();
     loadRequisitionNotifications();
-  }, [loadLowStockNotifications, loadRequisitionNotifications, loadReturnNotifications]);
+    loadProcurementNotifications();
+  }, [loadLowStockNotifications, loadProcurementNotifications, loadRequisitionNotifications, loadReturnNotifications]);
 
   useEffect(() => {
     loadNotifications();
@@ -353,6 +376,38 @@ export default function Topbar({ onMenuOpen, sidebarExpanded = false }) {
                             </div>
                             <span className="shrink-0 rounded-full bg-violet-100 px-2 py-1 text-xs font-bold text-violet-700">
                               {Number(request.totalItems || 0)} items
+                            </span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {procurementAlerts.length > 0 && (
+                    <div className="border-b border-gray-100">
+                      <p className="px-4 pb-1 pt-3 text-[11px] font-black uppercase tracking-widest text-emerald-600">
+                        Procurement
+                      </p>
+                      {procurementAlerts.map((alert) => (
+                        <button
+                          key={alert.id}
+                          type="button"
+                          onClick={() => {
+                            setOpenNotifications(false);
+                            router.push(alert.href || '/purchase');
+                          }}
+                          className="block w-full border-t border-gray-100 px-4 py-3 text-left hover:bg-emerald-50"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-gray-900">
+                                {alert.title || 'Procurement item pending'}
+                              </p>
+                              <p className="mt-0.5 truncate text-xs text-gray-500">
+                                {alert.transactionId || alert.vendorName || 'Record'}{alert.storeName ? ` - ${alert.storeName}` : ''}
+                              </p>
+                            </div>
+                            <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-1 text-xs font-bold text-emerald-700">
+                              {alert.status || 'Pending'}
                             </span>
                           </div>
                         </button>

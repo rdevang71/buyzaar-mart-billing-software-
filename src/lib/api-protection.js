@@ -8,6 +8,7 @@ import { verifyToken } from '@/lib/auth-enhanced';
 import { query } from '@/lib/db';
 import { unauthorizedError, forbiddenError } from '@/lib/api-response';
 import { ensureUsersTable } from '@/lib/userAuth';
+import { ensureAuditLogsSchema } from '@/lib/auditLogsSchema';
 
 
 /**
@@ -268,11 +269,19 @@ export function appendStoreScope(whereClauses, params, columnName, user, request
  */
 export async function auditLog(userId, action, resourceType, resourceId = null, details = {}) {
   try {
+    await ensureAuditLogsSchema();
+    const normalizedResourceId = Number(resourceId);
     await query(
       `INSERT INTO audit_logs 
-       (user_id, action, resource_type, resource_id, details, created_at)
-       VALUES ($1, $2, $3, $4, $5::jsonb, NOW())`,
-      [userId, action, resourceType, resourceId, JSON.stringify(details)]
+       (user_id, action, resource_type, resource_id, status, details, metadata, created_at)
+       VALUES ($1, $2, $3, $4, 'success', $5::jsonb, $5::jsonb, NOW())`,
+      [
+        Number(userId) || null,
+        action,
+        resourceType,
+        Number.isFinite(normalizedResourceId) ? normalizedResourceId : null,
+        JSON.stringify(details || {}),
+      ]
     );
   } catch (err) {
     console.error('[AUDIT_LOG] Error logging:', err.message);

@@ -3,7 +3,7 @@ import { getClient } from '@/lib/db';
 import { ensureStockInSchema } from '@/lib/stockInSchema';
 import { ensureVendorsSchema } from '@/lib/vendorsSchema';
 import { ensurePurchaseOrderSchema } from '@/lib/purchaseOrderSchema';
-import { requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
+import { auditLog, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 function normalizePurchaseOrderLookup(value) {
   const raw = decodeURIComponent(String(value || '')).replace(/^#/, '').trim();
@@ -40,6 +40,12 @@ export async function POST(request, { params }) {
       const qty = Number(item.qty || 0);
       const cost = Number(item.cost_price || 0);
       const tax = Number(item.tax_value || 0);
+      if (!item.product_id || qty <= 0) {
+        return NextResponse.json({ error: 'Each item must have a product and quantity greater than zero' }, { status: 400 });
+      }
+      if (cost < 0 || tax < 0) {
+        return NextResponse.json({ error: 'Cost and tax cannot be negative' }, { status: 400 });
+      }
       totalItems += qty;
       totalCost += qty * cost;
       totalTax += tax * qty;
@@ -115,6 +121,12 @@ export async function POST(request, { params }) {
       );
 
       await client.query('COMMIT');
+      await auditLog(auth.user.id, 'purchase_order.confirm', 'purchase_order', purchaseOrderId, {
+        destinationId,
+        totalItems,
+        totalCost,
+        totalTax,
+      });
       return NextResponse.json({ success: true, id: purchaseOrderId, totalItems, totalCost, totalTax });
     } catch (err) {
       await client.query('ROLLBACK');

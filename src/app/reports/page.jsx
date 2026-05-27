@@ -174,7 +174,7 @@ const SECTIONS = [
     ],
   },
   {
-    label: 'PURCHASE', count: 6, iconKey: 'box',
+    label: 'PURCHASE', count: 11, iconKey: 'box',
     items: [
       { label: 'List Of Purchase Orders',         href: '/reports/purchase/list-of-purchase-orders' },
       { label: 'Product In Purchase Orders',      href: '/reports/purchase/product-in-purchase-orders' },
@@ -182,6 +182,11 @@ const SECTIONS = [
       { label: 'Vendor Tax Input',                href: '/reports/purchase/vendor-tax-input' },
       { label: 'Vendor Purchase Summary',         href: '/reports/purchase/vendor-purchase-summary' },
       { label: 'Vendor Product Purchase Summary', href: '/reports/purchase/vendor-product-purchase-summary' },
+      { label: 'Vendor Quotation Comparison',     href: '/reports/purchase/vendor-quotation-comparison' },
+      { label: 'Purchase Return Report',          href: '/reports/purchase/purchase-return-report' },
+      { label: 'Vendor Ledger Report',            href: '/reports/purchase/vendor-ledger-report' },
+      { label: 'Vendor Performance Report',       href: '/reports/purchase/vendor-performance-report' },
+      { label: 'Auto Reorder Suggestions',        href: '/reports/purchase/auto-reorder-suggestions' },
     ],
   },
   {
@@ -192,11 +197,12 @@ const SECTIONS = [
     ],
   },
   {
-    label: 'LOGS', count: 3, iconKey: 'clock',
+    label: 'LOGS', count: 4, iconKey: 'clock',
     items: [
       { label: 'Product Logs',       href: '/reports/logs/product-logs' },
       { label: 'System Change Logs', href: '/reports/logs/system-change-logs' },
       { label: 'Order Sync Logs',    href: '/reports/logs/order-sync-logs' },
+      { label: 'Audit Trail',        href: '/reports/logs/audit-trail' },
     ],
   },
 ];

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getClient, query } from '@/lib/db';
 import { ensureProcurementSchema } from '@/lib/procurementSchema';
-import { appendStoreScope, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
+import { appendStoreScope, auditLog, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 function toNum(value, fallback = 0) {
   const parsed = Number(value);
@@ -26,6 +26,52 @@ function mapRow(row) {
     createdBy: row.created_by || '',
     createdAt: row.created_at,
   };
+}
+
+async function applyConfirmedReturnStock(client, { id, transactionId, storeId, items }) {
+  for (const item of items) {
+    const productId = toNum(item.product_id || item.productId, 0);
+    const qty = toNum(item.qty, 0);
+    const available = await client.query(
+      `SELECT COALESCE(SUM(available_qty), 0) AS qty
+       FROM inventory_batches
+       WHERE product_id = $1 AND store_id = $2 AND status = 'active'`,
+      [productId, storeId]
+    );
+    if (Number(available.rows[0]?.qty || 0) < qty) {
+      throw new Error(`Not enough stock available to return product ${productId}`);
+    }
+
+    const batches = await client.query(
+      `SELECT id, available_qty
+       FROM inventory_batches
+       WHERE product_id = $1 AND store_id = $2 AND status = 'active' AND available_qty > 0
+       ORDER BY expiry_date NULLS LAST, id
+       FOR UPDATE`,
+      [productId, storeId]
+    );
+    let remaining = qty;
+    for (const batch of batches.rows) {
+      if (remaining <= 0) break;
+      const deductQty = Math.min(Number(batch.available_qty || 0), remaining);
+      if (deductQty <= 0) continue;
+      await client.query(
+        `UPDATE inventory_batches
+         SET available_qty = available_qty - $1,
+             status = CASE WHEN available_qty - $1 <= 0 THEN 'depleted' ELSE status END,
+             updated_at = NOW()
+         WHERE id = $2`,
+        [deductQty, batch.id]
+      );
+      await client.query(
+        `INSERT INTO inventory_batch_movements (batch_id, product_id, store_id, direction, qty, reference_type, reference_id, meta)
+         VALUES ($1,$2,$3,'out',$4,'purchase_return',$5,$6::jsonb)`,
+        [batch.id, productId, storeId, deductQty, transactionId, JSON.stringify({ purchaseReturnId: id })]
+      );
+      remaining = Math.round((remaining - deductQty) * 1000) / 1000;
+    }
+    if (remaining > 0) throw new Error(`Not enough stock available to return product ${productId}`);
+  }
 }
 
 export async function GET(request) {
@@ -109,6 +155,13 @@ export async function POST(request) {
     if (!items.length) return NextResponse.json({ error: 'At least one item is required' }, { status: 400 });
     const storeCheck = requireStore(auth.user, storeId);
     if (storeCheck.error) return storeCheck.error;
+    for (const item of items) {
+      const productId = toNum(item.productId || item.product_id, 0);
+      const qty = toNum(item.qty, 0);
+      const costPrice = toNum(item.costPrice || item.cost_price, 0);
+      if (!productId || qty <= 0) return NextResponse.json({ error: 'Each item must have a product and quantity greater than zero' }, { status: 400 });
+      if (costPrice < 0) return NextResponse.json({ error: 'Cost price cannot be negative' }, { status: 400 });
+    }
 
     const totalQty = items.reduce((sum, item) => sum + toNum(item.qty, 0), 0);
     const totalAmount = items.reduce((sum, item) => sum + toNum(item.qty, 0) * toNum(item.costPrice || item.cost_price, 0), 0);
@@ -154,35 +207,107 @@ export async function POST(request) {
     }
 
     if (String(body.status || '').toLowerCase() === 'confirmed') {
-      for (const item of items) {
-        const productId = toNum(item.productId || item.product_id, 0);
-        const qty = toNum(item.qty, 0);
-        if (!productId || qty <= 0) continue;
-        await client.query(
-          `UPDATE inventory_batches
-           SET available_qty = GREATEST(available_qty - $3, 0), updated_at = NOW()
-           WHERE id = (
-             SELECT id FROM inventory_batches
-             WHERE product_id = $1 AND store_id = $2 AND available_qty > 0
-             ORDER BY expiry_date NULLS LAST, id
-             LIMIT 1
-           )`,
-          [productId, storeId, qty]
-        );
-        await client.query(
-          `INSERT INTO inventory_batch_movements (product_id, store_id, direction, qty, reference_type, reference_id, meta)
-           VALUES ($1,$2,'out',$3,'purchase_return',$4,$5::jsonb)`,
-          [productId, storeId, qty, transactionId, JSON.stringify({ purchaseReturnId: id })]
-        );
-      }
+      await applyConfirmedReturnStock(client, { id, transactionId, storeId, items });
     }
 
     await client.query('COMMIT');
+    await auditLog(auth.user.id, 'purchase_return.create', 'purchase_return', id, {
+      transactionId,
+      vendorId,
+      storeId,
+      totalQty,
+      totalAmount,
+      status: body.status || 'Draft',
+    });
     return NextResponse.json({ id, transactionId }, { status: 201 });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     console.error('[purchase returns POST]', err.message);
     return NextResponse.json({ error: err.message || 'Failed to save purchase return' }, { status: 500 });
+  } finally {
+    client.release();
+  }
+}
+
+export async function PATCH(request) {
+  const client = await getClient();
+  try {
+    await ensureProcurementSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_PURCHASE_ORDERS');
+    if (permissionCheck.error) return permissionCheck.error;
+
+    const body = await request.json().catch(() => ({}));
+    const id = toNum(body.id, 0);
+    const status = String(body.status || '').trim();
+    const allowedStatuses = ['Draft', 'Submitted', 'Confirmed', 'Rejected', 'Cancelled'];
+    if (!id) return NextResponse.json({ error: 'Valid return id is required' }, { status: 400 });
+    if (!allowedStatuses.includes(status)) return NextResponse.json({ error: 'Valid status is required' }, { status: 400 });
+
+    await client.query('BEGIN');
+    const current = await client.query(
+      `SELECT id, transaction_id, store_id, status
+       FROM purchase_returns
+       WHERE id = $1
+       FOR UPDATE`,
+      [id]
+    );
+    if (!current.rows.length) {
+      await client.query('ROLLBACK');
+      return NextResponse.json({ error: 'Purchase return not found' }, { status: 404 });
+    }
+    const row = current.rows[0];
+    const storeCheck = requireStore(auth.user, row.store_id);
+    if (storeCheck.error) {
+      await client.query('ROLLBACK');
+      return storeCheck.error;
+    }
+    if (String(row.status).toLowerCase() === 'confirmed' && status !== 'Confirmed') {
+      await client.query('ROLLBACK');
+      return NextResponse.json({ error: 'Confirmed return cannot be moved back' }, { status: 409 });
+    }
+
+    if (status === 'Confirmed' && String(row.status).toLowerCase() !== 'confirmed') {
+      const itemRes = await client.query(
+        `SELECT product_id, qty
+         FROM purchase_return_items
+         WHERE purchase_return_id = $1`,
+        [id]
+      );
+      await applyConfirmedReturnStock(client, {
+        id,
+        transactionId: row.transaction_id || `PR-${String(id).padStart(4, '0')}`,
+        storeId: row.store_id,
+        items: itemRes.rows,
+      });
+    }
+
+    const updated = await client.query(
+      `UPDATE purchase_returns
+       SET status = $2,
+           reason = COALESCE($3, reason),
+           meta = COALESCE(meta, '{}'::jsonb) || $4::jsonb
+       WHERE id = $1
+       RETURNING id, transaction_id, status`,
+      [
+        id,
+        status,
+        body.remarks || body.reason || null,
+        JSON.stringify({ approval: { status, by: auth.user.id, at: new Date().toISOString(), remarks: body.remarks || body.reason || null } }),
+      ]
+    );
+
+    await client.query('COMMIT');
+    await auditLog(auth.user.id, 'purchase_return.status_update', 'purchase_return', id, {
+      from: row.status,
+      to: status,
+    });
+    return NextResponse.json({ ok: true, row: updated.rows[0] });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[purchase returns PATCH]', err.message);
+    return NextResponse.json({ error: err.message || 'Failed to update purchase return' }, { status: 500 });
   } finally {
     client.release();
   }

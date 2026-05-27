@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getClient, query } from '@/lib/db';
 import { ensureProcurementSchema } from '@/lib/procurementSchema';
-import { appendStoreScope, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
+import { appendStoreScope, auditLog, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 function toNum(value, fallback = 0) {
   const parsed = Number(value);
@@ -163,6 +163,17 @@ export async function POST(request) {
     await client.query('UPDATE vendor_quotations SET transaction_id = $1 WHERE id = $2', [`VQ-${String(id).padStart(4, '0')}`, id]);
 
     for (const item of items) {
+      const qty = toNum(item.qty, 1);
+      const quotedPrice = toNum(item.quotedPrice || item.quoted_price || item.costPrice || item.cost_price, 0);
+      const taxValue = toNum(item.taxValue || item.tax_value, 0);
+      if (qty <= 0) {
+        await client.query('ROLLBACK');
+        return NextResponse.json({ error: 'Quotation item quantity must be greater than zero' }, { status: 400 });
+      }
+      if (quotedPrice < 0 || taxValue < 0) {
+        await client.query('ROLLBACK');
+        return NextResponse.json({ error: 'Quotation price and tax cannot be negative' }, { status: 400 });
+      }
       await client.query(
         `INSERT INTO vendor_quotation_items (quotation_id, product_id, product_name, qty, quoted_price, tax_value)
          VALUES ($1,$2,$3,$4,$5,$6)`,
@@ -170,14 +181,19 @@ export async function POST(request) {
           id,
           toNum(item.productId || item.product_id, 0) || null,
           item.productName || item.product_name || item.name || null,
-          toNum(item.qty, 1),
-          toNum(item.quotedPrice || item.quoted_price || item.costPrice || item.cost_price, 0),
-          toNum(item.taxValue || item.tax_value, 0),
+          qty,
+          quotedPrice,
+          taxValue,
         ]
       );
     }
 
     await client.query('COMMIT');
+    await auditLog(auth.user.id, 'vendor_quotation.create', 'vendor_quotation', id, {
+      vendorId,
+      storeId,
+      totalItems: items.length,
+    });
     return NextResponse.json({ id, transactionId: `VQ-${String(id).padStart(4, '0')}` }, { status: 201 });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
@@ -185,5 +201,52 @@ export async function POST(request) {
     return NextResponse.json({ error: err.message || 'Failed to save quotation' }, { status: 500 });
   } finally {
     client.release();
+  }
+}
+
+export async function PATCH(request) {
+  try {
+    await ensureProcurementSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_PURCHASE_ORDERS', 'MANAGE_VENDORS');
+    if (permissionCheck.error) return permissionCheck.error;
+
+    const body = await request.json().catch(() => ({}));
+    const id = toNum(body.id, 0);
+    const status = String(body.status || '').trim();
+    const allowedStatuses = ['Draft', 'Submitted', 'Approved', 'Rejected'];
+    if (!id) return NextResponse.json({ error: 'Valid quotation id is required' }, { status: 400 });
+    if (!allowedStatuses.includes(status)) return NextResponse.json({ error: 'Valid status is required' }, { status: 400 });
+
+    const current = await query('SELECT id, store_id, status FROM vendor_quotations WHERE id = $1', [id]);
+    if (!current.rows.length) return NextResponse.json({ error: 'Quotation not found' }, { status: 404 });
+    const storeCheck = requireStore(auth.user, current.rows[0].store_id);
+    if (storeCheck.error) return storeCheck.error;
+
+    const updated = await query(
+      `UPDATE vendor_quotations
+       SET status = $2,
+           remarks = COALESCE($3, remarks),
+           meta = COALESCE(meta, '{}'::jsonb) || $4::jsonb,
+           updated_at = NOW()
+       WHERE id = $1
+       RETURNING id, transaction_id, status`,
+      [
+        id,
+        status,
+        body.remarks || body.reason || null,
+        JSON.stringify({ approval: { status, by: auth.user.id, at: new Date().toISOString(), remarks: body.remarks || body.reason || null } }),
+      ]
+    );
+
+    await auditLog(auth.user.id, 'vendor_quotation.status_update', 'vendor_quotation', id, {
+      from: current.rows[0].status,
+      to: status,
+    });
+    return NextResponse.json({ ok: true, row: updated.rows[0] });
+  } catch (err) {
+    console.error('[purchase quotations PATCH]', err.message);
+    return NextResponse.json({ error: err.message || 'Failed to update quotation' }, { status: 500 });
   }
 }
