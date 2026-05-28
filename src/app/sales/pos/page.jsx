@@ -87,16 +87,36 @@ const PAYMENT_ICON_BY_CODE = {
   wallet: 'ti-wallet',
 };
 
+const STANDARD_PAYMENT_LABELS = {
+  cash: 'Cash',
+  upi: 'UPI',
+  card: 'Card',
+  credit: 'Credit',
+  wallet: 'Wallet',
+  split: 'Split',
+};
+
+function getPaymentLabel(code, fallback = '') {
+  const normalized = String(code || '').trim().toLowerCase();
+  return STANDARD_PAYMENT_LABELS[normalized] || fallback || normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
 function normalizePaymentOptions(modes = []) {
   const mapped = (Array.isArray(modes) ? modes : [])
     .map((mode) => {
       const value = String(mode.code || mode.value || mode.paymentMode || mode.name || '').trim().toLowerCase();
       if (!value) return null;
-      const label = mode.name || mode.label || value.charAt(0).toUpperCase() + value.slice(1);
+      const label = getPaymentLabel(value, mode.name || mode.label);
       return { value, label, icon: PAYMENT_ICON_BY_CODE[value] || 'ti-credit-card' };
     })
     .filter(Boolean);
-  return mapped.length ? mapped : DEFAULT_PAYMENT_OPTIONS;
+
+  const byValue = new Map(DEFAULT_PAYMENT_OPTIONS.map((option) => [option.value, option]));
+  for (const option of mapped) {
+    byValue.set(option.value, option);
+  }
+
+  return Array.from(byValue.values());
 }
 
 const inputClassName = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500 focus:ring-2 focus:ring-blue-400 outline-none';

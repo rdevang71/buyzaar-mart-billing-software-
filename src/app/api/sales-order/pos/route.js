@@ -59,7 +59,37 @@ const DEFAULT_PAYMENT_MODES = [
   { id: 1, name: 'Cash', code: 'cash' },
   { id: 2, name: 'UPI', code: 'upi' },
   { id: 3, name: 'Card', code: 'card' },
+  { id: 4, name: 'Credit', code: 'credit' },
 ];
+
+const STANDARD_PAYMENT_LABELS = {
+  cash: 'Cash',
+  upi: 'UPI',
+  card: 'Card',
+  credit: 'Credit',
+  wallet: 'Wallet',
+  split: 'Split',
+};
+
+function getPaymentLabel(code, fallback = '') {
+  const normalized = String(code || '').trim().toLowerCase();
+  return STANDARD_PAYMENT_LABELS[normalized] || fallback || normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function mergePaymentModes(modes = []) {
+  const byCode = new Map();
+  for (const mode of DEFAULT_PAYMENT_MODES) {
+    byCode.set(mode.code, mode);
+  }
+  for (const mode of Array.isArray(modes) ? modes : []) {
+    if (!mode?.code) continue;
+    byCode.set(mode.code, {
+      ...mode,
+      name: getPaymentLabel(mode.code, mode.name),
+    });
+  }
+  return Array.from(byCode.values());
+}
 
 function normalizePaymentMode(row) {
   const config = row.config || {};
@@ -67,7 +97,7 @@ function normalizePaymentMode(row) {
   if (!code) return null;
   return {
     id: row.id,
-    name: row.name || code.charAt(0).toUpperCase() + code.slice(1),
+    name: getPaymentLabel(code, row.name),
     code,
     provider: config.provider || '',
     settlementAccount: config.settlementAccount || '',
@@ -97,7 +127,7 @@ async function loadPaymentModes(storeId) {
     const mode = normalizePaymentMode(row);
     if (mode && !byCode.has(mode.code)) byCode.set(mode.code, mode);
   }
-  return byCode.size ? Array.from(byCode.values()) : DEFAULT_PAYMENT_MODES;
+  return mergePaymentModes(Array.from(byCode.values()));
 }
 
 async function ensureProductDiscountSchema() {
