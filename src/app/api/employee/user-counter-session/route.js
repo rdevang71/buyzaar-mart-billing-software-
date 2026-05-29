@@ -142,7 +142,7 @@ export async function POST(request) {
     if (auth.error || !auth.user) {
       return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 });
     }
-    const permissionCheck = requirePermission(auth.user, 'MANAGE_POS');
+    const permissionCheck = requirePermission(auth.user, 'OPEN_CLOSE_SESSION', 'MANAGE_POS');
     if (permissionCheck.error) return permissionCheck.error;
 
     const body = await request.json();

@@ -245,7 +245,7 @@ function getOrCreateLocalId(key, prefix) {
 
 export default function POSPage() {
   const router = useRouter();
-  const barcodeRef = useRef(null);
+  const searchInputRef = useRef(null);
 
   const [user, setUser] = useState(null);
   const [session, setSession] = useState(null);
@@ -256,7 +256,6 @@ export default function POSPage() {
   // State: Products & Search
   const [products, setProducts] = useState([]);
   const [search, setSearch] = useState('');
-  const [barcode, setBarcode] = useState('');
   const [loading, setLoading] = useState(false);
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [cart, setCart] = useState([]);
@@ -458,7 +457,7 @@ export default function POSPage() {
     }
     setIsOffline(typeof navigator !== 'undefined' ? !navigator.onLine : false);
     setPendingQueueCount(readStorage(STORAGE_KEYS.QUEUE, []).length);
-    if (barcodeRef.current) barcodeRef.current.focus();
+    if (searchInputRef.current) searchInputRef.current.focus();
   }, [loadAuth]);
 
   const loadHeldBills = useCallback(async () => {
@@ -624,17 +623,25 @@ export default function POSPage() {
       (p.sku && String(p.sku) === code) ||
       String(p.id) === code
     );
-    if (local) { addProduct(local); setBarcode(''); if (barcodeRef.current) barcodeRef.current.focus(); return; }
+    if (local) {
+      addProduct(local);
+      setSearch('');
+      if (searchInputRef.current) searchInputRef.current.focus();
+      return;
+    }
     try {
       const activeStoreId = session?.storeId || selectedStoreId;
       const params = new URLSearchParams({ search: code, pageSize: '1' });
       if (activeStoreId) params.set('store_id', String(activeStoreId));
       const res = await fetch(`/api/sales-order/pos?${params}`);
       const json = await res.json();
-      if (json.success && json.data?.products?.[0]) addProduct(normalizeProduct(json.data.products[0]));
+      if (json.success && json.data?.products?.[0]) {
+        addProduct(normalizeProduct(json.data.products[0]));
+        setSearch('');
+      }
       else showToast('Product not found', 'error');
-    } catch { showToast('Failed to lookup barcode', 'error'); }
-    finally { setBarcode(''); if (barcodeRef.current) barcodeRef.current.focus(); }
+    } catch { showToast('Failed to lookup product', 'error'); }
+    finally { if (searchInputRef.current) searchInputRef.current.focus(); }
   };
 
   // ── CART ──
@@ -659,6 +666,7 @@ export default function POSPage() {
     setCart([]); setCustomerName(''); setCustomerMobile('');
     setOrderDiscount('0'); setRoundOff('0');
     setPayments([emptyPayment()]); setPaymentMode('cash');
+    setSearch('');
   };
 
   const saveHeldBills = (next) => { setHeldBills(next); writeStorage(STORAGE_KEYS.HELD_BILLS, next); };
@@ -726,7 +734,7 @@ export default function POSPage() {
     await removeHeldBillFromServer(heldBill.id);
     setHoldDetectModal(false); setDetectedHeldBills([]);
     showToast('Held bill resumed');
-    if (barcodeRef.current) barcodeRef.current.focus();
+    if (searchInputRef.current) searchInputRef.current.focus();
   };
 
   const removeHeldBill = async (id) => {
@@ -766,7 +774,7 @@ export default function POSPage() {
     await removeHeldBillFromServer(heldBill.id);
     setHoldDetectModal(false); setDetectedHeldBills([]);
     showToast(cart.length > 0 ? `Current cart held · Resumed ${heldBill.customerName || 'held bill'}` : `Resumed ${heldBill.customerName || 'held bill'}`);
-    if (barcodeRef.current) barcodeRef.current.focus();
+    if (searchInputRef.current) searchInputRef.current.focus();
   };
 
   // ── TOTALS ──
@@ -1322,24 +1330,18 @@ export default function POSPage() {
                 <div className="relative flex-1">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none">🔍</span>
                   <input
+                    ref={searchInputRef}
                     type="text"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Search name, SKU…"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleBarcode(search);
+                      }
+                    }}
+                    placeholder="Search, type or scan barcode"
                     className="w-full pl-8 pr-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none transition-all"
-                  />
-                </div>
-                <div className="relative">
-                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none">📷</span>
-                  <input
-                    ref={barcodeRef}
-                    type="text"
-                    value={barcode}
-                    onChange={(e) => setBarcode(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleBarcode(barcode)}
-                    placeholder="Scan barcode"
-                    className="pl-7 pr-3 py-2 w-38 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none transition-all"
-                    style={{ width: '140px' }}
                   />
                 </div>
                 <button
@@ -1931,12 +1933,12 @@ export default function POSPage() {
               <div className="px-4 pb-4 pt-3">
                 <input
                   type="text"
-                  value={barcode}
-                  onChange={(e) => setBarcode(e.target.value)}
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       setScannerOpen(false);
-                      handleBarcode(barcode);
+                      handleBarcode(search);
                     }
                   }}
                   placeholder="Or enter/scan barcode"
