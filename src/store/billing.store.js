@@ -118,13 +118,16 @@ function calculateTotals(items) {
     taxTotal += tax;
   });
 
-  const grandTotal = subtotal - discountTotal + taxTotal;
+  const amountBeforeRoundOff = Math.max(0, subtotal - discountTotal + taxTotal);
+  const roundedAmount = Math.round(amountBeforeRoundOff);
+  const roundOff = Math.round((roundedAmount - amountBeforeRoundOff) * 100) / 100;
+  const grandTotal = Math.max(0, Math.round((amountBeforeRoundOff + roundOff) * 100) / 100);
 
   return {
     subtotal: Math.round(subtotal * 100) / 100,
     discountTotal: Math.round(discountTotal * 100) / 100,
     taxTotal: Math.round(taxTotal * 100) / 100,
-    roundOff: 0,
-    grandTotal: Math.round(grandTotal * 100) / 100,
+    roundOff: Math.round(roundOff * 100) / 100,
+    grandTotal,
   };
 }

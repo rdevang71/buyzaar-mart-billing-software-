@@ -168,6 +168,12 @@ function calculateGstLine(item, canManageDiscounts = true) {
   return { gstAmount, exclusiveGstAmount: gstAmount, lineTotal: gross + gstAmount };
 }
 
+function calculateRoundOff(amount) {
+  const normalizedAmount = Math.round(toNumber(amount) * 100) / 100;
+  const roundedAmount = Math.round(normalizedAmount);
+  return Math.round((roundedAmount - normalizedAmount) * 100) / 100;
+}
+
 // ============================================================================
 // STORAGE
 // ============================================================================
@@ -770,10 +776,16 @@ export default function POSPage() {
     const gstTotal = cart.reduce((sum, item) => sum + calculateGstLine(item, canManageDiscounts).gstAmount, 0);
     const exclusiveGstTotal = cart.reduce((sum, item) => sum + calculateGstLine(item, canManageDiscounts).exclusiveGstAmount, 0);
     const discount = (canApplyOrderDiscount ? toNumber(orderDiscount) : 0) + lineDiscount;
-    const roundValue = toNumber(roundOff);
-    const grandTotal = Math.max(0, subtotal - discount + exclusiveGstTotal + roundValue);
+    const amountBeforeRoundOff = Math.max(0, subtotal - discount + exclusiveGstTotal);
+    const roundValue = calculateRoundOff(amountBeforeRoundOff);
+    const grandTotal = Math.max(0, Math.round((amountBeforeRoundOff + roundValue) * 100) / 100);
     return { subtotal, lineDiscount, taxTotal: gstTotal, exclusiveGstTotal, discount, roundValue, grandTotal };
-  }, [cart, canApplyOrderDiscount, canManageDiscounts, orderDiscount, roundOff]);
+  }, [cart, canApplyOrderDiscount, canManageDiscounts, orderDiscount]);
+
+  useEffect(() => {
+    const nextRoundOff = cartTotals.roundValue.toFixed(2);
+    setRoundOff((current) => (current === nextRoundOff ? current : nextRoundOff));
+  }, [cartTotals.roundValue]);
 
   const normalizedPayments = useMemo(() => {
     const rows = payments
@@ -1079,7 +1091,8 @@ export default function POSPage() {
           discountAmount: canManageDiscounts && item.allowDiscountOnPos ? toNumber(item.discountAmount) : 0,
         })),
         orderDiscount: canApplyOrderDiscount ? toNumber(orderDiscount) : 0,
-        roundOff: toNumber(roundOff), invoiceNumber: generateInvoiceNumber(),
+        roundOff: cartTotals.roundValue,
+        invoiceNumber: generateInvoiceNumber(),
       };
       if (isOffline || !navigator.onLine) {
         // 1. Build a local offline bill object
@@ -1610,8 +1623,8 @@ export default function POSPage() {
                 {/* Round off */}
                 <div>
                   <label className="text-[10px] font-black text-slate-400 tracking-widest uppercase block mb-1">Round Off</label>
-                  <input type="number" value={roundOff} onChange={(e) => setRoundOff(e.target.value)}
-                    placeholder="0" className={inputCls} style={{ fontSize: '12px' }} />
+                  <input type="number" value={roundOff} readOnly
+                    className={`${inputCls} cursor-not-allowed bg-slate-100`} style={{ fontSize: '12px' }} />
                 </div>
 
                 {/* Generate Bill */}
