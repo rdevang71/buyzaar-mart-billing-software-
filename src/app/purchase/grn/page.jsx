@@ -61,6 +61,7 @@ export default function GrnListPage() {
     'Cost',
     'Reference Transaction Type',
     'Reference ID',
+    'Actions',
   ];
   const tableData = useMemo(() => {
     const mapped = mapRecordsToTable(records);
@@ -128,9 +129,20 @@ export default function GrnListPage() {
               ) : tableData.length > 0 ? (
                 tableData.map((row, rowIdx) => (
                   <tr key={rowIdx} className="border-b border-gray-100 hover:bg-blue-50/50 transition-colors">
-                    {tableHeaders.map((header, colIdx) => (
-                      <td key={colIdx} className="px-4 py-3 text-[13px] text-gray-700">{row[header] || '-'}</td>
-                    ))}
+                    {tableHeaders.map((header, colIdx) => {
+                      if (header === 'Actions') {
+                        return (
+                          <td key={colIdx} className="px-4 py-3 text-[13px] text-gray-700">
+                            <div className="flex gap-2">
+                              <button onClick={() => router.push(`/purchase/grn/${encodeURIComponent(row['Reference ID'] || row['Transaction ID'] || '')}/edit`)} className="p-1.5 rounded border border-gray-200 hover:bg-gray-50" title="Edit GRN">
+                                <i className="ti ti-edit text-[15px]" />
+                              </button>
+                            </div>
+                          </td>
+                        );
+                      }
+                      return <td key={colIdx} className="px-4 py-3 text-[13px] text-gray-700">{row[header] || '-'}</td>;
+                    })}
                   </tr>
                 ))
               ) : (
