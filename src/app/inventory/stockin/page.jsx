@@ -85,6 +85,14 @@ function downloadCsv(rows) {
   URL.revokeObjectURL(url);
 }
 
+const MAX_INVOICE_UPLOAD_BYTES = 5 * 1024 * 1024;
+
+function formatFileSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const mb = bytes / (1024 * 1024);
+  return `${mb.toFixed(mb >= 10 ? 0 : 1)} MB`;
+}
+
 export default function StockInPage() {
   const [showModal, setShowModal] = useState(false);
   const [stores, setStores] = useState([]);
@@ -131,7 +139,10 @@ export default function StockInPage() {
   }, [showModal]);
 
   const handleOpen = () => setShowModal(true);
-  const handleClose = () => setShowModal(false);
+  const handleClose = () => {
+    setShowModal(false);
+    setSelectedFile(null);
+  };
 
   const handleBulkImport = async () => {
     try {
@@ -269,13 +280,13 @@ export default function StockInPage() {
       />
 
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center p-6">
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 sm:p-6">
           <div className="absolute inset-0 bg-black/40" onClick={handleClose} />
-          <div className="relative bg-white w-full max-w-2xl rounded-md shadow-lg overflow-hidden">
+          <div className="relative bg-white w-full max-w-2xl rounded-md shadow-lg overflow-hidden max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-3rem)] flex min-h-0 flex-col">
             <div className="px-6 py-4 border-b border-gray-200">
               <h3 className="text-lg font-semibold text-gray-900">Step 1 : Stock In Method</h3>
             </div>
-            <div className="p-6">
+            <div className="flex-1 min-h-0 overflow-y-auto p-6">
               <div className="flex items-center gap-3 mb-6">
                 <button
                   type="button"
@@ -344,6 +355,12 @@ export default function StockInPage() {
                       className="hidden"
                       onChange={(e) => {
                         const f = e.target.files?.[0] || null;
+                        if (f && f.size > MAX_INVOICE_UPLOAD_BYTES) {
+                          alert(`Invoice file must be ${formatFileSize(MAX_INVOICE_UPLOAD_BYTES)} or smaller.`);
+                          e.target.value = '';
+                          setSelectedFile(null);
+                          return;
+                        }
                         setSelectedFile(f);
                       }}
                     />
@@ -359,6 +376,7 @@ export default function StockInPage() {
                     >
                       <div className="mb-2 font-medium text-gray-800">{selectedFile ? selectedFile.name : 'Upload invoice'}</div>
                       <div className="text-sm text-gray-600">Drop a PDF or image to pre-fill line items</div>
+                      <div className="mt-1 text-[11px] text-gray-500">Max size: {formatFileSize(MAX_INVOICE_UPLOAD_BYTES)}</div>
                     </div>
                   </div>
 
@@ -414,7 +432,7 @@ export default function StockInPage() {
                 </div>
               )}
             </div>
-            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t">
+            <div className="flex shrink-0 items-center justify-end gap-3 border-t bg-white px-6 py-4">
               <button type="button" className="px-4 py-2 rounded border border-gray-200" onClick={handleClose}>
                 Close
               </button>

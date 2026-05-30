@@ -8,12 +8,15 @@ function formatCurrency(n) {
   return Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function generateBatchNo() {
+  return `AUTO-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
+}
+
 function createBatchRow(qty = 1) {
   return {
     batch_id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    batch_no: '',
+    batch_no: generateBatchNo(),
     qty,
-    mfg_date: '',
     expiry_date: '',
   };
 }
@@ -80,8 +83,7 @@ function LineItemsContent() {
               batches: warehouseDestination
                 ? [createBatchRow(Number(item.qty || 1))]
                 : [],
-              batch_no: item.batch_no || '',
-              mfg_date: item.mfg_date || '',
+              batch_no: item.batch_no || generateBatchNo(),
               expiry_date: item.expiry_date || '',
             })));
           }
@@ -176,8 +178,7 @@ function LineItemsContent() {
           qty: sourceType === 'warehouse' && isStoreDestination ? Math.min(1, remainingQty) : 1,
           max_qty: sourceType === 'warehouse' && isStoreDestination ? availableStock : null,
           batches: sourceType === 'warehouse' && isStoreDestination ? [] : [createBatchRow(1)],
-          batch_no: '',
-          mfg_date: '',
+          batch_no: generateBatchNo(),
           expiry_date: '',
         },
       ];
@@ -484,23 +485,19 @@ function LineItemsContent() {
                         </div>
 
                         <div className="px-4 py-3">
-                          <div className="grid grid-cols-[1.1fr_110px_150px_150px_40px] gap-3 px-1 pb-2 text-[11px] font-bold uppercase tracking-wide text-gray-500">
+                          <div className="grid grid-cols-[1.1fr_110px_150px_40px] gap-3 px-1 pb-2 text-[11px] font-bold uppercase tracking-wide text-gray-500">
                             <span>Batch No</span>
                             <span>Qty</span>
-                            <span>MFG Date</span>
                             <span>Expiry Date</span>
                             <span />
                           </div>
 
                           <div className="space-y-2">
                             {(it.batches || []).map((batch, index) => (
-                              <div key={batch.batch_id} className="grid grid-cols-[1.1fr_110px_150px_150px_40px] gap-3 items-center">
-                                <input
-                                  value={batch.batch_no}
-                                  onChange={(e) => updateBatchRow(it.line_id, batch.batch_id, { batch_no: e.target.value })}
-                                  placeholder={`Batch ${index + 1}`}
-                                  className="h-10 w-full rounded-lg border border-gray-200 px-3 text-[13px] text-gray-800 outline-none focus:border-blue-400"
-                                />
+                                <div key={batch.batch_id} className="grid grid-cols-[1.1fr_110px_150px_40px] gap-3 items-center">
+                                  <div className="h-10 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-[12px] font-medium text-gray-700 flex items-center">
+                                    {batch.batch_no || `Batch ${index + 1}`}
+                                  </div>
                                 <input
                                   type="number"
                                   min={0}
@@ -508,13 +505,6 @@ function LineItemsContent() {
                                   onChange={(e) => updateBatchRow(it.line_id, batch.batch_id, { qty: e.target.value })}
                                   placeholder="Qty"
                                   className="h-10 w-full rounded-lg border border-gray-200 px-3 text-[13px] text-gray-800 outline-none focus:border-blue-400"
-                                />
-                                <input
-                                  type="date"
-                                  value={batch.mfg_date}
-                                  onChange={(e) => updateBatchRow(it.line_id, batch.batch_id, { mfg_date: e.target.value })}
-                                  className="h-10 w-full rounded-lg border border-gray-200 px-3 text-[13px] text-gray-800 outline-none focus:border-blue-400"
-                                  title="Manufacturing date"
                                 />
                                 <input
                                   type="date"
