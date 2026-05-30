@@ -50,6 +50,7 @@ function LineItemsContent() {
   const isStoreDestination = String(draft?.destinationLocationType || '').toLowerCase() === 'store';
   const isWarehouseDestination = String(draft?.destinationLocationType || 'Warehouse').toLowerCase() === 'warehouse';
   const sourceType = String(draft?.meta?.sourceType || 'warehouse').toLowerCase();
+  const allowFullWarehouseTransfer = sourceType === 'warehouse' && isStoreDestination;
 
   useEffect(() => {
     if (!id) return;
@@ -157,7 +158,7 @@ function LineItemsContent() {
       .reduce((sum, item) => sum + Number(item.qty || 0), 0);
 
     const sourceType = String(draft?.meta?.sourceType || 'warehouse').toLowerCase();
-    if (sourceType === 'warehouse' && isStoreDestination && selectedQty >= availableStock) {
+    if (!allowFullWarehouseTransfer && sourceType === 'warehouse' && isStoreDestination && selectedQty >= availableStock) {
       alert(`${p.name} has only ${availableStock} quantity available in warehouse`);
       return;
     }
@@ -175,8 +176,8 @@ function LineItemsContent() {
           sku: p.sku,
           cost_price: cost,
           tax_value: draft?.applyTaxes ? (cost * taxRate) / 100 : 0,
-          qty: sourceType === 'warehouse' && isStoreDestination ? Math.min(1, remainingQty) : 1,
-          max_qty: sourceType === 'warehouse' && isStoreDestination ? availableStock : null,
+          qty: 1,
+          max_qty: allowFullWarehouseTransfer ? null : (sourceType === 'warehouse' && isStoreDestination ? availableStock : null),
           batches: sourceType === 'warehouse' && isStoreDestination ? [] : [createBatchRow(1)],
           batch_no: generateBatchNo(),
           expiry_date: '',
@@ -233,6 +234,7 @@ function LineItemsContent() {
           const nextBatches = batches.map((batch, index) => index === 0 ? { ...batch, qty: requestedQty } : batch);
           return { ...it, batches: nextBatches, qty: Math.max(0, sumBatchQty(nextBatches)) };
         }
+        if (allowFullWarehouseTransfer) return { ...it, qty: requestedQty };
         if (String(draft?.meta?.sourceType || 'warehouse').toLowerCase() !== 'warehouse' || !isStoreDestination || !it.max_qty) return { ...it, qty: requestedQty };
 
         const otherSelectedQty = c
@@ -566,12 +568,12 @@ function LineItemsContent() {
                             <input
                               type="number"
                               min={1}
-                              max={it.max_qty || undefined}
+                              max={allowFullWarehouseTransfer ? undefined : (it.max_qty || undefined)}
                               value={it.qty}
                               onChange={(e) => updateQty(it.line_id, e.target.value)}
                               className="w-20 border border-gray-200 rounded px-2 py-1 text-[13px] text-gray-700"
                             />
-                            {sourceType === 'warehouse' && isStoreDestination && it.max_qty ? (
+                            {!allowFullWarehouseTransfer && sourceType === 'warehouse' && isStoreDestination && it.max_qty ? (
                               <div className="mt-1 text-[10px] text-gray-500">Max {it.max_qty}</div>
                             ) : null}
                           </td>
