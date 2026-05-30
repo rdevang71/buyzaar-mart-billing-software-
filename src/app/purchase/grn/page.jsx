@@ -72,6 +72,15 @@ export default function GrnListPage() {
     );
   }, [records, search]);
 
+  const handleDownloadSheet = async () => {
+    const XLSX = await import('xlsx');
+    const rows = tableData.map(({ Actions, ...row }) => row);
+    const worksheet = XLSX.utils.json_to_sheet(rows.length ? rows : mapRecordsToTable(records));
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'GRN');
+    XLSX.writeFile(workbook, 'grn-sheet.xlsx');
+  };
+
   return (
     <MainLayout>
       <div className="flex items-center gap-2 text-[12px] text-gray-500 mb-4">
@@ -87,6 +96,10 @@ export default function GrnListPage() {
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
+          <button onClick={handleDownloadSheet} className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 bg-white text-[13px] font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+            <i className="ti ti-download text-[16px]" />
+            Download Sheet
+          </button>
           <button onClick={handleCreate} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-[13px] font-medium text-white hover:bg-blue-700 transition-colors">
             <i className="ti ti-plus text-[16px]" />
             Create GRN

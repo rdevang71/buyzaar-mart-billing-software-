@@ -125,6 +125,23 @@ export async function POST(request) {
       const method = payload.method || 'new';
       const referenceType = method === 'purchase_order' ? 'purchase_order' : null;
       const referenceId = payload.purchaseOrderId || payload.purchase_order_id || null;
+      if (destinationId && method !== 'purchase_order') {
+        const previousStockIn = await client.query(
+          `SELECT id
+             FROM stock_in
+            WHERE destination_id = $1
+              AND COALESCE(status, 'draft') <> 'cancelled'
+            LIMIT 1`,
+          [destinationId]
+        );
+        if (previousStockIn.rowCount > 0) {
+          await client.query('ROLLBACK');
+          return NextResponse.json(
+            { error: 'Only first stock in can be created without PO. Please use Purchase Order.' },
+            { status: 400 }
+          );
+        }
+      }
       const insertText = `
         INSERT INTO stock_in (method, destination_id, apply_taxes, add_products_prefill, reference_type, reference_id, invoice_number, meta, status, created_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'draft', NOW())

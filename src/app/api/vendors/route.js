@@ -52,7 +52,6 @@ export async function GET(req) {
       conditions.push(`(
         name ILIKE $${params.length}
         OR COALESCE(company, '') ILIKE $${params.length}
-        OR COALESCE(short_code, '') ILIKE $${params.length}
         OR COALESCE(email, '') ILIKE $${params.length}
         OR COALESCE(mobile_number, '') ILIKE $${params.length}
         OR COALESCE(gst_number, '') ILIKE $${params.length}
