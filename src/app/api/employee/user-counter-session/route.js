@@ -42,6 +42,13 @@ function normalizeSessionRow(row) {
   };
 }
 
+function hasAnyPermission(user, permissions = []) {
+  if (!user) return false;
+  if (user.role === 'super_admin') return true;
+  const userPermissions = Array.isArray(user.permissions) ? user.permissions : [];
+  return userPermissions.includes('*') || permissions.some((permission) => userPermissions.includes(permission));
+}
+
 export async function GET(request) {
   try {
     await ensureUserCounterSessionSchema();
@@ -50,7 +57,7 @@ export async function GET(request) {
     if (auth.error || !auth.user) {
       return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 });
     }
-    const permissionCheck = requirePermission(auth.user, 'MANAGE_POS', 'VIEW_REPORTS', 'MANAGE_USERS');
+    const permissionCheck = requirePermission(auth.user, 'OPEN_CLOSE_SESSION', 'MANAGE_POS', 'VIEW_REPORTS', 'VIEW_STORE_REPORTS', 'MANAGE_USERS');
     if (permissionCheck.error) return permissionCheck.error;
 
     const url = new URL(request.url);
@@ -142,7 +149,7 @@ export async function POST(request) {
     if (auth.error || !auth.user) {
       return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 });
     }
-    const permissionCheck = requirePermission(auth.user, 'OPEN_CLOSE_SESSION', 'MANAGE_POS');
+    const permissionCheck = requirePermission(auth.user, 'OPEN_CLOSE_SESSION', 'MANAGE_POS', 'CREATE_POS_BILL');
     if (permissionCheck.error) return permissionCheck.error;
 
     const body = await request.json();
@@ -158,6 +165,9 @@ export async function POST(request) {
 
     if (!Number.isFinite(userId) || userId <= 0) {
       return NextResponse.json({ error: 'User id is required' }, { status: 400 });
+    }
+    if (userId !== Number(auth.user.id) && !hasAnyPermission(auth.user, ['OPEN_CLOSE_SESSION', 'MANAGE_POS', 'MANAGE_USERS'])) {
+      return NextResponse.json({ error: 'You can only open your own POS session' }, { status: 403 });
     }
 
     if (!storeId) return NextResponse.json({ error: 'Store is required' }, { status: 400 });
