@@ -113,18 +113,12 @@ export async function POST(req) {
     if (!/^\d{10}$/.test(normalizedMobile)) {
       return NextResponse.json({ error: 'Mobile number must be exactly 10 digits' }, { status: 400 });
     }
-    if (!normalizedEmail) {
-      return NextResponse.json({ error: 'Email address is required' }, { status: 400 });
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    if (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
       return NextResponse.json({ error: 'Enter a valid email address' }, { status: 400 });
     }
 
     if (!String(gst_number || '').trim()) {
       return NextResponse.json({ error: 'GST number is required' }, { status: 400 });
-    }
-    if (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
-      }
     }
 
     const res = await query(

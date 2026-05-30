@@ -1,4 +1,4 @@
-const CACHE_NAME = 'billingpro-shell-v1';
+const CACHE_NAME = 'billingpro-shell-v2';
 const APP_SHELL = [
   '/',
   '/login',
@@ -6,6 +6,12 @@ const APP_SHELL = [
   '/manifest.webmanifest',
   '/pwa-icon.svg'
 ];
+
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
