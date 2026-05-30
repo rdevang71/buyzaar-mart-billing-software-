@@ -3,9 +3,26 @@ import { successResponse, errorResponse, validationError, notFoundError } from '
 import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
 import { extractAuthUser, requireStore } from '@/lib/api-protection';
 
+const SESSION_CLOSE_CUTOFF_HOUR = 21;
+const SESSION_TIME_ZONE = 'Asia/Kolkata';
+
 function toNumber(value, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function getCurrentHourInTimeZone(timeZone = SESSION_TIME_ZONE) {
+  return Number(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hour: '2-digit',
+      hour12: false,
+    }).format(new Date())
+  );
+}
+
+function canCloseSessionNow() {
+  return getCurrentHourInTimeZone() >= SESSION_CLOSE_CUTOFF_HOUR;
 }
 
 function mapClosingTotals(row = {}) {
@@ -184,6 +201,11 @@ export async function POST(request) {
       if (!session.is_active) {
         await client.query('ROLLBACK');
         return errorResponse('Session is already closed', 409);
+      }
+
+      if (!canCloseSessionNow()) {
+        await client.query('ROLLBACK');
+        return errorResponse('POS sessions can only be closed after 9:00 PM IST', 409);
       }
 
       const storeCheck = requireStore(auth.user, session.store_id);

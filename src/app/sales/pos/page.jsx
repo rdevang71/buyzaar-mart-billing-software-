@@ -37,6 +37,23 @@ function formatReceiptDateTime(value) {
   }).format(date);
 }
 
+const SESSION_CLOSE_CUTOFF_HOUR = 21;
+const SESSION_TIME_ZONE = 'Asia/Kolkata';
+
+function getCurrentHourInTimeZone(timeZone = SESSION_TIME_ZONE) {
+  return Number(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hour: '2-digit',
+      hour12: false,
+    }).format(new Date())
+  );
+}
+
+function canClosePosSessionNow() {
+  return getCurrentHourInTimeZone() >= SESSION_CLOSE_CUTOFF_HOUR;
+}
+
 function generateInvoiceNumber() {
   return `INV-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 }
@@ -817,6 +834,7 @@ export default function POSPage() {
   const paymentBalance = Math.round((cartTotals.grandTotal - paidTotal) * 100) / 100;
   const isPaymentBalanced = Math.abs(paymentBalance) <= 0.01;
   const canGenerateBill = !!session?.sessionId && cart.length > 0 && !isProcessing && isPaymentBalanced;
+  const canCloseSessionNow = canClosePosSessionNow();
 
   const updatePayment = (index, field, value) => {
     setPayments((current) => current.map((payment, idx) => (
@@ -2031,6 +2049,11 @@ export default function POSPage() {
                     <p className="mt-1 text-[11px] font-medium text-emerald-700">Calculated from cash payments in this session. Employees cannot edit this amount.</p>
                   </div>
                 </div>
+                {!canCloseSessionNow && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                    This session can only be closed after 9:00 PM IST.
+                  </div>
+                )}
                 <div>
                   <label className="text-[10px] font-black text-slate-400 tracking-widest uppercase block mb-1.5">Remarks (optional)</label>
                   <textarea value={closingRemarks} onChange={(e) => setClosingRemarks(e.target.value)}
@@ -2042,9 +2065,9 @@ export default function POSPage() {
                     className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 font-semibold text-sm hover:bg-slate-50 transition-colors">
                     Cancel
                   </button>
-                  <button onClick={closeSession} disabled={isProcessing || closingLoading}
+                  <button onClick={closeSession} disabled={isProcessing || closingLoading || !canCloseSessionNow}
                     className="flex-1 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-sm disabled:opacity-50 transition-colors">
-                    {isProcessing ? 'Closing…' : 'Close Session'}
+                    {isProcessing ? 'Closing…' : canCloseSessionNow ? 'Close Session' : 'Available after 9 PM'}
                   </button>
                 </div>
               </div>
