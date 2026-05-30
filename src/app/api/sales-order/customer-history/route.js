@@ -3,7 +3,7 @@
 import { query } from '@/lib/db';
 import { successResponse, errorResponse } from '@/lib/api-response';
 import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
-import { extractAuthUser, requireStore } from '@/lib/api-protection';
+import { extractAuthUser, requirePermission, requireStore } from '@/lib/api-protection';
 
 export async function GET(request) {
   try {
@@ -11,6 +11,8 @@ export async function GET(request) {
 
     const auth = await extractAuthUser(request);
     if (auth.error || !auth.user) return errorResponse(auth.error || 'Unauthorized', 401);
+    const permissionCheck = requirePermission(auth.user, 'CREATE_POS_BILL', 'MANAGE_BILLING', 'VIEW_ORDERS', 'MANAGE_ORDERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search') || '';

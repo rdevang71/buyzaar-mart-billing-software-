@@ -580,6 +580,8 @@ export async function GET(req) {
 
     const auth = await extractAuthUser(req);
     if (auth.error || !auth.user) return errorResponse(auth.error || 'Unauthorized', 401);
+    const permissionCheck = requirePermission(auth.user, 'CREATE_POS_BILL', 'MANAGE_BILLING', 'VIEW_ORDERS', 'MANAGE_ORDERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const { searchParams } = new URL(req.url);
     const page = parseInt(searchParams.get('page') || '1', 10);

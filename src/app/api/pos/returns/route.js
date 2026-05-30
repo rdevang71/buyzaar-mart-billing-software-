@@ -1,6 +1,6 @@
 import { query } from '@/lib/db';
 import { successResponse, errorResponse } from '@/lib/api-response';
-import { extractAuthUser } from '@/lib/api-protection';
+import { extractAuthUser, requirePermission } from '@/lib/api-protection';
 import { ensureSalesReturnsSchema } from '@/lib/salesReturnsSchema';
 import { ensureInventoryBatchSchema, receiveBatchStock } from '@/lib/inventoryBatching';
 
@@ -33,6 +33,8 @@ export async function POST(req) {
 
     const auth = await extractAuthUser(req);
     if (auth.error || !auth.user) return errorResponse(auth.error || 'Unauthorized', 401);
+    const permissionCheck = requirePermission(auth.user, 'CREATE_POS_BILL', 'MANAGE_BILLING', 'MANAGE_ORDERS');
+    if (permissionCheck.error) return permissionCheck.error;
     const user = auth.user;
 
     const body = await req.json();
@@ -140,6 +142,8 @@ export async function GET(req) {
 
     const auth = await extractAuthUser(req);
     if (auth.error || !auth.user) return errorResponse(auth.error || 'Unauthorized', 401);
+    const permissionCheck = requirePermission(auth.user, 'CREATE_POS_BILL', 'MANAGE_BILLING', 'VIEW_ORDERS', 'MANAGE_ORDERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const { searchParams } = new URL(req.url);
     const bill_id = searchParams.get('bill_id');
@@ -237,6 +241,8 @@ export async function PATCH(req) {
 
     const auth = await extractAuthUser(req);
     if (auth.error || !auth.user) return errorResponse(auth.error || 'Unauthorized', 401);
+    const permissionCheck = requirePermission(auth.user, 'CREATE_POS_BILL', 'MANAGE_BILLING', 'MANAGE_ORDERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const body = await req.json();
     const returnId = Number(body.return_id || body.id);

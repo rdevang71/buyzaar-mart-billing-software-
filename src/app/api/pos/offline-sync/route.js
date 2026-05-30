@@ -2,7 +2,7 @@ import { getClient } from '@/lib/db';
 import { successResponse, errorResponse } from '@/lib/api-response';
 import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
 import { allocateBatchStock, ensureInventoryBatchSchema, getInventoryIssueStrategy } from '@/lib/inventoryBatching';
-import { requireAuth, requireStore } from '@/lib/api-protection';
+import { requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 function toNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -24,6 +24,8 @@ export async function POST(req) {
 
     const auth = await requireAuth(req);
     if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'CREATE_POS_BILL', 'MANAGE_BILLING');
+    if (permissionCheck.error) return permissionCheck.error;
     const user = auth.user;
 
     let syncedCount = 0;

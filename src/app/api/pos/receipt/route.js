@@ -1,11 +1,13 @@
 import { query } from '@/lib/db';
 import { successResponse, errorResponse } from '@/lib/api-response';
-import { requireAuth, requireStore } from '@/lib/api-protection';
+import { requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 export async function POST(req) {
   try {
     const auth = await requireAuth(req);
     if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'CREATE_POS_BILL', 'MANAGE_BILLING', 'VIEW_ORDERS', 'MANAGE_ORDERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const body = await req.json();
     const {

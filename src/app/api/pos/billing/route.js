@@ -4,7 +4,7 @@ import { ensureSalesBillingSchema } from '@/lib/salesBillingSchema';
 import { ensureSalesReturnsSchema } from '@/lib/salesReturnsSchema';
 import { ensureInvoiceSalesOrdersSchema } from '@/lib/invoiceSalesOrdersSchema';
 import { allocateBatchStock, ensureInventoryBatchSchema, getInventoryIssueStrategy } from '@/lib/inventoryBatching';
-import { auditLog, requireAuth, requireStore } from '@/lib/api-protection';
+import { auditLog, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 function toNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -20,6 +20,8 @@ export async function POST(req) {
 
     const auth = await requireAuth(req);
     if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'CREATE_POS_BILL', 'MANAGE_BILLING');
+    if (permissionCheck.error) return permissionCheck.error;
     const user = auth.user;
 
     const body = await req.json();
@@ -288,6 +290,8 @@ export async function GET(req) {
 
     const auth = await requireAuth(req);
     if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'CREATE_POS_BILL', 'MANAGE_BILLING', 'VIEW_ORDERS', 'MANAGE_ORDERS');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const isNumericId = /^\d+$/.test(bill_id);
     const billRes = await query(

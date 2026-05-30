@@ -25,6 +25,15 @@ function canCloseSessionNow() {
   return getCurrentHourInTimeZone() >= SESSION_CLOSE_CUTOFF_HOUR;
 }
 
+function canManageSessions(user) {
+  if (user?.role === 'super_admin') return true;
+  const permissions = Array.isArray(user?.permissions) ? user.permissions : [];
+  return permissions.includes('*') ||
+    permissions.includes('OPEN_CLOSE_SESSION') ||
+    permissions.includes('MANAGE_POS') ||
+    permissions.includes('MANAGE_USERS');
+}
+
 function mapClosingTotals(row = {}) {
   const openingCash = toNumber(row.opening_cash);
   const cashSales = toNumber(row.cash_sales);
@@ -127,6 +136,9 @@ export async function GET(request) {
     if (auth.user.role !== 'super_admin') {
       const storeCheck = requireStore(auth.user, session.store_id);
       if (storeCheck.error) return storeCheck.error;
+      if (session.user_id !== Number(auth.user.id) && !canManageSessions(auth.user)) {
+        return errorResponse('You can only view your own POS session closing summary', 403);
+      }
     }
 
     const totalsResult = await query(
@@ -212,6 +224,10 @@ export async function POST(request) {
       if (storeCheck.error) {
         await client.query('ROLLBACK');
         return storeCheck.error;
+      }
+      if (session.user_id !== Number(auth.user.id) && !canManageSessions(auth.user)) {
+        await client.query('ROLLBACK');
+        return errorResponse('You can only close your own POS session', 403);
       }
 
       const openingCash = requestedOpeningCash == null
