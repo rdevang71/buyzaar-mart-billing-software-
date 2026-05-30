@@ -158,6 +158,32 @@ export default function VouchersPage() {
     }
   };
 
+  const onExport = async () => {
+    const XLSX = await import('xlsx');
+    const exportRows = rows.map((row) => ({
+      'S.No.': row.sno,
+      'Voucher Code': row.code,
+      Description: row.description || '',
+      'Valid From': row.valid_from_label,
+      'Valid To': row.valid_to_label,
+      'Voucher Type': row.voucher_type || 'ABSOLUTE',
+      Value: row.value_label,
+      'Max. Voucher Value': row.max_voucher_value_label,
+      Allocated: row.allocated,
+      Available: row.available,
+      Redeemed: row.redeemed,
+      'Is Used?': row.is_used_label,
+      Customer: row.customer_label,
+      Store: row.store_label,
+      'Device ID': row.device_id_label,
+    }));
+    const worksheet = XLSX.utils.json_to_sheet(exportRows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Vouchers');
+    XLSX.writeFile(workbook, 'vouchers.xlsx');
+    setBulkOpen(false);
+  };
+
   const inputCls =
     'w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500';
 
@@ -177,10 +203,7 @@ export default function VouchersPage() {
         <div>
           <h1 className="text-[22px] font-semibold text-gray-900">Vouchers</h1>
           <p className="mt-1 text-sm text-gray-500">
-            List of all Vouchers{' '}
-            <a href="#" className="text-blue-600 hover:underline">
-              Need Help?
-            </a>
+            List of all Vouchers
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -197,9 +220,9 @@ export default function VouchersPage() {
                 <button
                   type="button"
                   className="block w-full px-4 py-2 text-left text-sm text-gray-600 hover:bg-gray-50"
-                  onClick={() => setBulkOpen(false)}
+                  onClick={onExport}
                 >
-                  Export (coming soon)
+                  Export
                 </button>
               </div>
             ) : null}
@@ -248,14 +271,13 @@ export default function VouchersPage() {
                 <th className="px-2 py-3 text-left font-semibold">Customer ⇅</th>
                 <th className="px-2 py-3 text-left font-semibold">Store ⇅</th>
                 <th className="px-2 py-3 text-left font-semibold">Device ID ⇅</th>
-                <th className="px-2 py-3 text-left font-semibold">View Orders</th>
                 <th className="px-2 py-3 text-left font-semibold">Unblock</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={17} className="px-3 py-12 text-center text-gray-500">
+                  <td colSpan={16} className="px-3 py-12 text-center text-gray-500">
                     Loading vouchers…
                   </td>
                 </tr>
@@ -280,11 +302,6 @@ export default function VouchersPage() {
                     <td className="px-2 py-3 text-gray-700">{row.store_label}</td>
                     <td className="px-2 py-3 text-gray-700">{row.device_id_label}</td>
                     <td className="px-2 py-3">
-                      <button type="button" className="text-blue-600 hover:underline" disabled>
-                        View
-                      </button>
-                    </td>
-                    <td className="px-2 py-3">
                       {row.is_blocked ? (
                         <button
                           type="button"
@@ -301,7 +318,7 @@ export default function VouchersPage() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={17} className="px-3 py-12 text-center text-gray-500">
+                  <td colSpan={16} className="px-3 py-12 text-center text-gray-500">
                     No Records Found
                   </td>
                 </tr>

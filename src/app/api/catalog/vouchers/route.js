@@ -1,6 +1,7 @@
 import { query } from '@/lib/db';
 import { successResponse, errorResponse, validationError } from '@/lib/apiResponse';
 import { ensureVouchersSchema } from '@/lib/catalogExtrasSchema';
+import { requireAuth, requirePermission } from '@/lib/api-protection';
 
 function toNum(v, fallback = 0) {
   if (v === '' || v === null || v === undefined) return fallback;
@@ -30,6 +31,10 @@ function formatValue(row) {
 export async function GET(request) {
   try {
     await ensureVouchersSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'VIEW_CATALOG', 'MANAGE_CATALOG');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search') || '';
@@ -130,6 +135,10 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     await ensureVouchersSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_CATALOG');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const body = await request.json();
     const code = String(body.code || '').trim();

@@ -1,11 +1,16 @@
 import { query } from '@/lib/db';
 import { successResponse, errorResponse, notFound } from '@/lib/apiResponse';
 import { ensureVouchersSchema } from '@/lib/catalogExtrasSchema';
+import { requireAuth, requirePermission } from '@/lib/api-protection';
 
 // ─── PATCH /api/catalog/vouchers/[id] — unblock voucher ──────
 export async function PATCH(request, { params }) {
   try {
     await ensureVouchersSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_CATALOG');
+    if (permissionCheck.error) return permissionCheck.error;
 
     const id = Number(params?.id);
     if (!id) return errorResponse('Invalid voucher id', 400);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import InventoryShell from '@/components/inventory/InventoryShell';
 import { getBulkField, parseBulkSheet, pickSpreadsheetFile, toBoolean } from '@/lib/bulkSheet';
 
@@ -64,6 +64,8 @@ function mapValidationsToTable(records) {
     'Invoice Date': formatDate(row.invoiceDate),
     'Total Item Number': row.totalItems ?? 0,
     Cost: formatCost(row.cost),
+    _invoiceDate: row.invoiceDate || '',
+    _source: row.sourceName || 'None',
   }));
 }
 
@@ -77,6 +79,22 @@ export default function StockValidationPage() {
   const [loadingList, setLoadingList] = useState(true);
   const [tableData, setTableData] = useState([]);
   const [draftId, setDraftId] = useState(null);
+  const [listFilters, setListFilters] = useState({ dateFrom: '', dateTo: '', source: '' });
+
+  const visibleTableData = useMemo(() => {
+    return tableData.filter((row) => {
+      const invoiceTime = row._invoiceDate ? new Date(row._invoiceDate).getTime() : null;
+      if (listFilters.dateFrom && invoiceTime && invoiceTime < new Date(listFilters.dateFrom).getTime()) return false;
+      if (listFilters.dateTo && invoiceTime && invoiceTime > new Date(`${listFilters.dateTo}T23:59:59`).getTime()) return false;
+      if (listFilters.source && String(row._source || '') !== listFilters.source) return false;
+      return true;
+    });
+  }, [tableData, listFilters]);
+
+  const sourceOptions = useMemo(
+    () => Array.from(new Set(tableData.map((row) => row._source).filter(Boolean))).sort(),
+    [tableData]
+  );
 
   const loadList = () => {
     setLoadingList(true);
@@ -166,9 +184,41 @@ export default function StockValidationPage() {
         subtitle="Stock Validation transaction history of last 7 days. Need Help?"
         actions={[{ label: 'Audit In Bulk (Excel)', onClick: handleBulkImport }, { label: 'Audit', primary: true, onClick: openModal }]}
         searchPlaceholder="Search"
-        filters={['Date Range', 'Select Source']}
+        filters={(
+          <>
+            <input
+              type="date"
+              value={listFilters.dateFrom}
+              onChange={(e) => setListFilters((current) => ({ ...current, dateFrom: e.target.value }))}
+              className="rounded-xl border border-slate-200 px-3 py-2 text-[12.5px] text-slate-600"
+              title="From date"
+            />
+            <input
+              type="date"
+              value={listFilters.dateTo}
+              onChange={(e) => setListFilters((current) => ({ ...current, dateTo: e.target.value }))}
+              className="rounded-xl border border-slate-200 px-3 py-2 text-[12.5px] text-slate-600"
+              title="To date"
+            />
+            <select
+              value={listFilters.source}
+              onChange={(e) => setListFilters((current) => ({ ...current, source: e.target.value }))}
+              className="rounded-xl border border-slate-200 px-3 py-2 text-[12.5px] text-slate-600"
+            >
+              <option value="">All sources</option>
+              {sourceOptions.map((source) => <option key={source} value={source}>{source}</option>)}
+            </select>
+            <button
+              type="button"
+              onClick={() => setListFilters({ dateFrom: '', dateTo: '', source: '' })}
+              className="rounded-xl border border-slate-200 px-3 py-2 text-[12.5px] text-slate-600 hover:bg-slate-50"
+            >
+              Reset
+            </button>
+          </>
+        )}
         tableHeaders={tableHeaders}
-        tableData={loadingList ? [] : tableData}
+        tableData={loadingList ? [] : visibleTableData}
         emptyMessage={loadingList ? 'Loading records...' : 'No Records Found'}
       />
 
