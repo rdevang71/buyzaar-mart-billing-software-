@@ -96,6 +96,12 @@ const DEFAULT_PAYMENT_OPTIONS = [
   { value: 'credit', label: 'Credit', icon: 'ti-file-invoice' },
 ];
 
+const FIXED_PAYMENT_METHODS = DEFAULT_PAYMENT_OPTIONS.map((option) => ({
+  method: option.value,
+  label: option.label,
+  icon: option.icon,
+}));
+
 const PAYMENT_ICON_BY_CODE = {
   cash: 'ti-cash',
   card: 'ti-credit-card',
@@ -256,6 +262,28 @@ function getOrCreateLocalId(key, prefix) {
   return next;
 }
 
+function createFixedPaymentRows(sourcePayments = []) {
+  const sourceByMethod = new Map();
+
+  for (const payment of Array.isArray(sourcePayments) ? sourcePayments : []) {
+    const method = String(payment?.method || '').trim().toLowerCase();
+    if (!method) continue;
+    sourceByMethod.set(method, {
+      method,
+      amount: String(payment?.amount ?? ''),
+      referenceNo: String(payment?.referenceNo ?? payment?.reference_no ?? ''),
+    });
+  }
+
+  return FIXED_PAYMENT_METHODS.map((method) => (
+    sourceByMethod.get(method.method) || {
+      method: method.method,
+      amount: '',
+      referenceNo: '',
+    }
+  ));
+}
+
 // ============================================================================
 // MAIN POS COMPONENT
 // ============================================================================
@@ -281,7 +309,7 @@ export default function POSPage() {
   const [orderDiscount, setOrderDiscount] = useState('0');
   const [roundOff, setRoundOff] = useState('0');
   const [paymentMode, setPaymentMode] = useState('cash');
-  const [payments, setPayments] = useState([emptyPayment()]);
+  const [payments, setPayments] = useState(() => createFixedPaymentRows());
   const [paymentOptions, setPaymentOptions] = useState(DEFAULT_PAYMENT_OPTIONS);
   const [isOffline, setIsOffline] = useState(false);
   const [pendingQueueCount, setPendingQueueCount] = useState(0);
@@ -554,7 +582,7 @@ export default function POSPage() {
     setOrderDiscount(String(draft.orderDiscount ?? '0'));
     setRoundOff(String(draft.roundOff ?? '0'));
     setPaymentMode(draft.paymentMode || 'cash');
-    setPayments(Array.isArray(draft.payments) && draft.payments.length ? draft.payments : [emptyPayment()]);
+    setPayments(createFixedPaymentRows(draft.payments));
   }, []);
 
   useEffect(() => {
@@ -682,7 +710,7 @@ export default function POSPage() {
   const clearCart = () => {
     setCart([]); setCustomerName(''); setCustomerMobile('');
     setOrderDiscount('0'); setRoundOff('0');
-    setPayments([emptyPayment()]); setPaymentMode('cash');
+    setPayments(createFixedPaymentRows()); setPaymentMode('cash');
     setSearch('');
   };
 
@@ -746,7 +774,7 @@ export default function POSPage() {
     setOrderDiscount(String(heldBill.orderDiscount ?? '0'));
     setRoundOff(String(heldBill.roundOff ?? '0'));
     setPaymentMode(heldBill.paymentMode || 'cash');
-    setPayments(Array.isArray(heldBill.payments) && heldBill.payments.length ? heldBill.payments : [emptyPayment()]);
+    setPayments(createFixedPaymentRows(heldBill.payments));
     saveHeldBills(heldBills.filter((b) => b.id !== heldBill.id));
     await removeHeldBillFromServer(heldBill.id);
     setHoldDetectModal(false); setDetectedHeldBills([]);
@@ -786,7 +814,7 @@ export default function POSPage() {
     setOrderDiscount(String(heldBill.orderDiscount ?? '0'));
     setRoundOff(String(heldBill.roundOff ?? '0'));
     setPaymentMode(heldBill.paymentMode || 'cash');
-    setPayments(Array.isArray(heldBill.payments) && heldBill.payments.length ? heldBill.payments : [emptyPayment()]);
+    setPayments(createFixedPaymentRows(heldBill.payments));
     saveHeldBills(nextHeldBills);
     await removeHeldBillFromServer(heldBill.id);
     setHoldDetectModal(false); setDetectedHeldBills([]);
@@ -1589,43 +1617,41 @@ export default function POSPage() {
                   📋 View Customer History
                 </button>
 
-                {/* Payment mode tabs */}
                 <div>
-                  <p className="text-[10px] font-black text-slate-400 tracking-widest uppercase mb-1.5">Payment Method</p>
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {paymentOptions.map((mode) => (
-                      <button key={mode.value} onClick={() => setPaymentMode(mode.value)}
-                        className={`flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl border text-[10px] font-bold transition-all ${
-                          paymentMode === mode.value
-                            ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-200'
-                            : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-indigo-50'
-                        }`}>
-                        <i className={`ti ${mode.icon} text-base leading-none`} />
-                        {mode.label}
-                      </button>
-                    ))}
+                  <p className="text-[10px] font-black text-slate-400 tracking-widest uppercase mb-1.5">Payment Method Amounts</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {FIXED_PAYMENT_METHODS.map((method) => {
+                      const paymentRow = payments.find((payment) => payment.method === method.method) || { method: method.method, amount: '' };
+                      return (
+                        <div key={method.method} className="rounded-xl border border-slate-200 bg-white p-3 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <i className={`ti ${method.icon} text-base text-slate-600`} />
+                              <span className="text-sm font-bold text-slate-800">{method.label}</span>
+                            </div>
+                          </div>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={paymentRow.amount}
+                            onChange={(e) => {
+                              const nextAmount = e.target.value;
+                              setPayments((current) => current.map((payment) => (
+                                payment.method === method.method ? { ...payment, amount: nextAmount } : payment
+                              )));
+                            }}
+                            placeholder="Amount"
+                            className={inputCls}
+                            style={{ fontSize: '12px' }}
+                          />
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-[10px] font-black text-slate-400 tracking-widest uppercase">Split Payment</p>
-                    <button type="button" onClick={addPaymentRow} className="text-[11px] font-bold text-indigo-600 hover:text-indigo-700">+ Add</button>
-                  </div>
-                  {payments.map((payment, index) => (
-                    <div key={index} className="grid grid-cols-[1fr_1fr_auto] gap-2">
-                      <select value={payment.method || 'cash'} onChange={(e) => updatePayment(index, 'method', e.target.value)} className={inputCls} style={{ fontSize: '12px' }}>
-                        {paymentOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                      </select>
-                      <input type="number" min="0" step="0.01" value={payment.amount} onChange={(e) => updatePayment(index, 'amount', e.target.value)} placeholder="Amount" className={inputCls} style={{ fontSize: '12px' }} />
-                      <button type="button" onClick={() => removePaymentRow(index)} disabled={payments.length <= 1} className="h-9 w-9 rounded-lg border border-slate-200 bg-white text-slate-500 disabled:opacity-40" title="Remove payment">
-                        <i className="ti ti-x" />
-                      </button>
-                      {payment.method !== 'cash' && (
-                        <input type="text" value={payment.referenceNo || ''} onChange={(e) => updatePayment(index, 'referenceNo', e.target.value)} placeholder="Reference no." className={`${inputCls} col-span-3`} style={{ fontSize: '12px' }} />
-                      )}
-                    </div>
-                  ))}
                   <div className={`text-[11px] font-bold ${isPaymentBalanced ? 'text-emerald-600' : 'text-rose-600'}`}>
                     Paid {formatCurrency(paidTotal)} / Balance {formatCurrency(paymentBalance)}
                   </div>
