@@ -11,7 +11,6 @@ function mapVendor(r) {
     id: r.id,
     name: r.name,
     company: r.company,
-    short_code: r.short_code,
     business: r.business,
     address_1: r.address_1,
     address_2: r.address_2,
@@ -22,7 +21,6 @@ function mapVendor(r) {
     email: r.email,
     mobile_number: r.mobile_number,
     gst_number: r.gst_number,
-    pan_number: r.pan_number,
     margin: Number(r.margin || 0),
     is_active: r.is_active !== false,
     created_at: r.created_at,
@@ -63,8 +61,8 @@ export async function GET(req) {
     params.push(pageSize);
 
     const res = await query(
-      `SELECT id, name, company, short_code, business, address_1, address_2, city, state, pincode, country,
-              email, mobile_number, gst_number, pan_number, margin, is_active, created_at, updated_at
+          `SELECT id, name, company, business, address_1, address_2, city, state, pincode, country,
+            email, mobile_number, gst_number, margin, is_active, created_at, updated_at
        FROM vendors
        ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''}
        ORDER BY name
@@ -91,7 +89,6 @@ export async function POST(req) {
     const {
       name,
       company,
-      short_code,
       business,
       address_1,
       address_2,
@@ -102,7 +99,6 @@ export async function POST(req) {
       email,
       mobile_number,
       gst_number,
-      pan_number,
       margin,
     } = body;
 
@@ -124,25 +120,24 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Enter a valid email address' }, { status: 400 });
     }
 
-    if (mobile_number) {
-      const phoneValidation = validatePhoneNumber(mobile_number);
-      if (!phoneValidation.isValid) {
-        return NextResponse.json({ error: phoneValidation.error }, { status: 400 });
+    if (!String(gst_number || '').trim()) {
+      return NextResponse.json({ error: 'GST number is required' }, { status: 400 });
+    }
+    if (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
       }
     }
 
     const res = await query(
       `INSERT INTO vendors (
-         name, company, short_code, business, address_1, address_2, city, state, pincode, country,
-         email, mobile_number, gst_number, pan_number, margin, is_active, created_at, updated_at
+         name, company, business, address_1, address_2, city, state, pincode, country,
+         email, mobile_number, gst_number, margin, is_active, created_at, updated_at
        )
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15, TRUE, NOW(), NOW())
-       RETURNING id, name, company, short_code, business, address_1, address_2, city, state, pincode, country,
-                 email, mobile_number, gst_number, pan_number, margin, is_active, created_at, updated_at`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, TRUE, NOW(), NOW())
+       RETURNING id, name, company, business, address_1, address_2, city, state, pincode, country,
+                 email, mobile_number, gst_number, margin, is_active, created_at, updated_at`,
       [
         String(name).trim(),
         company || null,
-        short_code || null,
         business || null,
         address_1 || null,
         address_2 || null,
@@ -150,10 +145,9 @@ export async function POST(req) {
         state || null,
         pincode || null,
         country || null,
-        normalizedEmail,
+        normalizedEmail || null,
         normalizedMobile,
-        gst_number || null,
-        pan_number || null,
+        String(gst_number).trim(),
         Number(margin || 0),
       ]
     );
@@ -162,7 +156,7 @@ export async function POST(req) {
   } catch (err) {
     console.error('Vendors POST error', err);
     if (err.code === '23505') {
-      return NextResponse.json({ error: 'Vendor with same mobile, email or short code already exists' }, { status: 409 });
+      return NextResponse.json({ error: 'Vendor with same mobile or email already exists' }, { status: 409 });
     }
     return NextResponse.json({ error: err.message || 'Failed to create vendor' }, { status: 500 });
   }

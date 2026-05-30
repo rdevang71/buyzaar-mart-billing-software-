@@ -7,12 +7,21 @@ import { fetchLookup, normalizeVendors } from '@/lib/purchaseLookups';
 
 const tableHeaders = ['S. No.', 'Vendor Name', 'Mobile Number', 'Email Address', 'Address', 'Actions'];
 
+const DISTRIBUTION_VIA_OPTIONS = [
+  { value: 'company', label: 'Company' },
+  { value: 'distributor', label: 'Distributor' },
+];
+
 function normalizeMobile(value) {
   return String(value || '').replace(/\D/g, '').slice(0, 10);
 }
 
 function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+}
+
+function normalizeDistributionVia(value) {
+  return String(value || '').trim().toLowerCase() === 'distributor' ? 'distributor' : 'company';
 }
 
 export default function VendorsPage() {
@@ -26,8 +35,7 @@ export default function VendorsPage() {
     id: null,
     name: '',
     company: '',
-    short_code: '',
-    business: '',
+    business: 'company',
     address_1: '',
     address_2: '',
     city: '',
@@ -37,7 +45,6 @@ export default function VendorsPage() {
     email: '',
     mobile_number: '',
     gst_number: '',
-    pan_number: '',
     margin: 0,
     is_active: true,
   };
@@ -76,7 +83,13 @@ export default function VendorsPage() {
   };
 
   const openEdit = (vendor) => {
-    setForm({ ...emptyForm, ...vendor, margin: Number(vendor.margin || 0), is_active: vendor.is_active !== false });
+    setForm({
+      ...emptyForm,
+      ...vendor,
+      business: normalizeDistributionVia(vendor.business),
+      margin: Number(vendor.margin || 0),
+      is_active: vendor.is_active !== false,
+    });
     setShowModal(true);
   };
 
@@ -96,8 +109,8 @@ export default function VendorsPage() {
     if (!form.name.trim()) return alert('Vendor name is required');
     if (!form.mobile_number.trim()) return alert('Mobile number is required');
     if (!/^\d{10}$/.test(form.mobile_number)) return alert('Mobile number must be exactly 10 digits');
-    if (!form.email.trim()) return alert('Email address is required');
-    if (!isValidEmail(form.email)) return alert('Enter a valid email address');
+    if (!form.gst_number.trim()) return alert('GST number is required');
+    if (form.email.trim() && !isValidEmail(form.email)) return alert('Enter a valid email address');
     setSaving(true);
     try {
       const res = await fetch(form.id ? `/api/vendors/${form.id}` : '/api/vendors', {
@@ -185,7 +198,7 @@ export default function VendorsPage() {
                     <td className="px-4 py-3 text-[13px] text-gray-700">{rowIdx + 1}</td>
                     <td className="px-4 py-3 text-[13px] text-gray-700">
                       <div className="font-medium text-gray-900">{row.name || '-'}</div>
-                      <div className="text-[11px] text-gray-500">{row.company || row.short_code || ''}</div>
+                      <div className="text-[11px] text-gray-500">{row.company || row.business || ''}</div>
                     </td>
                     <td className="px-4 py-3 text-[13px] text-gray-700">{row.mobile_number || '-'}</td>
                     <td className="px-4 py-3 text-[13px] text-gray-700">{row.email || '-'}</td>
@@ -242,12 +255,12 @@ export default function VendorsPage() {
                   </div>
 
                   <div>
-                    <label className="text-[12px] text-gray-700">Vendor Short Code</label>
-                    <input value={form.short_code} onChange={(e) => setForm({ ...form, short_code: e.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-[13px] text-gray-800 bg-white placeholder:text-gray-400 focus:outline-none focus:border-blue-500" />
-                  </div>
-                  <div>
-                    <label className="text-[12px] text-gray-700">Business</label>
-                    <input value={form.business} onChange={(e) => setForm({ ...form, business: e.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-[13px] text-gray-800 bg-white placeholder:text-gray-400 focus:outline-none focus:border-blue-500" />
+                    <label className="text-[12px] text-gray-700">Distribution Via</label>
+                    <select value={form.business} onChange={(e) => setForm({ ...form, business: e.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-[13px] text-gray-800 bg-white focus:outline-none focus:border-blue-500">
+                      {DISTRIBUTION_VIA_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               </section>
@@ -270,7 +283,7 @@ export default function VendorsPage() {
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="text-[12px] text-gray-700">Email Address <span className="text-red-500">*</span></label>
+                      <label className="text-[12px] text-gray-700">Email Address</label>
                       <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="Email Address" className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-[13px] text-gray-800 bg-white placeholder:text-gray-400 focus:outline-none focus:border-blue-500" />
                     </div>
                     <div className="flex flex-col">
@@ -297,12 +310,8 @@ export default function VendorsPage() {
                 <h4 className="text-sm text-blue-700 font-semibold mb-3">Other Information</h4>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-[12px] text-gray-700">GST Number</label>
+                    <label className="text-[12px] text-gray-700">GST Number *</label>
                     <input value={form.gst_number} onChange={(e) => setForm({ ...form, gst_number: e.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-[13px] text-gray-800 bg-white placeholder:text-gray-400 focus:outline-none focus:border-blue-500" />
-                  </div>
-                  <div>
-                    <label className="text-[12px] text-gray-700">PAN Number</label>
-                    <input value={form.pan_number} onChange={(e) => setForm({ ...form, pan_number: e.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-[13px] text-gray-800 bg-white placeholder:text-gray-400 focus:outline-none focus:border-blue-500" />
                   </div>
 
                   <div className="col-span-2">
