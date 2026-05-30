@@ -36,6 +36,8 @@ const initialForm = {
   allow_variable_pricing: false,
   allow_discount_on_pos: false,
   include_tax: false,
+  inventory_method: 'direct',
+  stock_item_type: 'unbatched',
   image_url: '',
 };
 
@@ -145,6 +147,8 @@ export default function EditProductPage() {
               is_service: product.is_service ?? false,
               allow_discount_on_pos: product.allow_discount_on_pos ?? false,
               include_tax: product.include_tax ?? false,
+              inventory_method: product.inventory_method || 'direct',
+              stock_item_type: product.stock_item_type || 'unbatched',
               image_url: product.image_url || '',
             }));
             if (product.image_url) setImagePreview(product.image_url);
@@ -252,6 +256,8 @@ export default function EditProductPage() {
           is_sellable_on_pos: form.is_sellable_on_pos,
           allow_variable_pricing: form.allow_variable_pricing,
           allow_discount_on_pos: form.allow_discount_on_pos,
+          inventory_method: form.inventory_method,
+          stock_item_type: form.stock_item_type,
         }),
       });
       const json = await response.json();

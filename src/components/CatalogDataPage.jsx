@@ -148,6 +148,8 @@ export default function CatalogDataPage({
         onCreateClick={onCreateClick}
         bulkOperations={bulkOperations}
         bulkImportType={bulkImportType}
+        endpoint={endpoint}
+        extraQueryParams={extraQueryParams}
         columns={columns}
         rows={rows}
         loading={loading}

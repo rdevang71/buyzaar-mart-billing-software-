@@ -15,11 +15,48 @@ async function ensureProductDiscountSchema() {
     ALTER TABLE products
       ADD COLUMN IF NOT EXISTS include_tax BOOLEAN NOT NULL DEFAULT FALSE;
   `);
+  await query(`
+    ALTER TABLE products
+      ADD COLUMN IF NOT EXISTS stock_item_type VARCHAR(30) NOT NULL DEFAULT 'unbatched',
+      ADD COLUMN IF NOT EXISTS inventory_method VARCHAR(30) NOT NULL DEFAULT 'direct',
+      ADD COLUMN IF NOT EXISTS hsn_code VARCHAR(80),
+      ADD COLUMN IF NOT EXISTS charge_id BIGINT;
+  `);
 }
 
 function normalizeUnit(value) {
   const unit = String(value || 'PCS').trim().toUpperCase();
   return ['PCS', 'KG', 'LTR'].includes(unit) ? unit : 'PCS';
+}
+
+function normalizeStockItemType(value) {
+  return String(value || '').trim().toLowerCase() === 'batched' ? 'batched' : 'unbatched';
+}
+
+async function validateBarcodeAvailability(client, { barcode, stockItemType, excludeId = null }) {
+  const normalizedBarcode = String(barcode || '').trim();
+  if (!normalizedBarcode) return null;
+
+  const params = [normalizedBarcode];
+  const excludeClause = excludeId ? `AND id <> $2` : '';
+  if (excludeId) params.push(Number(excludeId));
+
+  const duplicates = await client.query(
+    `SELECT id, name, stock_item_type
+     FROM products
+     WHERE barcode = $1
+       ${excludeClause}
+     LIMIT 5`,
+    params
+  );
+  if (!duplicates.rows.length) return null;
+
+  const incomingType = normalizeStockItemType(stockItemType);
+  const blocked = duplicates.rows.find((row) => normalizeStockItemType(row.stock_item_type) !== 'batched' || incomingType !== 'batched');
+  if (blocked) {
+    return `Barcode already used by "${blocked.name}". Duplicate barcodes are allowed only when both products are batched.`;
+  }
+  return null;
 }
 
 // ─── GET /api/catalog/products ───────────────────────────────
@@ -114,6 +151,7 @@ export async function GET(request) {
         p.id, p.product_id, p.name, p.barcode, p.sku,
         p.mrp, p.selling_price, p.cost_price, p.unit,
         p.is_active, p.is_service, p.image_url, p.allow_discount_on_pos, p.include_tax,
+        p.stock_item_type, p.inventory_method, p.hsn_code, p.charge_id,
         p.created_at, p.updated_at,
         c.name  AS category_name,
         sc.name AS sub_category_name,
@@ -181,6 +219,14 @@ export async function POST(request) {
     const client = await getClient();
     try {
       await client.query('BEGIN');
+      const barcodeError = await validateBarcodeAvailability(client, {
+        barcode: body.barcode,
+        stockItemType: body.stock_item_type,
+      });
+      if (barcodeError) {
+        await client.query('ROLLBACK');
+        return validationError({ barcode: barcodeError }, barcodeError);
+      }
 
       const result = await client.query(
         `INSERT INTO products (
@@ -188,13 +234,15 @@ export async function POST(request) {
           category_id, sub_category_id, brand_id, manufacturer_id,
           department_id, income_head_id, tax_id,
           mrp, selling_price, cost_price, unit,
-          is_active, is_service, image_url, allow_discount_on_pos, include_tax
+          is_active, is_service, image_url, allow_discount_on_pos, include_tax,
+          stock_item_type, inventory_method, hsn_code, charge_id
         ) VALUES (
           $1, $2, $3, $4, $5,
           $6, $7, $8, $9,
           $10, $11, $12,
           $13, $14, $15, COALESCE($16, 'PCS'),
-          COALESCE($17, true), COALESCE($18, false), $19, COALESCE($20, false), COALESCE($21, false)
+          COALESCE($17, true), COALESCE($18, false), $19, COALESCE($20, false), COALESCE($21, false),
+          $22, $23, $24, $25
         ) RETURNING *`,
         [
           body.product_id || null,
@@ -218,6 +266,10 @@ export async function POST(request) {
           body.image_url || null,
           body.allow_discount_on_pos ?? false,
           body.include_tax ?? false,
+          normalizeStockItemType(body.stock_item_type),
+          body.inventory_method || 'direct',
+          body.hsn_code || null,
+          body.charge_id || null,
         ]
       );
 

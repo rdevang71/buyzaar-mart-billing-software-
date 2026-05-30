@@ -1,19 +1,21 @@
 import { query } from '@/lib/db';
-import { successResponse, errorResponse, notFoundError, validationError } from '@/lib/api-response';
+import { successResponse, errorResponse, validationError } from '@/lib/api-response';
 
-// ─── GET /api/catalog/brands ───────────────────────────────
+async function ensureBrandExtras() {
+  await query(`ALTER TABLE brands ADD COLUMN IF NOT EXISTS category_id BIGINT REFERENCES categories(id) ON DELETE SET NULL`);
+  await query(`ALTER TABLE brands ADD COLUMN IF NOT EXISTS margin NUMERIC(7,2) NOT NULL DEFAULT 0`);
+}
+
 export async function GET(request) {
   try {
+    await ensureBrandExtras();
     const { searchParams } = new URL(request.url);
-    const search   = searchParams.get('search')   || '';
-    const page     = parseInt(searchParams.get('page')     || '1');
+    const search = searchParams.get('search') || '';
+    const page = parseInt(searchParams.get('page') || '1');
     const pageSize = parseInt(searchParams.get('pageSize') || '10');
-    const offset   = (page - 1) * pageSize;
+    const offset = (page - 1) * pageSize;
 
-    const whereClause = search
-      ? `WHERE t.name ILIKE $3`
-      : '';
-
+    const whereClause = search ? `WHERE t.name ILIKE $3` : '';
     const countResult = await query(
       `SELECT COUNT(*) FROM brands t ${whereClause}`,
       search ? [`%${search}%`] : []
@@ -22,15 +24,16 @@ export async function GET(request) {
 
     const result = await query(
       `SELECT t.id, t.name, t.description, t.is_active, t.created_at,
-              t.manufacturer_id, COALESCE(m.name, '—') AS manufacturer_name
+              t.manufacturer_id, t.category_id, COALESCE(t.margin, 0) AS margin,
+              COALESCE(m.name, '-') AS manufacturer_name,
+              COALESCE(c.name, '-') AS category_name
        FROM brands t
        LEFT JOIN manufacturers m ON t.manufacturer_id = m.id
+       LEFT JOIN categories c ON t.category_id = c.id
        ${whereClause}
        ORDER BY t.id DESC
        LIMIT $1 OFFSET $2`,
-      search
-        ? [pageSize, offset, `%${search}%`]
-        : [pageSize, offset]
+      search ? [pageSize, offset, `%${search}%`] : [pageSize, offset]
     );
 
     return successResponse({
@@ -45,9 +48,9 @@ export async function GET(request) {
   }
 }
 
-// ─── POST /api/catalog/brands ──────────────────────────────
 export async function POST(request) {
   try {
+    await ensureBrandExtras();
     const body = await request.json();
     const { name } = body;
 
@@ -56,10 +59,17 @@ export async function POST(request) {
     }
 
     const result = await query(
-      `INSERT INTO brands (name, description, manufacturer_id, is_active)
-       VALUES ($1, $2, $3, COALESCE($4, true))
+      `INSERT INTO brands (name, description, manufacturer_id, category_id, margin, is_active)
+       VALUES ($1, $2, $3, $4, $5, COALESCE($6, true))
        RETURNING *`,
-      [body.name?.trim(), body.description || null, body.manufacturer_id || null, body.is_active ?? true]
+      [
+        body.name?.trim(),
+        body.description || null,
+        body.manufacturer_id || null,
+        body.category_id || null,
+        Number(body.margin || 0),
+        body.is_active ?? true,
+      ]
     );
 
     return successResponse(result.rows[0], 'Brand created successfully', 201);

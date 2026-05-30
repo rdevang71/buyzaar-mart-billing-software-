@@ -37,7 +37,9 @@ export async function ensureStockOutSchema() {
 
     ALTER TABLE stock_out
       ADD COLUMN IF NOT EXISTS vendor_name VARCHAR(255),
-      ADD COLUMN IF NOT EXISTS other_charges NUMERIC(14, 2) DEFAULT 0;
+      ADD COLUMN IF NOT EXISTS other_charges NUMERIC(14, 2) DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS reason VARCHAR(255),
+      ADD COLUMN IF NOT EXISTS grn_id VARCHAR(100);
 
     CREATE TABLE IF NOT EXISTS stock_out_items (
       id SERIAL PRIMARY KEY,

@@ -10,6 +10,13 @@ async function ensureProductDiscountSchema() {
     ALTER TABLE products
       ADD COLUMN IF NOT EXISTS include_tax BOOLEAN NOT NULL DEFAULT FALSE;
   `);
+  await query(`
+    ALTER TABLE products
+      ADD COLUMN IF NOT EXISTS stock_item_type VARCHAR(30) NOT NULL DEFAULT 'unbatched',
+      ADD COLUMN IF NOT EXISTS inventory_method VARCHAR(30) NOT NULL DEFAULT 'direct',
+      ADD COLUMN IF NOT EXISTS hsn_code VARCHAR(80),
+      ADD COLUMN IF NOT EXISTS charge_id BIGINT;
+  `);
 }
 
 function normalizeUnit(value) {
@@ -17,11 +24,38 @@ function normalizeUnit(value) {
   return ['PCS', 'KG', 'LTR'].includes(unit) ? unit : 'PCS';
 }
 
+function normalizeStockItemType(value) {
+  return String(value || '').trim().toLowerCase() === 'batched' ? 'batched' : 'unbatched';
+}
+
+async function validateBarcodeAvailability({ barcode, stockItemType, excludeId }) {
+  const normalizedBarcode = String(barcode || '').trim();
+  if (!normalizedBarcode) return null;
+
+  const duplicates = await query(
+    `SELECT id, name, stock_item_type
+     FROM products
+     WHERE barcode = $1
+       AND id <> $2
+     LIMIT 5`,
+    [normalizedBarcode, Number(excludeId)]
+  );
+  if (!duplicates.rows.length) return null;
+
+  const incomingType = normalizeStockItemType(stockItemType);
+  const blocked = duplicates.rows.find((row) => normalizeStockItemType(row.stock_item_type) !== 'batched' || incomingType !== 'batched');
+  if (blocked) {
+    return `Barcode already used by "${blocked.name}". Duplicate barcodes are allowed only when both products are batched.`;
+  }
+  return null;
+}
+
 const SELECT_PRODUCT = `
   SELECT
     p.id, p.product_id, p.name, p.description, p.barcode, p.sku,
     p.mrp, p.selling_price, p.cost_price, p.unit,
     p.is_active, p.is_service, p.image_url, p.allow_discount_on_pos, p.include_tax,
+    p.stock_item_type, p.inventory_method, p.hsn_code, p.charge_id,
     p.category_id, p.sub_category_id, p.brand_id,
     p.manufacturer_id, p.department_id, p.income_head_id, p.tax_id,
     p.created_at, p.updated_at,
@@ -80,6 +114,13 @@ export async function PUT(request, { params }) {
       return validationError({ name: 'Product name is required' });
     }
 
+    const barcodeError = await validateBarcodeAvailability({
+      barcode: body.barcode,
+      stockItemType: body.stock_item_type,
+      excludeId: productId,
+    });
+    if (barcodeError) return validationError({ barcode: barcodeError }, barcodeError);
+
     const result = await query(
       `UPDATE products SET
         product_id      = $1,
@@ -103,8 +144,12 @@ export async function PUT(request, { params }) {
         image_url       = $19,
         allow_discount_on_pos = $20,
         include_tax     = $21,
+        stock_item_type = $22,
+        inventory_method = $23,
+        hsn_code        = $24,
+        charge_id       = $25,
         updated_at      = NOW()
-       WHERE id = $22
+       WHERE id = $26
        RETURNING *`,
       [
         body.product_id    || null,
@@ -128,6 +173,10 @@ export async function PUT(request, { params }) {
         body.image_url     || null,
         body.allow_discount_on_pos ?? false,
         body.include_tax ?? false,
+        normalizeStockItemType(body.stock_item_type),
+        body.inventory_method || 'direct',
+        body.hsn_code || null,
+        body.charge_id || null,
         productId,
       ]
     );

@@ -100,6 +100,8 @@ export default function StockInPage() {
   const [activeTab, setActiveTab] = useState('new');
   const [sourceType, setSourceType] = useState('warehouse');
   const [destination, setDestination] = useState('');
+  const [purchaseOrderId, setPurchaseOrderId] = useState('');
+  const [invoiceNumber, setInvoiceNumber] = useState('');
   const [vendors, setVendors] = useState([]);
   const [selectedVendorIds, setSelectedVendorIds] = useState([]);
   const [applyTaxes, setApplyTaxes] = useState(true);
@@ -142,6 +144,8 @@ export default function StockInPage() {
   const handleClose = () => {
     setShowModal(false);
     setSelectedFile(null);
+    setPurchaseOrderId('');
+    setInvoiceNumber('');
   };
 
   const handleBulkImport = async () => {
@@ -203,6 +207,9 @@ export default function StockInPage() {
     if (sourceType === 'vendor' && selectedVendorIds.length === 0) {
       return alert('Please select at least one vendor');
     }
+    if (activeTab === 'po' && !purchaseOrderId.trim()) {
+      return alert('Please enter Purchase Order ID');
+    }
     setSubmitting(true);
     try {
       const payload = {
@@ -215,6 +222,8 @@ export default function StockInPage() {
           : [],
         applyTaxes,
         addProductsPrefill,
+        purchaseOrderId: activeTab === 'po' ? purchaseOrderId.trim() : null,
+        invoiceNumber: activeTab === 'po' ? invoiceNumber.trim() || null : null,
       };
       const created = await postStockIn(payload);
       const stockId = created.id;
@@ -411,11 +420,11 @@ export default function StockInPage() {
                 <div>
                   <div className="mb-4">
                     <label className="block text-sm text-gray-800 mb-2">Purchase order ID</label>
-                    <input className="w-full border border-gray-300 rounded px-3 py-2 text-gray-700" placeholder="Enter Purchase order ID" />
+                    <input className="w-full border border-gray-300 rounded px-3 py-2 text-gray-700" placeholder="Enter Purchase order ID" value={purchaseOrderId} onChange={(e) => setPurchaseOrderId(e.target.value)} />
                   </div>
                   <div className="mb-4">
                     <label className="block text-sm text-gray-800 mb-2">Invoice Number</label>
-                    <input className="w-full border border-gray-300 rounded px-3 py-2 text-gray-700" placeholder="Enter Invoice Number" />
+                    <input className="w-full border border-gray-300 rounded px-3 py-2 text-gray-700" placeholder="Enter Invoice Number" value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
                   </div>
                   <div className="flex items-center gap-3">
                     <label className="inline-flex items-center gap-2">

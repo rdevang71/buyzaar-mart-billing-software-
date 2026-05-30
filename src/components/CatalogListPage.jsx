@@ -7,6 +7,7 @@ import * as XLSX from 'xlsx';
 const PAGE_SIZES = [10, 25, 50, 100];
 const TEMPLATE_ROW_LIMIT = 5001;
 const OPTIONS_SHEET_NAME = 'Options';
+const EXCEL_CELL_TEXT_LIMIT = 32767;
 
 function escapeXml(value) {
   return String(value ?? '')
@@ -223,6 +224,8 @@ export default function CatalogListPage({
   onCreateClick,
   bulkOperations = true,
   bulkImportType = null, // 'categories' | 'sub-categories'
+  endpoint = '',
+  extraQueryParams = null,
   columns = [],
   rows = [],
   loading = false,
@@ -294,8 +297,43 @@ export default function CatalogListPage({
     return `${bulkImportType || 'import'}-template.xlsx`;
   };
 
+  const fetchTemplateRecords = async () => {
+    if (!endpoint) return rows;
+    const params = new URLSearchParams({ page: '1', pageSize: String(Math.min(Math.max(total || rows.length || 5000, 5000), 10000)) });
+    if (curSearch) params.set('search', curSearch);
+    Object.entries(extraQueryParams || {}).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && String(value).trim() !== '') params.set(key, String(value));
+    });
+    try {
+      const response = await fetch(`${endpoint}?${params.toString()}`);
+      const json = await response.json();
+      return json.success ? (json.data?.records || []) : rows;
+    } catch {
+      return rows;
+    }
+  };
+
+  const getTemplateCellValue = (record, header) => {
+    if (!record) return '';
+    if (header === 'image_url') return '';
+    const direct = record[header];
+    let value = '';
+    if (direct !== undefined && direct !== null) value = direct;
+    else if (header === 'category_name') value = record.category_name || record.category || '';
+    else if (header === 'sub_category_name') value = record.sub_category_name || record.subCategory || '';
+    else if (header === 'brand_name') value = record.brand_name || record.brand || '';
+    else if (header === 'manufacturer_name') value = record.manufacturer_name || record.manufacturer || '';
+    else if (header === 'department_name') value = record.department_name || record.department || '';
+    else if (header === 'tax_name') value = record.tax_name || record.tax || '';
+    else if (header === 'inventory_store_name') value = record.inventory_store_name || record.store_name || '';
+    else if (header === 'selling_price') value = record.selling_price ?? String(record.price || '').replace(/[^0-9.]/g, '');
+    if (typeof value !== 'string') return value;
+    return value.length > EXCEL_CELL_TEXT_LIMIT ? value.slice(0, EXCEL_CELL_TEXT_LIMIT) : value;
+  };
+
   // ── Download template ──────────────────────────────────────
   const downloadTemplate = async () => {
+    try {
     const baseHeaders = bulkImportType === 'categories'
       ? ['name', 'description', 'sort_sequence', 'is_active']
       : bulkImportType === 'sub-categories'
@@ -332,43 +370,55 @@ export default function CatalogListPage({
             'stock_item_type',
           ];
 
-    // Keep template headers strictly aligned with the product creation form.
-    // Skip dynamic per-store columns to avoid malformed/duplicate headers.
     const headers = [...baseHeaders];
+    const requiredHeaders = new Set(bulkImportType === 'products' ? ['name', 'selling_price', 'unit'] : ['name']);
+    const requirementRow = headers.map((header) => requiredHeaders.has(header) ? 'Required' : 'Optional');
+    const templateRecords = await fetchTemplateRecords();
+    const dataRows = templateRecords.map((record) => headers.map((header) => getTemplateCellValue(record, header)));
     const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet([headers]);
-    const requiredHeaders = new Set(['name', 'selling_price', 'unit']);
+    const ws = XLSX.utils.aoa_to_sheet([requirementRow, headers, ...dataRows]);
     headers.forEach((header, index) => {
-      const ref = XLSX.utils.encode_cell({ r: 0, c: index });
-      if (!ws[ref]) return;
-      ws[ref].c = [{ t: requiredHeaders.has(header) ? 'Required field' : 'Optional field' }];
+      const requirementRef = XLSX.utils.encode_cell({ r: 0, c: index });
+      const headerRef = XLSX.utils.encode_cell({ r: 1, c: index });
+      if (ws[requirementRef]) {
+        ws[requirementRef].s = { font: { bold: true, color: { rgb: requiredHeaders.has(header) ? '9F1239' : '166534' } } };
+      }
       if (requiredHeaders.has(header)) {
-        ws[ref].s = { font: { bold: true, color: { rgb: '9F1239' } } };
+        ws[headerRef].s = { font: { bold: true, color: { rgb: '9F1239' } } };
       }
     });
+    ws['!freeze'] = { xSplit: 0, ySplit: 2 };
     const taxNames = bulkImportType === 'products' ? await fetchTaxNames() : [];
     const includeTaxCol = headers.indexOf('include_tax');
     const taxNameCol = headers.indexOf('tax_name');
+    const unitCol = headers.indexOf('unit');
+    const inventoryMethodCol = headers.indexOf('inventory_method');
     const stockTypeCol = headers.indexOf('stock_item_type');
+    const booleanCols = [
+      'is_active',
+      'is_service',
+      'allow_discount_on_pos',
+      'include_tax',
+      'manage_inventory_enabled',
+      'disable_billing_on_zero',
+      'disable_sales_on_expiry',
+    ].map((header) => headers.indexOf(header)).filter((index) => index >= 0);
     const validations = [];
-    if (includeTaxCol >= 0) {
+    const addValidation = (col, formula) => {
+      if (col < 0 || !formula) return;
       validations.push({
-        range: `${XLSX.utils.encode_col(includeTaxCol)}2:${XLSX.utils.encode_col(includeTaxCol)}${TEMPLATE_ROW_LIMIT}`,
-        formula: '"Yes,No"',
+        range: `${XLSX.utils.encode_col(col)}3:${XLSX.utils.encode_col(col)}${TEMPLATE_ROW_LIMIT}`,
+        formula,
       });
-    }
+    };
+    for (const col of booleanCols) addValidation(col, '"Yes,No"');
+    addValidation(unitCol, '"PCS,KG,LTR"');
     if (taxNameCol >= 0 && taxNames.length) {
-      validations.push({
-        range: `${XLSX.utils.encode_col(taxNameCol)}2:${XLSX.utils.encode_col(taxNameCol)}${TEMPLATE_ROW_LIMIT}`,
-        formula: `'${OPTIONS_SHEET_NAME}'!$A$2:$A$${taxNames.length + 1}`,
-      });
+      addValidation(taxNameCol, `'${OPTIONS_SHEET_NAME}'!$A$2:$A$${taxNames.length + 1}`);
     }
-    if (stockTypeCol >= 0) {
-      validations.push({
-        range: `${XLSX.utils.encode_col(stockTypeCol)}2:${XLSX.utils.encode_col(stockTypeCol)}${TEMPLATE_ROW_LIMIT}`,
-        formula: '"batched,unbatched"',
-      });
-    }
+    addValidation(includeTaxCol, '"Yes,No"');
+    addValidation(inventoryMethodCol, '"direct,indirect"');
+    addValidation(stockTypeCol, '"batched,unbatched"');
     XLSX.utils.book_append_sheet(wb, ws, 'Template');
     if (bulkImportType === 'products' && taxNames.length) {
       const options = XLSX.utils.aoa_to_sheet([['tax_name'], ...taxNames.map((name) => [name])]);
@@ -388,12 +438,16 @@ export default function CatalogListPage({
       ]);
       XLSX.utils.book_append_sheet(wb, info, 'Instructions');
     }
-    if (bulkImportType === 'products' && validations.length) {
+    if (validations.length) {
       await saveWorkbookWithValidations(wb, getTemplateFileName(), validations);
     } else {
       XLSX.writeFile(wb, getTemplateFileName());
     }
     setBulkOpen(false);
+    } catch (err) {
+      console.error('Template download failed:', err);
+      showToast('Template download failed', 'error');
+    }
   };
 
   // ── Handle Excel file upload ───────────────────────────────
@@ -408,7 +462,10 @@ export default function CatalogListPage({
       const data   = await file.arrayBuffer();
       const wb     = XLSX.read(data);
       const ws     = wb.Sheets[wb.SheetNames[0]];
-      const parsed = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      const previewRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', blankrows: false });
+      const firstRow = (previewRows[0] || []).map((cell) => String(cell).trim().toLowerCase());
+      const startsWithRequirementRow = firstRow.some((cell) => cell === 'required' || cell === 'optional');
+      const parsed = XLSX.utils.sheet_to_json(ws, { defval: '', range: startsWithRequirementRow ? 1 : 0 });
 
       if (!parsed.length) {
         showToast('Excel file is empty', 'error');
@@ -441,6 +498,14 @@ export default function CatalogListPage({
     ? [
         { label: 'Import Products (Excel)', action: () => fileRef.current?.click() },
         { label: 'Download Template', action: downloadTemplate },
+        { label: 'Export Products', action: () => {
+            const ws = XLSX.utils.json_to_sheet(rows);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, title);
+            XLSX.writeFile(wb, `${title.toLowerCase().replace(' ', '-')}-export.xlsx`);
+            setBulkOpen(false);
+          }
+        },
       ]
     : bulkImportType === 'product-groups'
       ? [

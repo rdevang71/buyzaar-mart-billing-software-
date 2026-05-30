@@ -16,7 +16,7 @@ export async function GET(request, { params }) {
     const res = await query(
       `SELECT s.id, s.method, s.destination_id, s.meta, s.status, s.created_at,
               s.purchase_order_id, s.vendor_name, s.invoice_number, s.invoice_date,
-              s.other_charges, s.remarks,
+              s.other_charges, s.remarks, s.reason, s.grn_id,
               s.apply_taxes, s.add_products_prefill, st.name AS destination_name
        FROM stock_out s
        LEFT JOIN stores st ON st.id = s.destination_id
@@ -40,11 +40,13 @@ export async function GET(request, { params }) {
       applyTaxes: row.apply_taxes,
       addProductsPrefill: row.add_products_prefill,
       purchase_order_id: row.purchase_order_id || meta.purchaseOrderId || '',
+      grn_id: row.grn_id || meta.grnId || '',
       vendor_name: row.vendor_name || meta.vendor || '',
       invoice_number: row.invoice_number || meta.invoiceNumber || '',
       invoice_date: row.invoice_date ? String(row.invoice_date).slice(0, 10) : '',
       other_charges: row.other_charges ?? meta.other_charges ?? '',
       remarks: row.remarks || meta.remarks || '',
+      reason: row.reason || meta.reason || '',
       meta,
     });
   } catch (err) {

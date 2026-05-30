@@ -188,6 +188,14 @@ function LineItemsContent() {
     setProducts([]);
   };
 
+  const openCreateProduct = () => {
+    const params = new URLSearchParams({
+      returnTo: `/inventory/stockin/line-items?id=${encodeURIComponent(id)}`,
+    });
+    if (searchTerm.trim()) params.set('name', searchTerm.trim());
+    router.push(`/catalog/products/create?${params.toString()}`);
+  };
+
   const updateCartItem = (lineId, updates) => {
     setCart((c) => c.map((it) => (it.line_id === lineId ? { ...it, ...updates } : it)));
   };
@@ -453,7 +461,19 @@ function LineItemsContent() {
               )}
 
               {!loadingProducts && products.length === 0 && (
-                <p className="text-[13px] text-gray-500 text-center py-8">No products found</p>
+                <div className="py-8 text-center">
+                  <p className="text-[13px] text-gray-500">No products found</p>
+                  {searchTerm.trim() && (
+                    <button
+                      type="button"
+                      onClick={openCreateProduct}
+                      className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-[12px] font-semibold text-blue-700 hover:bg-blue-100"
+                    >
+                      <i className="ti ti-plus text-[14px]" />
+                      Create product
+                    </button>
+                  )}
+                </div>
               )}
 
               {filteredCart.length > 0 ? (

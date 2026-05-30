@@ -212,6 +212,28 @@ export async function POST(request, { params }) {
       stockInRow.rows[0].vendor_name ||
       form.vendor
     );
+    const hasPurchaseOrder = stockInRow.rows[0].reference_type === 'purchase_order' && String(stockInRow.rows[0].reference_id || '').trim();
+
+    if (!hasPurchaseOrder) {
+      const previousStockRes = await query(
+        `SELECT sii.product_id, p.name, COUNT(*)::int AS receipt_count
+         FROM stock_in_items sii
+         INNER JOIN stock_in si ON si.id = sii.stock_in_id
+         INNER JOIN products p ON p.id = sii.product_id
+         WHERE si.status = 'confirmed'
+           AND si.id <> $1
+           AND sii.product_id = ANY($2::int[])
+         GROUP BY sii.product_id, p.name
+         LIMIT 1`,
+        [id, productIds]
+      );
+      if (previousStockRes.rows.length) {
+        return NextResponse.json(
+          { error: `${previousStockRes.rows[0].name} already has stock history. Raise/select a purchase order for further stock-in.` },
+          { status: 400 }
+        );
+      }
+    }
 
     if (isWarehouseDestination) {
       for (const item of items) {

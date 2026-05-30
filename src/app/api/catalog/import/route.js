@@ -13,6 +13,13 @@ async function ensureProductDiscountSchema() {
     ALTER TABLE products
       ADD COLUMN IF NOT EXISTS include_tax BOOLEAN NOT NULL DEFAULT FALSE;
   `);
+  await query(`
+    ALTER TABLE products
+      ADD COLUMN IF NOT EXISTS stock_item_type VARCHAR(30) NOT NULL DEFAULT 'unbatched',
+      ADD COLUMN IF NOT EXISTS inventory_method VARCHAR(30) NOT NULL DEFAULT 'direct',
+      ADD COLUMN IF NOT EXISTS hsn_code VARCHAR(80),
+      ADD COLUMN IF NOT EXISTS charge_id BIGINT;
+  `);
 }
 
 function normalizeText(value) {
@@ -202,9 +209,25 @@ async function insertProductWithIntegrations(client, row, user) {
   const manufacturerId = await ensureReferenceId(client, 'manufacturers', row.manufacturer_name);
   const brandId = await ensureReferenceId(client, 'brands', row.brand_name, { manufacturerId });
   const departmentId = await ensureReferenceId(client, 'departments', row.department_name);
+  const incomeHeadId = await resolveIdByName(client, 'income_heads', row.income_head_name);
   const taxId = await resolveIdByName(client, 'taxes', row.tax_name);
   const inventoryStoreId = await resolveIdByName(client, 'stores', row.inventory_store_name);
   const includeTax = toBoolean(row.include_tax, false);
+  const barcode = nullableText(row.barcode);
+  if (barcode) {
+    const duplicates = await client.query(
+      `SELECT id, name, stock_item_type
+       FROM products
+       WHERE barcode = $1
+       LIMIT 5`,
+      [barcode]
+    );
+    const incomingType = normalizeStockItemType(row.stock_item_type);
+    const blocked = duplicates.rows.find((item) => normalizeStockItemType(item.stock_item_type) !== 'batched' || incomingType !== 'batched');
+    if (blocked) {
+      throw new Error(`Barcode already used by "${blocked.name}". Duplicate barcodes are allowed only when both products are batched.`);
+    }
+  }
 
   const referenceErrors = [];
   if (normalizeText(row.category_name) && !categoryId) referenceErrors.push(`Category "${row.category_name}" not found`);
@@ -212,6 +235,7 @@ async function insertProductWithIntegrations(client, row, user) {
   if (normalizeText(row.brand_name) && !brandId) referenceErrors.push(`Brand "${row.brand_name}" not found`);
   if (normalizeText(row.manufacturer_name) && !manufacturerId) referenceErrors.push(`Manufacturer "${row.manufacturer_name}" not found`);
   if (normalizeText(row.department_name) && !departmentId) referenceErrors.push(`Department "${row.department_name}" not found`);
+  if (normalizeText(row.income_head_name) && !incomeHeadId) referenceErrors.push(`Income Head "${row.income_head_name}" not found`);
   if (normalizeText(row.tax_name) && !taxId) referenceErrors.push(`GST "${row.tax_name}" not found`);
   if (includeTax && !taxId) referenceErrors.push('GST slab is required when include_tax is Yes');
   if (inventoryStoreId) {
@@ -226,26 +250,28 @@ async function insertProductWithIntegrations(client, row, user) {
       category_id, sub_category_id, brand_id, manufacturer_id,
       department_id, income_head_id, tax_id,
       mrp, selling_price, cost_price, unit,
-      is_active, is_service, image_url, allow_discount_on_pos, include_tax
+      is_active, is_service, image_url, allow_discount_on_pos, include_tax,
+      stock_item_type, inventory_method, hsn_code, charge_id
     ) VALUES (
       $1, $2, $3, $4, $5,
       $6, $7, $8, $9,
       $10, $11, $12,
       $13, $14, $15, COALESCE($16, 'PCS'),
-      COALESCE($17, true), COALESCE($18, false), $19, COALESCE($20, false), COALESCE($21, false)
+      COALESCE($17, true), COALESCE($18, false), $19, COALESCE($20, false), COALESCE($21, false),
+      $22, $23, $24, $25
     ) RETURNING *`,
     [
       nullableText(row.product_id),
       name,
       nullableText(row.description),
-      nullableText(row.barcode),
+      barcode,
       nullableText(row.sku),
       categoryId,
       subCategoryId,
       brandId,
       manufacturerId,
       departmentId,
-      null,
+      incomeHeadId,
       taxId,
       toNumber(row.mrp, 0),
       toNumber(row.selling_price, 0),
@@ -256,6 +282,10 @@ async function insertProductWithIntegrations(client, row, user) {
       nullableText(row.image_url),
       toBoolean(row.allow_discount_on_pos, false),
       includeTax,
+      normalizeStockItemType(row.stock_item_type),
+      normalizeText(row.inventory_method) || 'direct',
+      nullableText(row.hsn_code),
+      null,
     ]
   );
 

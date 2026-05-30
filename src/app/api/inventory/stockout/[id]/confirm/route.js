@@ -52,6 +52,10 @@ export async function POST(request, { params }) {
         await client.query('ROLLBACK');
         return NextResponse.json({ error: 'Already confirmed' }, { status: 409 });
       }
+      if (draft.rows[0].method === 'return_warehouse' && auth.user.role !== 'super_admin') {
+        await client.query('ROLLBACK');
+        return NextResponse.json({ error: 'Only super admin can return stock to warehouse' }, { status: 403 });
+      }
       const storeCheck = requireStore(auth.user, draft.rows[0].destination_id);
       if (storeCheck.error) {
         await client.query('ROLLBACK');
@@ -101,12 +105,14 @@ export async function POST(request, { params }) {
           purchase_order_id = COALESCE($4, purchase_order_id),
           other_charges = $5,
           remarks = $6,
-          total_items = $7,
-          total_cost = $8,
-          total_tax = $9,
-          meta = meta || $10::jsonb,
+          reason = $7,
+          grn_id = COALESCE($8, grn_id),
+          total_items = $9,
+          total_cost = $10,
+          total_tax = $11,
+          meta = meta || $12::jsonb,
           confirmed_at = NOW()
-        WHERE id = $11`,
+        WHERE id = $13`,
         [
           form.vendor || null,
           form.invoice_date || null,
@@ -114,6 +120,8 @@ export async function POST(request, { params }) {
           form.purchase_order_id || null,
           Number(form.other_charges || 0),
           form.remarks || null,
+          form.reason || null,
+          form.grn_id || form.grnId || null,
           totalItems,
           totalCost,
           totalTax,

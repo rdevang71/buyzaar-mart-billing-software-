@@ -122,7 +122,17 @@ export async function POST(req) {
       JSON.stringify(normalizedPayments),
       notes,
       user.id,
-      JSON.stringify({ source: 'legacy-pos-billing', customer_id: customer_id || null, payments: normalizedPayments }),
+      JSON.stringify({
+        source: 'legacy-pos-billing',
+        customer_id: customer_id || null,
+        payments: normalizedPayments,
+        billed_by: {
+          user_id: user.id,
+          name: user.name || user.email || null,
+          email: user.email || null,
+          role: user.role || null,
+        },
+      }),
     ]);
 
     const bill_id = billRes.rows[0]?.id;
@@ -144,7 +154,7 @@ export async function POST(req) {
         normalizedItems.reduce((sum, row) => sum + row.qty, 0),
         taxTotal,
         String(bill_id),
-        JSON.stringify({ source: 'legacy-pos-billing', billId: bill_id, billNumber }),
+        JSON.stringify({ source: 'legacy-pos-billing', billId: bill_id, billNumber, billedByUserId: user.id, billedBy: user.name || user.email || null }),
       ]
     );
 

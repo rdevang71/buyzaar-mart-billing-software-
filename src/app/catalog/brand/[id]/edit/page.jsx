@@ -9,21 +9,26 @@ export default function EditBrandPage() {
   const params = useParams();
   const id = params.id;
 
-  const [form, setForm] = useState({ name: '', description: '', manufacturer_id: '', is_active: true });
+  const [form, setForm] = useState({ name: '', description: '', manufacturer_id: '', category_id: '', margin: '', is_active: true });
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const [toast, setToast] = useState(null);
   const [manufacturers, setManufacturers] = useState([]);
+  const [categories, setCategories] = useState([]);
 
   useEffect(() => {
     fetch(`/api/catalog/brands/${id}`)
       .then(r => r.json())
-      .then(json => { if (json.success) setForm({ name: json.data.name || '', description: json.data.description || '', manufacturer_id: json.data.manufacturer_id || '', is_active: json.data.is_active }); })
+      .then(json => { if (json.success) setForm({ name: json.data.name || '', description: json.data.description || '', manufacturer_id: json.data.manufacturer_id || '', category_id: json.data.category_id || '', margin: json.data.margin ?? '', is_active: json.data.is_active }); })
       .catch(() => {});
 
     fetch('/api/catalog/manufacturers?pageSize=100')
       .then(r => r.json())
       .then(json => { if (json.success) setManufacturers(json.data.records); })
+      .catch(() => {});
+    fetch('/api/catalog/categories?pageSize=200')
+      .then(r => r.json())
+      .then(json => { if (json.success) setCategories(json.data.records); })
       .catch(() => {});
   }, [id]);
 
@@ -123,6 +128,21 @@ export default function EditBrandPage() {
                 </svg>
               </span>
             </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+            <select value={form.category_id} onChange={e => set('category_id', e.target.value)}
+              className="w-full appearance-none border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-blue-500">
+              <option value="">Default category</option>
+              {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Margin (%)</label>
+            <input type="number" min="0" step="0.01" value={form.margin} onChange={e => set('margin', e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"/>
           </div>
 
           <div className="lg:col-span-2">

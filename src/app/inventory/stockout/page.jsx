@@ -17,13 +17,15 @@ async function fetchStockOutList() {
   return res.json();
 }
 
-async function fetchInventoryProducts(storeId, searchTerm) {
+async function fetchInventoryProducts(storeId, searchTerm, filters = {}) {
   if (!storeId) return [];
   const params = new URLSearchParams({
     store_id: String(storeId),
     search: searchTerm,
     pageSize: '50',
   });
+  if (filters.brandId) params.set('brand_id', filters.brandId);
+  if (filters.vendor) params.set('vendor', filters.vendor);
   const res = await fetch(`/api/inventory/products?${params.toString()}`);
   if (!res.ok) throw new Error('Failed to fetch inventory products');
   const json = await res.json();
@@ -93,6 +95,8 @@ export default function StockOutPage() {
   const [destination, setDestination] = useState('');
   const [purchaseOrderId, setPurchaseOrderId] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
+  const [grnId, setGrnId] = useState('');
+  const [reason, setReason] = useState('');
   const [applyTaxes, setApplyTaxes] = useState(true);
   const [addProductsPrefill, setAddProductsPrefill] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -129,6 +133,8 @@ export default function StockOutPage() {
     setDestination('');
     setPurchaseOrderId('');
     setInvoiceNumber('');
+    setGrnId('');
+    setReason('');
     setApplyTaxes(true);
     setAddProductsPrefill(true);
     setShowModal(true);
@@ -185,22 +191,27 @@ export default function StockOutPage() {
   };
 
   const handleNext = async () => {
-    if (activeTab === 'stock_out' && !destination) {
+    if (!destination) {
       return alert('Please select a destination');
     }
-    if (activeTab === 'po_return' && !purchaseOrderId.trim() && !invoiceNumber.trim()) {
-      return alert('Enter Purchase Order ID or Invoice Number');
+    if ((activeTab === 'return_vendor' || activeTab === 'return_warehouse') && !grnId.trim()) {
+      return alert('Enter GRN ID');
+    }
+    if ((activeTab === 'damage_dump' || activeTab === 'return_vendor' || activeTab === 'return_warehouse') && !reason.trim()) {
+      return alert('Enter reason');
     }
 
     setSubmitting(true);
     try {
       const payload = {
-        method: activeTab === 'stock_out' ? 'stock_out' : 'po_return',
-        destination: activeTab === 'stock_out' ? destination : 'all',
+        method: activeTab,
+        destination,
         applyTaxes,
         addProductsPrefill,
         purchaseOrderId: purchaseOrderId.trim() || null,
         invoiceNumber: invoiceNumber.trim() || null,
+        grnId: grnId.trim() || null,
+        reason: reason.trim() || null,
       };
       const created = await postStockOut(payload);
       setShowModal(false);
@@ -231,9 +242,9 @@ export default function StockOutPage() {
       />
 
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center p-6">
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 sm:p-6">
           <div className="absolute inset-0 bg-black/40" onClick={handleClose} />
-          <div className="relative w-full max-w-2xl overflow-hidden rounded-lg bg-white shadow-xl">
+          <div className="relative flex min-h-0 w-full max-w-2xl flex-col overflow-hidden rounded-lg bg-white shadow-xl max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-3rem)]">
             <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
               <h3 className="text-lg font-semibold text-gray-900">Step 1: Fill Details</h3>
               <button
@@ -246,12 +257,12 @@ export default function StockOutPage() {
               </button>
             </div>
 
-            <div className="p-6">
-              <div className="mb-6 flex items-center gap-3">
+            <div className="min-h-0 flex-1 overflow-y-auto p-6">
+              <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <button
                   type="button"
                   onClick={() => setActiveTab('stock_out')}
-                  className={`flex-1 rounded-md border px-4 py-2.5 text-[14px] font-medium transition-colors ${
+                  className={`rounded-md border px-4 py-2.5 text-[14px] font-medium transition-colors ${
                     activeTab === 'stock_out'
                       ? 'border-blue-300 bg-blue-50 text-gray-900'
                       : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
@@ -261,18 +272,40 @@ export default function StockOutPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setActiveTab('po_return')}
-                  className={`flex-1 rounded-md border px-4 py-2.5 text-[14px] font-medium transition-colors ${
-                    activeTab === 'po_return'
+                  onClick={() => setActiveTab('damage_dump')}
+                  className={`rounded-md border px-4 py-2.5 text-[14px] font-medium transition-colors ${
+                    activeTab === 'damage_dump'
                       ? 'border-blue-300 bg-blue-50 text-gray-900'
                       : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
                   }`}
                 >
-                  PO - Return
+                  Damage/Dump
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('return_vendor')}
+                  className={`rounded-md border px-4 py-2.5 text-[14px] font-medium transition-colors ${
+                    activeTab === 'return_vendor'
+                      ? 'border-blue-300 bg-blue-50 text-gray-900'
+                      : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  Return Vendor
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('return_warehouse')}
+                  className={`rounded-md border px-4 py-2.5 text-[14px] font-medium transition-colors ${
+                    activeTab === 'return_warehouse'
+                      ? 'border-blue-300 bg-blue-50 text-gray-900'
+                      : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  Return Warehouse
                 </button>
               </div>
 
-              {activeTab === 'stock_out' ? (
+              {activeTab === 'stock_out' || activeTab === 'damage_dump' ? (
                 <div>
                   <div className="mb-5">
                     <label className="mb-2 block text-sm text-gray-800">
@@ -295,6 +328,12 @@ export default function StockOutPage() {
                       )}
                     </select>
                   </div>
+                  {activeTab === 'damage_dump' && (
+                    <div className="mb-5">
+                      <label className="mb-2 block text-sm text-gray-800">Reason<span className="ml-0.5 text-red-500">*</span></label>
+                      <input className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-700" placeholder="Damage, dump, expiry..." value={reason} onChange={(e) => setReason(e.target.value)} />
+                    </div>
+                  )}
 
                   <label className="inline-flex cursor-pointer items-center gap-2">
                     <input
@@ -309,12 +348,27 @@ export default function StockOutPage() {
               ) : (
                 <div>
                   <div className="mb-4">
-                    <label className="mb-2 block text-sm text-gray-800">Purchase Order ID</label>
+                    <label className="mb-2 block text-sm text-gray-800">
+                      Source Store<span className="ml-0.5 text-red-500">*</span>
+                    </label>
+                    <select
+                      className="w-full appearance-none rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-gray-700"
+                      value={destination}
+                      onChange={(e) => setDestination(e.target.value)}
+                    >
+                      <option value="">Select Store</option>
+                      {stores.map((store) => (
+                        <option key={store.id} value={store.id}>{store.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="mb-4">
+                    <label className="mb-2 block text-sm text-gray-800">GRN ID</label>
                     <input
                       className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-700"
-                      placeholder="Enter Purchase order ID"
-                      value={purchaseOrderId}
-                      onChange={(e) => setPurchaseOrderId(e.target.value)}
+                      placeholder="Enter GRN ID"
+                      value={grnId}
+                      onChange={(e) => setGrnId(e.target.value)}
                     />
                   </div>
                   <div className="mb-2">
@@ -327,8 +381,12 @@ export default function StockOutPage() {
                     />
                   </div>
                   <p className="mb-5 text-[12px] italic text-gray-500">
-                    *Search either by Purchase Order ID or Invoice Number
+                    *Stock will be removed from the selected destination on the next screen.
                   </p>
+                  <div className="mb-5">
+                    <label className="mb-2 block text-sm text-gray-800">Reason<span className="ml-0.5 text-red-500">*</span></label>
+                    <input className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-700" placeholder={activeTab === 'return_warehouse' ? 'Return to warehouse reason' : 'Return to vendor reason'} value={reason} onChange={(e) => setReason(e.target.value)} />
+                  </div>
 
                   <div className="space-y-4">
                     <label className="inline-flex cursor-pointer items-center gap-2">
@@ -398,14 +456,18 @@ function StockOutLineItemsWindow({ id, onClose, onConfirmed }) {
   const [cartFilter, setCartFilter] = useState('');
   const [products, setProducts] = useState([]);
   const [vendors, setVendors] = useState([]);
+  const [brands, setBrands] = useState([]);
+  const [brandId, setBrandId] = useState('');
   const [cart, setCart] = useState([]);
   const [form, setForm] = useState({
     vendor: '',
     invoice_date: '',
     invoice_number: '',
     purchase_order_id: '',
+    grn_id: '',
     other_charges: '',
     remarks: '',
+    reason: '',
   });
   const [confirming, setConfirming] = useState(false);
 
@@ -413,18 +475,22 @@ function StockOutLineItemsWindow({ id, onClose, onConfirmed }) {
     Promise.all([
       fetch(`/api/inventory/stockout/${encodeURIComponent(id)}`).then((res) => res.json()),
       fetch('/api/vendors').then((res) => res.json()).catch(() => []),
+      fetch('/api/catalog/brands?pageSize=300').then((res) => res.json()).catch(() => null),
     ])
-      .then(([draftData, vendorData]) => {
+      .then(([draftData, vendorData, brandData]) => {
         setDraft(draftData);
         setVendors(Array.isArray(vendorData) ? vendorData : []);
+        setBrands(brandData?.success ? (brandData.data?.records || []) : []);
         if (draftData && !draftData.error) {
           setForm({
             vendor: draftData.vendor_name || '',
             invoice_date: draftData.invoice_date || '',
             invoice_number: draftData.invoice_number || '',
             purchase_order_id: draftData.purchase_order_id || '',
+            grn_id: draftData.grn_id || '',
             other_charges: draftData.other_charges ?? '',
             remarks: draftData.remarks || '',
+            reason: draftData.reason || '',
           });
         }
       })
@@ -438,13 +504,13 @@ function StockOutLineItemsWindow({ id, onClose, onConfirmed }) {
         setProducts([]);
         return;
       }
-      fetchInventoryProducts(storeId, searchTerm)
+      fetchInventoryProducts(storeId, searchTerm, { brandId, vendor: form.vendor })
         .then((records) => setProducts((records || []).filter((product) => Number(product.availableStock ?? product.available_stock ?? 0) > 0)))
         .catch(() => setProducts([]));
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [searchTerm, draft?.destination, draft?.destination_id, draft?.destinationId]);
+  }, [searchTerm, draft?.destination, draft?.destination_id, draft?.destinationId, brandId, form.vendor]);
 
   const filteredCart = cartFilter.trim()
     ? cart.filter((item) => (item.name || '').toLowerCase().includes(cartFilter.toLowerCase()))
@@ -526,6 +592,9 @@ function StockOutLineItemsWindow({ id, onClose, onConfirmed }) {
 
   const confirm = async () => {
     if (cart.length === 0) return alert('Add at least one product');
+    if ((draft?.method === 'damage_dump' || draft?.method === 'return_vendor' || draft?.method === 'return_warehouse') && !form.reason.trim()) {
+      return alert('Enter reason');
+    }
     if (!validateCart()) return;
 
     setConfirming(true);
@@ -593,6 +662,19 @@ function StockOutLineItemsWindow({ id, onClose, onConfirmed }) {
                 </div>
               </Field>
 
+              <Field label="Brand Filter">
+                <select
+                  value={brandId}
+                  onChange={(e) => setBrandId(e.target.value)}
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-[13px] text-gray-700 outline-none focus:border-blue-400"
+                >
+                  <option value="">All brands</option>
+                  {brands.map((brand) => (
+                    <option key={brand.id} value={brand.id}>{brand.name}</option>
+                  ))}
+                </select>
+              </Field>
+
               <div className="mb-4 grid grid-cols-2 gap-3">
                 <Field label="Invoice Date">
                   <input
@@ -620,6 +702,27 @@ function StockOutLineItemsWindow({ id, onClose, onConfirmed }) {
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-[13px] text-gray-700 outline-none placeholder:text-gray-400 focus:border-blue-400"
                 />
               </Field>
+
+              {(draft?.method === 'damage_dump' || draft?.method === 'return_vendor' || draft?.method === 'return_warehouse') && (
+                <>
+                  <Field label="GRN ID">
+                    <input
+                      value={form.grn_id}
+                      onChange={(e) => setForm({ ...form, grn_id: e.target.value })}
+                      placeholder="GRN ID"
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-[13px] text-gray-700 outline-none placeholder:text-gray-400 focus:border-blue-400"
+                    />
+                  </Field>
+                  <Field label="Reason">
+                    <input
+                      value={form.reason}
+                      onChange={(e) => setForm({ ...form, reason: e.target.value })}
+                      placeholder="Reason"
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-[13px] text-gray-700 outline-none placeholder:text-gray-400 focus:border-blue-400"
+                    />
+                  </Field>
+                </>
+              )}
 
               <Field label="Remarks">
                 <textarea

@@ -24,6 +24,8 @@ export async function GET(request) {
 
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search') || '';
+    const brandId = Number(searchParams.get('brand_id') || 0) || null;
+    const vendorName = String(searchParams.get('vendor') || searchParams.get('vendor_name') || '').trim();
     let storeId = Number(searchParams.get('store_id') || 0) || null;
     const warehouseStock = searchParams.get('warehouse_stock') === 'true';
     const page = parseInt(searchParams.get('page') || '1', 10);
@@ -43,6 +45,21 @@ export async function GET(request) {
           COALESCE(p.name, '') ILIKE $${params.length}
           OR COALESCE(p.sku, '') ILIKE $${params.length}
           OR COALESCE(p.barcode, '') ILIKE $${params.length}
+        )`);
+      }
+      if (brandId) {
+        params.push(brandId);
+        filters.push(`p.brand_id = $${params.length}`);
+      }
+      if (vendorName) {
+        params.push(vendorName);
+        filters.push(`EXISTS (
+          SELECT 1
+          FROM stock_in_items sii_vendor
+          INNER JOIN stock_in si_vendor ON si_vendor.id = sii_vendor.stock_in_id
+          WHERE sii_vendor.product_id = p.id
+            AND si_vendor.status = 'confirmed'
+            AND LOWER(COALESCE(si_vendor.vendor_name, '')) = LOWER($${params.length})
         )`);
       }
 
@@ -133,6 +150,21 @@ export async function GET(request) {
         COALESCE(p.name, '') ILIKE $${params.length}
         OR COALESCE(p.sku, '') ILIKE $${params.length}
         OR COALESCE(p.barcode, '') ILIKE $${params.length}
+      )`);
+    }
+    if (brandId) {
+      params.push(brandId);
+      filters.push(`p.brand_id = $${params.length}`);
+    }
+    if (vendorName) {
+      params.push(vendorName);
+      filters.push(`EXISTS (
+        SELECT 1
+        FROM stock_in_items sii_vendor
+        INNER JOIN stock_in si_vendor ON si_vendor.id = sii_vendor.stock_in_id
+        WHERE sii_vendor.product_id = p.id
+          AND si_vendor.status = 'confirmed'
+          AND LOWER(COALESCE(si_vendor.vendor_name, '')) = LOWER($${params.length})
       )`);
     }
 

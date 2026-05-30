@@ -131,6 +131,12 @@ export default function CreateProductPage() {
   }, []);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const name = params.get('name');
+    if (name) setForm((prev) => ({ ...prev, name }));
+  }, []);
+
+  useEffect(() => {
     if (!form.category_id) {
       setSubCategories([]);
       setForm((prev) => ({ ...prev, sub_category_id: '' }));
@@ -264,7 +270,8 @@ export default function CreateProductPage() {
       }
 
       showToast('Product created successfully!');
-      setTimeout(() => router.push('/catalog/products'), 900);
+      const returnTo = new URLSearchParams(window.location.search).get('returnTo');
+      setTimeout(() => router.push(returnTo || '/catalog/products'), 900);
     } catch {
       showToast('Something went wrong', 'error');
     } finally {

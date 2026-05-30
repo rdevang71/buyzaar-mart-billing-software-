@@ -93,6 +93,10 @@ export async function POST(request) {
     if (permissionCheck.error) return permissionCheck.error;
 
     const payload = await request.json();
+    const method = payload.method || 'stock_out';
+    if (method === 'return_warehouse' && auth.user.role !== 'super_admin') {
+      return NextResponse.json({ error: 'Only super admin can return stock to warehouse' }, { status: 403 });
+    }
     const destinationId =
       payload.destination && payload.destination !== 'all'
         ? Number(payload.destination)
@@ -112,19 +116,21 @@ export async function POST(request) {
       const res = await client.query(
         `INSERT INTO stock_out (
           method, destination_id, apply_taxes, add_products_prefill,
-          purchase_order_id, invoice_number, reference_type, reference_id,
+          purchase_order_id, invoice_number, reference_type, reference_id, reason, grn_id,
           meta, status, created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'draft', NOW())
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'draft', NOW())
         RETURNING id`,
         [
-          payload.method || 'stock_out',
+          method,
           destinationId,
           payload.applyTaxes ?? true,
           payload.addProductsPrefill ?? false,
           payload.purchaseOrderId || null,
           payload.invoiceNumber || null,
-          payload.method === 'po_return' ? 'PO Return' : 'Stock Out',
-          payload.purchaseOrderId || payload.invoiceNumber || null,
+          method === 'return_vendor' ? 'Return to Vendor' : method === 'return_warehouse' ? 'Return to Warehouse' : method === 'damage_dump' ? 'Damage/Dump' : method === 'po_return' ? 'PO Return' : 'Stock Out',
+          payload.grnId || payload.purchaseOrderId || payload.invoiceNumber || null,
+          payload.reason || null,
+          payload.grnId || null,
           JSON.stringify(payload),
         ]
       );

@@ -122,15 +122,21 @@ export async function POST(request) {
     const client = await getClient();
     try {
       await client.query('BEGIN');
+      const method = payload.method || 'new';
+      const referenceType = method === 'purchase_order' ? 'purchase_order' : null;
+      const referenceId = payload.purchaseOrderId || payload.purchase_order_id || null;
       const insertText = `
-        INSERT INTO stock_in (method, destination_id, apply_taxes, add_products_prefill, meta, status, created_at)
-        VALUES ($1, $2, $3, $4, $5, 'draft', NOW())
+        INSERT INTO stock_in (method, destination_id, apply_taxes, add_products_prefill, reference_type, reference_id, invoice_number, meta, status, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'draft', NOW())
         RETURNING id`;
       const values = [
-        payload.method || 'new',
+        method,
         destinationId,
         payload.applyTaxes ?? true,
         payload.addProductsPrefill ?? false,
+        referenceType,
+        referenceId,
+        payload.invoiceNumber || payload.invoice_number || null,
         JSON.stringify({
           ...payload,
           sourceType: payload.sourceType || payload.source_type || 'warehouse',
