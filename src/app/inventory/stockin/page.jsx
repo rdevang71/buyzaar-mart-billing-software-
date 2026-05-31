@@ -12,6 +12,14 @@ async function fetchStores() {
   return json.data?.records || json.data?.stores || json.stores || [];
 }
 
+function getLocationType(store) {
+  return String(store?.meta?.locationType || store?.locationType || '').trim().toLowerCase();
+}
+
+function isWarehouseLocation(store) {
+  return getLocationType(store) === 'warehouse';
+}
+
 async function fetchStockInList(filters = {}) {
   const params = new URLSearchParams();
   if (filters.search) params.set('search', filters.search);
@@ -113,6 +121,18 @@ export default function StockInPage() {
   const [filters, setFilters] = useState({ search: '', dateFrom: '', dateTo: '', source: '' });
   const fileInputRef = useRef(null);
   const router = useRouter();
+  const destinationStores = sourceType === 'vendor'
+    ? stores
+    : stores.filter((store) => !isWarehouseLocation(store));
+
+  useEffect(() => {
+    if (sourceType === 'vendor') return;
+    if (!destination) return;
+    const selectedStore = stores.find((store) => String(store.id) === String(destination));
+    if (selectedStore && isWarehouseLocation(selectedStore)) {
+      setDestination('');
+    }
+  }, [destination, sourceType, stores]);
 
   useEffect(() => {
     setLoadingList(true);
@@ -400,7 +420,7 @@ export default function StockInPage() {
                       {loadingStores ? (
                         <option>Loading...</option>
                       ) : (
-                        stores.map((s) => (
+                        destinationStores.map((s) => (
                           <option key={s.id} value={s.id}>
                             {s.name}
                           </option>
