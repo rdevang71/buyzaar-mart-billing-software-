@@ -3,6 +3,11 @@ import { query, getClient } from '@/lib/db';
 import { ensureStockInSchema } from '@/lib/stockInSchema';
 import { requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
+async function resolveId(params) {
+  const resolvedParams = await params;
+  return resolvedParams?.id || null;
+}
+
 export async function GET(request, { params }) {
   try {
     await ensureStockInSchema();
@@ -10,7 +15,7 @@ export async function GET(request, { params }) {
     if (auth.error) return auth.error;
     const permissionCheck = requirePermission(auth.user, 'MANAGE_PURCHASE_ORDERS', 'MANAGE_VENDORS');
     if (permissionCheck.error) return permissionCheck.error;
-    const id = params?.id || null;
+    const id = await resolveId(params);
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
 
     const res = await query(
@@ -42,7 +47,7 @@ export async function PUT(request, { params }) {
     const permissionCheck = requirePermission(auth.user, 'MANAGE_PURCHASE_ORDERS');
     if (permissionCheck.error) return permissionCheck.error;
 
-    const id = params?.id || null;
+    const id = await resolveId(params);
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
 
     const body = await request.json();

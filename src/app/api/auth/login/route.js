@@ -10,6 +10,7 @@ import { ensureUsersTable } from '@/lib/userAuth';
 import { ensureRolesSchema } from '@/lib/rolesSchema';
 import { ensureSessionsSchema } from '@/lib/sessionsSchema';
 import { ensureAuditLogsSchema } from '@/lib/auditLogsSchema';
+import { applyEffectivePasswordChange, ensurePasswordChangeRequestsTable } from '@/lib/passwordChangeRequests';
 
 function getDefaultRoute(role) {
   if (role === 'super_admin') return '/home/master-dashboard';
@@ -29,6 +30,7 @@ export async function POST(request) {
     await ensureRolesSchema();
     await ensureSessionsSchema();
     await ensureAuditLogsSchema();
+    await ensurePasswordChangeRequestsTable();
 
     debugLog('[LOGIN] Request received');
     
@@ -138,6 +140,13 @@ export async function POST(request) {
     }
 
     const user = userResult.rows[0];
+    await applyEffectivePasswordChange(user.id);
+
+    const freshPasswordResult = await query(
+      `SELECT password_hash FROM users WHERE id = $1 LIMIT 1`,
+      [user.id]
+    );
+    user.password_hash = freshPasswordResult.rows[0]?.password_hash || user.password_hash;
     debugLog('[LOGIN] User found:', { 
       id: user.id, 
       email: user.email,

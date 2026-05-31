@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { query } from '@/lib/db';
+import { getClient, query } from '@/lib/db';
 import { ensureStockInSchema } from '@/lib/stockInSchema';
 import { requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
@@ -85,5 +85,104 @@ export async function GET(request, { params }) {
   } catch (err) {
     console.error('[stockin GET id]', err.message);
     return NextResponse.json({ error: 'Failed to load stock in' }, { status: 500 });
+  }
+}
+
+export async function PUT(request, { params }) {
+  const { id } = await params;
+  const client = await getClient();
+  try {
+    await ensureStockInSchema();
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+
+    const permissionCheck = requirePermission(auth.user, 'MANAGE_INVENTORY');
+    if (permissionCheck.error) return permissionCheck.error;
+
+    const body = await request.json();
+    const items = Array.isArray(body.items) ? body.items : [];
+
+    await client.query('BEGIN');
+    const stockInRes = await client.query(
+      `SELECT id, status, destination_id FROM stock_in WHERE id = $1 FOR UPDATE`,
+      [id]
+    );
+    const stockIn = stockInRes.rows[0];
+    if (!stockIn) {
+      await client.query('ROLLBACK');
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+    if (String(stockIn.status || '').toLowerCase() === 'confirmed') {
+      await client.query('ROLLBACK');
+      return NextResponse.json({ error: 'Confirmed stock in cannot be edited' }, { status: 409 });
+    }
+
+    const storeCheck = requireStore(auth.user, stockIn.destination_id);
+    if (storeCheck.error) {
+      await client.query('ROLLBACK');
+      return storeCheck.error;
+    }
+
+    const productIds = [...new Set(items.map((item) => Number(item.product_id)).filter(Boolean))];
+    const catalogRes = productIds.length
+      ? await client.query(`SELECT id, name FROM products WHERE id = ANY($1::int[])`, [productIds])
+      : { rows: [] };
+    const catalogMap = new Map(catalogRes.rows.map((row) => [Number(row.id), row]));
+
+    await client.query('DELETE FROM stock_in_items WHERE stock_in_id = $1', [id]);
+    for (const item of items) {
+      const productId = Number(item.product_id);
+      const qty = Number(item.qty || 0);
+      if (!productId || qty <= 0) continue;
+      const catalog = catalogMap.get(productId);
+      if (!catalog) continue;
+
+      await client.query(
+        `INSERT INTO stock_in_items (
+           stock_in_id, product_id, product_name, qty, cost_price, tax_value,
+           batch_no, mfg_date, expiry_date, created_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())`,
+        [
+          id,
+          productId,
+          catalog.name,
+          qty,
+          Number(item.cost_price || 0),
+          Number(item.tax_value || 0),
+          item.batch_no || null,
+          item.mfg_date || null,
+          item.expiry_date || null,
+        ]
+      );
+    }
+
+    await client.query(
+      `UPDATE stock_in
+       SET vendor_name = $2,
+           invoice_date = $3,
+           invoice_number = $4,
+           other_charges = $5,
+           remarks = $6,
+           meta = COALESCE(meta, '{}'::jsonb) || $7::jsonb
+       WHERE id = $1`,
+      [
+        id,
+        body.form?.vendor || null,
+        body.form?.invoice_date || null,
+        body.form?.invoice_number || null,
+        Number(body.form?.other_charges || 0),
+        body.form?.remarks || null,
+        JSON.stringify({ bulkTemplateUpload: true, ...(body.form || {}) }),
+      ]
+    );
+
+    await client.query('COMMIT');
+    return NextResponse.json({ success: true, id, inserted: items.length });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[stockin PUT id]', err.message);
+    return NextResponse.json({ error: err.message || 'Failed to update stock in' }, { status: 500 });
+  } finally {
+    client.release();
   }
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import MainLayout from '@/components/MainLayout';
 import { validatePhoneNumber } from '@/lib/phoneValidator';
@@ -213,6 +213,33 @@ async function deleteEmployee(id) {
   return data;
 }
 
+async function fetchPasswordChangeRequests() {
+  const res = await fetch('/api/auth/password-change-requests?status=pending');
+  if (res.status === 401 || res.status === 403) return [];
+
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.message || 'Failed to fetch password requests');
+  }
+
+  return Array.isArray(data.data?.requests) ? data.data.requests : [];
+}
+
+async function updatePasswordChangeRequest(id, action) {
+  const res = await fetch(`/api/auth/password-change-requests/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action }),
+  });
+
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.message || `Failed to ${action} request`);
+  }
+
+  return data;
+}
+
 function randomPassword() {
   const bytes = new Uint8Array(8);
   crypto.getRandomValues(bytes);
@@ -332,12 +359,31 @@ export default function EmployeeStaffPage() {
   const [warehouses, setWarehouses] = useState([]);
   const [editingId, setEditingId] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [passwordRequests, setPasswordRequests] = useState([]);
+  const [passwordRequestsLoading, setPasswordRequestsLoading] = useState(false);
   const [form, setForm] = useState(() => ({ ...INITIAL_FORM }));
   const bulkRef = useRef(null);
 
   useEffect(() => {
     document.title = 'Employees';
   }, []);
+
+  const loadPasswordRequests = useCallback(async () => {
+    setPasswordRequestsLoading(true);
+    try {
+      const requests = await fetchPasswordChangeRequests();
+      setPasswordRequests(requests);
+    } catch (err) {
+      console.error('Failed to load password requests', err);
+      setPasswordRequests([]);
+    } finally {
+      setPasswordRequestsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadPasswordRequests();
+  }, [loadPasswordRequests]);
 
   useEffect(() => {
     let cancelled = false;
@@ -541,6 +587,21 @@ export default function EmployeeStaffPage() {
     }
   };
 
+  const handlePasswordRequestAction = async (requestId, action) => {
+    try {
+      await updatePasswordChangeRequest(requestId, action);
+      await loadPasswordRequests();
+      alert(
+        action === 'approve'
+          ? 'Password request approved. Employee will be logged out in 5 minutes.'
+          : 'Password request rejected.'
+      );
+    } catch (err) {
+      console.error(err);
+      alert(err.message || 'Failed to update password request');
+    }
+  };
+
   const handleSave = async () => {
     if (!form.firstName.trim()) return alert('First name is required');
     if (!form.username.trim()) return alert('Username is required');
@@ -667,6 +728,67 @@ export default function EmployeeStaffPage() {
             </button>
           </div>
         </div>
+
+        {(passwordRequestsLoading || passwordRequests.length > 0) && (
+          <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-[14px] font-bold text-amber-950">Password Change Requests</h2>
+                <p className="mt-0.5 text-[12px] text-amber-800">
+                  Approving a request activates the new password after 5 minutes.
+                </p>
+              </div>
+              <button
+                onClick={loadPasswordRequests}
+                className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-[12px] font-semibold text-amber-800 hover:bg-amber-100"
+              >
+                Refresh
+              </button>
+            </div>
+
+            {passwordRequestsLoading ? (
+              <div className="text-[12.5px] text-amber-800">Loading password requests...</div>
+            ) : (
+              <div className="space-y-2">
+                {passwordRequests.map((request) => {
+                  const employeeName =
+                    [request.first_name, request.last_name].filter(Boolean).join(' ').trim() ||
+                    request.user_name ||
+                    request.username ||
+                    request.user_email;
+
+                  return (
+                    <div
+                      key={request.id}
+                      className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-[13px] font-semibold text-gray-900">{employeeName}</div>
+                        <div className="mt-0.5 text-[12px] text-gray-500">
+                          {request.user_email} {request.role_name ? `- ${request.role_name}` : ''}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handlePasswordRequestAction(request.id, 'reject')}
+                          className="rounded-lg border border-gray-200 px-3 py-1.5 text-[12px] font-semibold text-gray-600 hover:bg-gray-50"
+                        >
+                          Reject
+                        </button>
+                        <button
+                          onClick={() => handlePasswordRequestAction(request.id, 'approve')}
+                          className="rounded-lg bg-emerald-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-emerald-700"
+                        >
+                          Approve
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="flex justify-end mb-4">
           <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2 w-full sm:w-[280px] shadow-sm">

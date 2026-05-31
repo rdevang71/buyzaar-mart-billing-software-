@@ -183,7 +183,7 @@ export async function POST(request, { params }) {
     // ── 2. Fetch destination store (needed for product_saleability upsert) ───
     const stockInRow = await query(
       `SELECT si.id, si.transaction_id, si.status, si.destination_id, si.reference_type, si.reference_id,
-              si.vendor_id, si.vendor_name, si.invoice_number, stores.meta AS destination_meta
+              si.vendor_id, si.vendor_name, si.invoice_number, si.meta, stores.meta AS destination_meta
        FROM stock_in si
        LEFT JOIN stores ON stores.id = si.destination_id
        WHERE si.id = $1`,
@@ -206,10 +206,13 @@ export async function POST(request, { params }) {
     const destinationLocationType = String(destinationMeta.locationType || 'Warehouse').toLowerCase();
     const isStoreDestination = destinationLocationType === 'store';
     const isWarehouseDestination = destinationLocationType === 'warehouse';
+    const stockInMeta = typeof stockInRow.rows[0].meta === 'object' ? stockInRow.rows[0].meta : {};
+    const sourceType = String(form.sourceType || stockInMeta.sourceType || '').toLowerCase();
     const isVendorToStoreReceipt = isStoreDestination && (
       stockInRow.rows[0].reference_type === 'purchase_order' ||
       stockInRow.rows[0].vendor_id ||
       stockInRow.rows[0].vendor_name ||
+      sourceType === 'vendor' ||
       form.vendor
     );
     const hasPurchaseOrder = stockInRow.rows[0].reference_type === 'purchase_order' && String(stockInRow.rows[0].reference_id || '').trim();
