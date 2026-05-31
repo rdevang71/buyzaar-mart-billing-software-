@@ -81,7 +81,11 @@ function LineItemsContent() {
               qty: Number(item.qty || 1),
               max_qty: null,
               batches: warehouseDestination
-                ? [createBatchRow(Number(item.qty || 1))]
+                ? [{
+                    ...createBatchRow(Number(item.qty || 1)),
+                    batch_no: item.batch_no || generateBatchNo(),
+                    expiry_date: item.expiry_date || '',
+                  }]
                 : [],
               batch_no: item.batch_no || generateBatchNo(),
               expiry_date: item.expiry_date || '',

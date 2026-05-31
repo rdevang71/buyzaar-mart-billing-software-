@@ -94,11 +94,43 @@ function downloadCsv(rows) {
 }
 
 const MAX_INVOICE_UPLOAD_BYTES = 5 * 1024 * 1024;
+const STOCK_IN_TEMPLATE_HEADERS = [
+  'Product ID',
+  'Product Name',
+  'Size ID',
+  'Size Name',
+  'Category',
+  'Brand',
+  'Barcode',
+  'SKU',
+  'Unit',
+  'Stock Items Type',
+  'Quantity',
+  'Cost/Unit',
+  'MRP',
+  'Selling Price',
+  'Expiry Date',
+  'Serial Number (serialNumber)',
+  'serialNumber',
+  'Remarks',
+];
 
 function formatFileSize(bytes) {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
   const mb = bytes / (1024 * 1024);
   return `${mb.toFixed(mb >= 10 ? 0 : 1)} MB`;
+}
+
+function normalizeImportDate(value) {
+  if (!value) return '';
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+  const raw = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return parsed.toISOString().slice(0, 10);
 }
 
 export default function StockInPage() {
@@ -179,32 +211,60 @@ export default function StockInPage() {
         return;
       }
 
-      const created = [];
-      let failed = 0;
-
-      for (const row of rows) {
-        const destinationId = getBulkField(row, ['destination_id', 'destination', 'store_id']);
-        if (!destinationId) {
-          failed += 1;
-          continue;
-        }
-
-        try {
-          const payload = {
-            method: 'new',
-            destination: String(destinationId),
-            applyTaxes: toBoolean(getBulkField(row, ['apply_taxes']), true),
-            addProductsPrefill: toBoolean(getBulkField(row, ['add_products_prefill']), true),
+      const selectedRows = rows
+        .map((row) => {
+          const productId = getBulkField(row, ['product_id']);
+          const qty = Number(getBulkField(row, ['quantity', 'qty'], 0));
+          if (!productId || !Number.isFinite(qty) || qty <= 0) return null;
+          return {
+            product_id: productId,
+            qty,
+            cost_price: Number(getBulkField(row, ['cost_unit', 'cost_per_unit', 'cost'], 0)) || 0,
+            tax_value: 0,
+            batch_no:
+              getBulkField(row, ['serial_number_serialnumber', 'serialnumber', 'serial_number']) ||
+              '',
+            expiry_date: normalizeImportDate(getBulkField(row, ['expiry_date'])),
+            remarks: getBulkField(row, ['remarks']),
           };
-          const draft = await postStockIn(payload);
-          created.push(draft);
-        } catch {
-          failed += 1;
-        }
+        })
+        .filter(Boolean);
+
+      if (!selectedRows.length) {
+        alert('Template me jis product ka stock add karna hai uski Quantity fill karo, phir upload karo.');
+        return;
       }
 
-      if (!created.length) {
-        alert('Could not import any row. Check columns like destination_id / destination.');
+      const storeData = stores.length ? stores : await fetchStores().catch(() => []);
+      const destinationId = window.prompt(
+        `Enter destination Store/Warehouse ID for this Stock In:\n${storeData
+          .slice(0, 20)
+          .map((store) => `${store.id} - ${store.name}`)
+          .join('\n')}`
+      );
+      if (!destinationId) return;
+
+      const draft = await postStockIn({
+        method: 'new',
+        destination: String(destinationId).trim(),
+        sourceType: 'vendor',
+        applyTaxes: true,
+        addProductsPrefill: true,
+      });
+
+      const updateRes = await fetch(`/api/inventory/stockin/${encodeURIComponent(draft.id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          form: {
+            remarks: 'Created from bulk stock in template',
+          },
+          items: selectedRows,
+        }),
+      });
+      const updateJson = await updateRes.json().catch(() => ({}));
+      if (!updateRes.ok) {
+        alert(updateJson.error || 'Bulk stock draft create nahi ho paya.');
         return;
       }
 
@@ -214,11 +274,51 @@ export default function StockInPage() {
         .catch(() => setTableData([]))
         .finally(() => setLoadingList(false));
 
-      alert(`Bulk import complete: ${created.length} draft(s) created${failed ? `, ${failed} failed` : ''}. Opening the first draft.`);
-      router.push(`/inventory/stockin/line-items?id=${encodeURIComponent(created[0].id)}`);
+      alert(`Bulk stock draft ready: ${selectedRows.length} product(s) added. Please review and confirm.`);
+      router.push(`/inventory/stockin/line-items?id=${encodeURIComponent(draft.id)}`);
     } catch (err) {
       console.error(err);
       alert('Bulk import failed. Please use a valid Excel/CSV file.');
+    }
+  };
+
+  const handleDownloadBulkTemplate = async () => {
+    try {
+      const res = await fetch('/api/inventory/stockin?template=products', { cache: 'no-store' });
+      const json = await res.json();
+      const records = Array.isArray(json.records) ? json.records : [];
+      const rows = records.map((product) => ({
+        'Product ID': product.id,
+        'Product Name': product.productName,
+        'Size ID': product.sizeId,
+        'Size Name': product.sizeName,
+        Category: product.category,
+        Brand: product.brand,
+        Barcode: product.barcode,
+        SKU: product.sku,
+        Unit: product.unit || 'Piece',
+        'Stock Items Type': product.stockItemsType || 'BATCHED',
+        Quantity: '',
+        'Cost/Unit': product.costPerUnit,
+        MRP: product.mrp,
+        'Selling Price': product.sellingPrice,
+        'Expiry Date': '',
+        'Serial Number (serialNumber)': '',
+        serialNumber: '',
+        Remarks: '',
+      }));
+
+      const XLSX = await import('xlsx');
+      const worksheet = XLSX.utils.json_to_sheet(rows, { header: STOCK_IN_TEMPLATE_HEADERS });
+      worksheet['!cols'] = STOCK_IN_TEMPLATE_HEADERS.map((header) => ({
+        wch: Math.max(12, Math.min(28, header.length + 2)),
+      }));
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Bulk Stock In');
+      XLSX.writeFile(workbook, `Stock In Template ${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch (err) {
+      console.error(err);
+      alert('Stock In template download failed.');
     }
   };
 
@@ -263,7 +363,11 @@ export default function StockInPage() {
         breadcrumb={[{ label: 'Inventory' }, { label: 'Stock In' }]}
         title="Stock In"
         subtitle="Stock In transaction history of last 7 days. Need Help?"
-        actions={[{ label: 'Add In Bulk (Excel)', onClick: handleBulkImport }, { label: 'Add Stock', primary: true, onClick: handleOpen }]}
+        actions={[
+          { label: 'Download Bulk Template', onClick: handleDownloadBulkTemplate },
+          { label: 'Upload Filled Template', onClick: handleBulkImport },
+          { label: 'Add Stock', primary: true, onClick: handleOpen },
+        ]}
         searchPlaceholder="Search"
         searchValue={filters.search}
         onSearchChange={(value) => setFilters((current) => ({ ...current, search: value }))}

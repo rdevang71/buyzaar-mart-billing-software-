@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { query, getClient } from '@/lib/db';
 import { ensureStockInSchema } from '@/lib/stockInSchema';
+import { ensureCatalogExtrasSchema } from '@/lib/catalogExtrasSchema';
 import { appendStoreScope, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
 function isWarehouseMeta(meta) {
@@ -10,17 +11,66 @@ function isWarehouseMeta(meta) {
 export async function GET(request) {
   try {
     await ensureStockInSchema();
+    await ensureCatalogExtrasSchema();
     const auth = await requireAuth(request);
     if (auth.error) return auth.error;
 
     const permissionCheck = requirePermission(auth.user, 'VIEW_INVENTORY', 'MANAGE_INVENTORY');
     if (permissionCheck.error) return permissionCheck.error;
 
+    const { searchParams } = new URL(request.url);
+    if (searchParams.get('template') === 'products') {
+      const productsRes = await query(
+        `SELECT
+           p.id,
+           p.product_id,
+           p.name,
+           p.barcode,
+           p.sku,
+           p.unit,
+           p.stock_item_type,
+           COALESCE(p.cost_price, 0) AS cost_price,
+           COALESCE(p.mrp, 0) AS mrp,
+           COALESCE(p.selling_price, 0) AS selling_price,
+           c.name AS category_name,
+           b.name AS brand_name
+         FROM products p
+         LEFT JOIN categories c ON c.id = p.category_id
+         LEFT JOIN brands b ON b.id = p.brand_id
+         WHERE COALESCE(p.is_active, TRUE) = TRUE
+         ORDER BY p.id ASC
+         LIMIT 10000`
+      );
+
+      return NextResponse.json({
+        records: productsRes.rows.map((row) => ({
+          id: row.id,
+          productId: row.product_id || row.id,
+          productName: row.name || '',
+          sizeId: row.id,
+          sizeName: '',
+          category: row.category_name || '',
+          brand: row.brand_name || '',
+          barcode: row.barcode || '',
+          sku: row.sku || '',
+          unit: row.unit || 'Piece',
+          stockItemsType: String(row.stock_item_type || 'BATCHED').toUpperCase(),
+          quantity: '',
+          costPerUnit: Number(row.cost_price || 0),
+          mrp: Number(row.mrp || 0),
+          sellingPrice: Number(row.selling_price || 0),
+          expiryDate: '',
+          serialNumberLabel: '',
+          serialNumber: '',
+          remarks: '',
+        })),
+      });
+    }
+
     const params = [];
     const whereClauses = [`s.status = 'confirmed'`];
     const scope = appendStoreScope(whereClauses, params, 's.destination_id', auth.user);
     if (scope.error) return scope.error;
-    const { searchParams } = new URL(request.url);
     const search = String(searchParams.get('search') || '').trim();
     const dateFrom = String(searchParams.get('date_from') || '').trim();
     const dateTo = String(searchParams.get('date_to') || '').trim();
