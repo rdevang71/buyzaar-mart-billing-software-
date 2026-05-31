@@ -144,16 +144,18 @@ async function ensureProductDiscountSchema() {
 function calculateGstLine({ qty, sellingPrice, discountAmount, taxRate, includeTax }) {
   const gross = Math.max(0, qty * sellingPrice - discountAmount);
   const rate = toNumber(taxRate);
-  if (!rate || gross <= 0) return { gstAmount: 0, exclusiveGstAmount: 0, lineTotal: gross };
+  if (!rate || gross <= 0) return { gstAmount: 0, exclusiveGstAmount: 0, taxableAmount: gross, lineTotal: gross };
   if (includeTax) {
+    const taxableAmount = gross / (1 + rate / 100);
     return {
-      gstAmount: gross - (gross / (1 + rate / 100)),
+      gstAmount: gross - taxableAmount,
       exclusiveGstAmount: 0,
+      taxableAmount,
       lineTotal: gross,
     };
   }
   const gstAmount = (gross * rate) / 100;
-  return { gstAmount, exclusiveGstAmount: gstAmount, lineTotal: gross + gstAmount };
+  return { gstAmount, exclusiveGstAmount: gstAmount, taxableAmount: gross, lineTotal: gross + gstAmount };
 }
 
 function getAvailableStockSql(storeParam = '$1') {
@@ -238,6 +240,8 @@ export async function POST(req) {
            p.include_tax,
            COALESCE(NULLIF(ps.selling_price, 0), p.selling_price, 0) AS selling_price,
            COALESCE(t.rate, 0) AS tax_rate,
+           t.name AS tax_name,
+           t.tax_type AS tax_type,
            ${getAvailableStockSql('$2')} AS available_stock
          FROM products p
          INNER JOIN product_saleability ps
@@ -305,7 +309,7 @@ export async function POST(req) {
       const qty = toNumber(item.qty);
       const sellingPrice = toNumber(item.sellingPrice, toNumber(item.dbProduct.selling_price));
       const discountAmount = allowDiscounts && item.dbProduct?.allow_discount_on_pos ? toNumber(item.discountAmount) : 0;
-      const taxRate = toNumber(item.taxRate, toNumber(item.dbProduct.tax_rate));
+      const taxRate = toNumber(item.dbProduct.tax_rate);
       const lineAmount = qty * sellingPrice;
       const lineGst = calculateGstLine({ qty, sellingPrice, discountAmount, taxRate, includeTax: item.dbProduct?.include_tax });
       subtotal += lineAmount;
@@ -434,8 +438,8 @@ export async function POST(req) {
       const qty = toNumber(item.qty);
       const sellingPrice = toNumber(item.sellingPrice, toNumber(item.dbProduct.selling_price));
       const discountAmount = allowDiscounts && item.dbProduct?.allow_discount_on_pos ? toNumber(item.discountAmount) : 0;
-      const taxRate = toNumber(item.taxRate, toNumber(item.dbProduct.tax_rate));
-      const { gstAmount: lineTax, lineTotal } = calculateGstLine({
+      const taxRate = toNumber(item.dbProduct.tax_rate);
+      const { gstAmount: lineTax, lineTotal, taxableAmount } = calculateGstLine({
         qty,
         sellingPrice,
         discountAmount,
@@ -455,8 +459,9 @@ export async function POST(req) {
       await client.query(
         `INSERT INTO sales_bill_items (
           sales_bill_id, product_id, product_name, barcode, sku, qty,
-          selling_price, mrp, tax_rate, discount_amount, tax_amount, line_total, batch_allocations
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)`,
+          selling_price, mrp, tax_rate, tax_name, tax_type, include_tax,
+          taxable_amount, discount_amount, tax_amount, line_total, batch_allocations
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb)`,
         [
           billId,
           item.productId,
@@ -467,6 +472,10 @@ export async function POST(req) {
           sellingPrice,
           toNumber(item.mrp),
           taxRate,
+          item.dbProduct.tax_name || null,
+          item.dbProduct.tax_type || null,
+          !!item.dbProduct.include_tax,
+          taxableAmount,
           discountAmount,
           lineTax,
           lineTotal,
@@ -486,7 +495,7 @@ export async function POST(req) {
             item.name || item.dbProduct.name || 'Product',
             allocation.qty,
             allocation.costPrice || toNumber(item.dbProduct.cost_price),
-            toNumber(item.taxRate, toNumber(item.dbProduct.tax_rate)),
+            toNumber(item.dbProduct.tax_rate),
             allocation.batchId,
             allocation.batchNo,
             allocation.expiryDate,

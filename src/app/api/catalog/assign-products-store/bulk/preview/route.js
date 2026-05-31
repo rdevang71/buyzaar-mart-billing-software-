@@ -11,6 +11,7 @@ export async function POST(req) {
       const productId = r.product_id !== undefined && r.product_id !== null && String(r.product_id).trim() !== '' ? String(r.product_id).trim() : null;
       const barcode = r.barcode !== undefined && r.barcode !== null && String(r.barcode).trim() !== '' ? String(r.barcode).trim() : null;
       const sku = r.sku !== undefined && r.sku !== null && String(r.sku).trim() !== '' ? String(r.sku).trim() : null;
+      const storeId = r.store_id !== undefined && r.store_id !== null && String(r.store_id).trim() !== '' ? String(r.store_id).trim() : null;
 
       const res = await query(
         `SELECT id, name, sku, barcode
@@ -22,7 +23,7 @@ export async function POST(req) {
         [productId, barcode, sku]
       );
       if (res.rows.length) {
-        matched.push(res.rows[0]);
+        matched.push({ ...res.rows[0], store_id: storeId });
       }
     }
 

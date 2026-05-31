@@ -8,7 +8,7 @@ export default function AssignGroupsPreview() {
   const [groups, setGroups] = useState([]);
   const [groupIds, setGroupIds] = useState([]);
   const [preview, setPreview] = useState([]);
-  const [selectedIds, setSelectedIds] = useState([]);
+  const [selectedKeys, setSelectedKeys] = useState([]);
 
   useEffect(() => {
     const s = JSON.parse(sessionStorage.getItem('assignGroups_preview_stores') || '[]');
@@ -24,8 +24,7 @@ export default function AssignGroupsPreview() {
       } catch (e) { }
 
       try {
-        // reuse product preview matcher used by assign-products-store
-        const res2 = await fetch('/api/catalog/assign-products-store/bulk/preview', {
+        const res2 = await fetch('/api/catalog/assign-product-groups-store/bulk/preview', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rows: r })
         });
         const j2 = await res2.json();
@@ -34,13 +33,23 @@ export default function AssignGroupsPreview() {
     })();
   }, []);
 
-  const toggleSelect = (id) => setSelectedIds(prev => prev.includes(id) ? prev.filter(x=>x!==id) : [...prev,id]);
+  const getKey = (row) => `${row.id}:${row.store_id || storeIds[0] || ''}`;
+  const toggleSelect = (row) => {
+    const key = getKey(row);
+    setSelectedKeys(prev => prev.includes(key) ? prev.filter(x=>x!==key) : [...prev, key]);
+  };
 
   const doApply = async () => {
     if (!storeIds.length) return alert('No stores selected');
-    if (!selectedIds.length) return alert('Select at least one product');
+    if (!selectedKeys.length) return alert('Select at least one product group');
+    const assignments = preview
+      .filter((row) => selectedKeys.includes(getKey(row)))
+      .flatMap((row) => {
+        if (row.store_id) return [{ groupId: row.id, storeId: row.store_id }];
+        return storeIds.map((storeId) => ({ groupId: row.id, storeId }));
+      });
     const res = await fetch('/api/catalog/assign-product-groups-store/bulk/execute', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ productIds: selectedIds, storeIds })
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assignments, storeIds })
     });
     const json = await res.json();
     if (json.success) {
@@ -61,20 +70,19 @@ export default function AssignGroupsPreview() {
       <div className="bg-white p-4 rounded-lg shadow-sm">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left border-b"><th className="w-8"></th><th>Product ID</th><th>Name</th><th>SKU</th><th>Barcode</th></tr>
+            <tr className="text-left border-b"><th className="w-8"></th><th>Group ID</th><th>Name</th><th>Store ID</th></tr>
           </thead>
           <tbody>
             {preview.map(p => (
               <tr key={p.id} className="border-t hover:bg-gray-50">
-                <td className="px-2 py-2 text-center"><input type="checkbox" checked={selectedIds.includes(p.id)} onChange={() => toggleSelect(p.id)} /></td>
+                <td className="px-2 py-2 text-center"><input type="checkbox" checked={selectedKeys.includes(getKey(p))} onChange={() => toggleSelect(p)} /></td>
                 <td className="px-2 py-2">{p.id}</td>
                 <td className="px-2 py-2">{p.name}</td>
-                <td className="px-2 py-2">{p.sku}</td>
-                <td className="px-2 py-2">{p.barcode}</td>
+                <td className="px-2 py-2">{p.store_id || 'Selected stores'}</td>
               </tr>
             ))}
             {preview.length === 0 && (
-              <tr><td colSpan={5} className="text-center py-8 text-gray-400">No matching products found</td></tr>
+              <tr><td colSpan={4} className="text-center py-8 text-gray-400">No matching product groups found</td></tr>
             )}
           </tbody>
         </table>
@@ -82,7 +90,7 @@ export default function AssignGroupsPreview() {
 
       <div className="flex justify-end gap-2 mt-6">
         <button onClick={() => window.history.back()} className="px-4 py-2 border rounded-md">Back</button>
-        <button onClick={doApply} className={`px-4 py-2 rounded-md text-white ${selectedIds.length ? 'bg-blue-600' : 'bg-slate-300'}`} disabled={!selectedIds.length}>Apply</button>
+        <button onClick={doApply} className={`px-4 py-2 rounded-md text-white ${selectedKeys.length ? 'bg-blue-600' : 'bg-slate-300'}`} disabled={!selectedKeys.length}>Apply</button>
       </div>
     </div>
   );

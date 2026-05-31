@@ -48,10 +48,26 @@ export default function AssignGroupsBulk() {
     })();
   }, []);
 
-  const downloadTemplate = () => {
-    const headers = [['product_id','barcode','sku']];
+  const downloadTemplate = async () => {
+    if (!selectedStores.length) return alert('Select at least one store first');
+    const rows = [['store_id','group_id','group_name']];
+    for (const storeId of selectedStores) {
+      try {
+        const res = await fetch(`/api/catalog/assign-product-groups-store?storeId=${storeId}`);
+        const json = await res.json();
+        if (json.success) {
+          (json.data?.records || [])
+            .filter((record) => record.is_assigned)
+            .forEach((record) => rows.push([
+              storeId,
+              record.id,
+              record.name || '',
+            ]));
+        }
+      } catch {}
+    }
     const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet(headers);
+    const ws = XLSX.utils.aoa_to_sheet(rows);
     XLSX.utils.book_append_sheet(wb, ws, 'Template');
     XLSX.writeFile(wb, `assign-product-groups-template.xlsx`);
   };

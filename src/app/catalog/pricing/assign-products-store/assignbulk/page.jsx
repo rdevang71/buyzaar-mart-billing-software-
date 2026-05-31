@@ -21,10 +21,29 @@ export default function AssignBulkStep1() {
     ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/25 hover:from-blue-700 hover:to-indigo-700 hover:shadow-blue-500/35'
     : 'bg-slate-400 text-white/90 shadow-sm cursor-not-allowed';
 
-  const downloadTemplate = () => {
-    const headers = [['product_id','barcode','sku','selling_price','sell_on_store']];
+  const downloadTemplate = async () => {
+    if (!selectedStores.length) return alert('Select at least one store first');
+    const rows = [['store_id','product_id','barcode','sku','selling_price','sell_on_store']];
+    for (const storeId of selectedStores) {
+      try {
+        const res = await fetch(`/api/catalog/assign-products-store?storeId=${storeId}`);
+        const json = await res.json();
+        if (json.success) {
+          (json.data?.records || [])
+            .filter((record) => record.is_assigned)
+            .forEach((record) => rows.push([
+              storeId,
+              record.id,
+              record.barcode || '',
+              record.sku || '',
+              record.store_selling_price ?? record.selling_price ?? '',
+              'Yes',
+            ]));
+        }
+      } catch {}
+    }
     const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet(headers);
+    const ws = XLSX.utils.aoa_to_sheet(rows);
     XLSX.utils.book_append_sheet(wb, ws, 'Template');
     XLSX.writeFile(wb, `assign-products-store-template.xlsx`);
   };

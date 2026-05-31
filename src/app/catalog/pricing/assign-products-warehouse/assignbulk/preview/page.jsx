@@ -7,7 +7,7 @@ export default function AssignWarehouseBulkPreview() {
   const [warehouseIds, setWarehouseIds] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
   const [preview, setPreview] = useState([]);
-  const [selectedIds, setSelectedIds] = useState([]);
+  const [selectedKeys, setSelectedKeys] = useState([]);
 
   useEffect(() => {
     const r = JSON.parse(sessionStorage.getItem('assignBulkWarehouse_preview_rows') || '[]');
@@ -32,14 +32,24 @@ export default function AssignWarehouseBulkPreview() {
     })();
   }, []);
 
-  const toggleSelect = (id) => setSelectedIds(prev => prev.includes(id) ? prev.filter(x=>x!==id) : [...prev,id]);
+  const getKey = (row) => `${row.id}:${row.warehouse_id || warehouseIds[0] || ''}`;
+  const toggleSelect = (row) => {
+    const key = getKey(row);
+    setSelectedKeys(prev => prev.includes(key) ? prev.filter(x=>x!==key) : [...prev, key]);
+  };
 
   const doApply = async () => {
     if (!warehouseIds.length) return alert('No warehouses selected');
-    if (!selectedIds.length) return alert('Select at least one product');
+    if (!selectedKeys.length) return alert('Select at least one product');
+    const assignments = preview
+      .filter((row) => selectedKeys.includes(getKey(row)))
+      .flatMap((row) => {
+        if (row.warehouse_id) return [{ productId: row.id, warehouseId: row.warehouse_id }];
+        return warehouseIds.map((warehouseId) => ({ productId: row.id, warehouseId }));
+      });
     const res = await fetch('/api/catalog/assign-products-warehouse/bulk/execute', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ productIds: selectedIds, warehouseIds })
+      body: JSON.stringify({ assignments, warehouseIds })
     });
     const json = await res.json();
     if (json.success) {
@@ -67,7 +77,7 @@ export default function AssignWarehouseBulkPreview() {
           <tbody>
             {preview.map(p => (
               <tr key={p.id} className="border-t hover:bg-gray-50">
-                <td className="px-2 py-2 text-center"><input type="checkbox" checked={selectedIds.includes(p.id)} onChange={() => toggleSelect(p.id)} /></td>
+                <td className="px-2 py-2 text-center"><input type="checkbox" checked={selectedKeys.includes(getKey(p))} onChange={() => toggleSelect(p)} /></td>
                 <td className="px-2 py-2">{p.id}</td>
                 <td className="px-2 py-2">{p.name}</td>
                 <td className="px-2 py-2">{p.sku}</td>
@@ -83,7 +93,7 @@ export default function AssignWarehouseBulkPreview() {
 
       <div className="flex justify-end gap-2 mt-6">
         <button onClick={() => window.history.back()} className="px-4 py-2 border rounded-md">Back</button>
-        <button onClick={doApply} className={`px-4 py-2 rounded-md text-white ${selectedIds.length ? 'bg-blue-600' : 'bg-slate-300'}`} disabled={!selectedIds.length}>Apply</button>
+        <button onClick={doApply} className={`px-4 py-2 rounded-md text-white ${selectedKeys.length ? 'bg-blue-600' : 'bg-slate-300'}`} disabled={!selectedKeys.length}>Apply</button>
       </div>
     </div>
   );
