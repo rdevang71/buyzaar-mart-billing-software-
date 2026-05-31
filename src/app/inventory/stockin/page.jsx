@@ -290,8 +290,7 @@ export default function StockInPage() {
             >
               <option value="">All Sources</option>
               <option value="product">Product</option>
-              <option value="purchase_order">Purchase Order</option>
-              <option value="grn">GRN</option>
+              <option value="purchase_order">GRN / Purchase Order</option>
             </select>
             <button
               type="button"
