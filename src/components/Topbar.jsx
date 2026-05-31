@@ -454,10 +454,6 @@ export default function Topbar({ onMenuOpen, sidebarExpanded = false }) {
           )}
         </div>
 
-        <button className="hidden sm:block rounded-xl p-2 text-slate-500 transition-colors hover:bg-blue-50 hover:text-blue-700">
-          <i className="ti ti-help-circle text-gray-500 text-[20px]" />
-        </button>
-
         <div ref={profileRef} className="relative flex items-center gap-2 pl-2 md:pl-4 md:border-l border-slate-200">
           <button
             type="button"
