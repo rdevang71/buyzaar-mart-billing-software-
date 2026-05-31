@@ -3,6 +3,10 @@ import { query, getClient } from '@/lib/db';
 import { ensureStockInSchema } from '@/lib/stockInSchema';
 import { appendStoreScope, requireAuth, requirePermission, requireStore } from '@/lib/api-protection';
 
+function isWarehouseMeta(meta) {
+  return String(meta?.locationType || '').trim().toLowerCase() === 'warehouse';
+}
+
 export async function GET(request) {
   try {
     await ensureStockInSchema();
@@ -110,6 +114,7 @@ export async function POST(request) {
     if (permissionCheck.error) return permissionCheck.error;
 
     const payload = await request.json();
+    const sourceType = String(payload.sourceType || payload.source_type || 'warehouse').toLowerCase();
     const destinationId = payload.destination ? Number(payload.destination) : null;
     if (!destinationId && auth.user.role !== 'super_admin') {
       return NextResponse.json({ error: 'Store destination is required for your account' }, { status: 403 });
@@ -117,6 +122,21 @@ export async function POST(request) {
     if (destinationId) {
       const storeCheck = requireStore(auth.user, destinationId);
       if (storeCheck.error) return storeCheck.error;
+
+      const destinationRes = await query(
+        `SELECT meta
+         FROM stores
+         WHERE id = $1
+         LIMIT 1`,
+        [destinationId]
+      );
+      const destinationMeta = destinationRes.rows[0]?.meta || {};
+      if (isWarehouseMeta(destinationMeta) && sourceType !== 'vendor') {
+        return NextResponse.json(
+          { error: 'Stock in destination must be a store, not a warehouse' },
+          { status: 400 }
+        );
+      }
     }
 
     const client = await getClient();
@@ -125,7 +145,7 @@ export async function POST(request) {
       const method = payload.method || 'new';
       const referenceType = method === 'purchase_order' ? 'purchase_order' : null;
       const referenceId = payload.purchaseOrderId || payload.purchase_order_id || null;
-      if (destinationId && method !== 'purchase_order') {
+      if (destinationId && method !== 'purchase_order' && sourceType !== 'vendor') {
         const previousStockIn = await client.query(
           `SELECT id
              FROM stock_in
@@ -156,7 +176,7 @@ export async function POST(request) {
         payload.invoiceNumber || payload.invoice_number || null,
         JSON.stringify({
           ...payload,
-          sourceType: payload.sourceType || payload.source_type || 'warehouse',
+          sourceType,
           vendorIds: Array.isArray(payload.vendorIds) ? payload.vendorIds : [],
           vendorNames: Array.isArray(payload.vendorNames) ? payload.vendorNames : [],
         }),
