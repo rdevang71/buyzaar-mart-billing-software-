@@ -4,10 +4,12 @@ import { errorResponse, successResponse, validationError } from '@/lib/api-respo
 import { verifyToken } from '@/lib/auth-enhanced';
 import { ensureUsersTable } from '@/lib/userAuth';
 import { query } from '@/lib/db';
+import { ensurePasswordChangeRequestsTable } from '@/lib/passwordChangeRequests';
 
 export async function POST(request) {
   try {
     await ensureUsersTable();
+    await ensurePasswordChangeRequestsTable();
 
     const cookieStore = await cookies();
     const token = cookieStore.get('access_token')?.value || cookieStore.get('auth_token')?.value;
@@ -60,13 +62,34 @@ export async function POST(request) {
     const newHash = await bcrypt.hash(newPassword, 10);
 
     await query(
-      `UPDATE users
-       SET password_hash = $1, updated_at = NOW()
-       WHERE id = $2`,
-      [newHash, user.id]
+      `INSERT INTO password_change_requests (
+         user_id,
+         requested_password_hash,
+         status,
+         requested_at,
+         created_at,
+         updated_at
+       )
+       VALUES ($1, $2, 'pending', NOW(), NOW(), NOW())
+       ON CONFLICT (user_id) WHERE status = 'pending'
+       DO UPDATE SET
+         requested_password_hash = EXCLUDED.requested_password_hash,
+         requested_at = NOW(),
+         updated_at = NOW()
+       RETURNING id`,
+      [user.id, newHash]
     );
 
-    return successResponse({}, 'Password changed successfully');
+    await query(
+      `INSERT INTO audit_logs (user_id, action, resource_type, status, details, created_at)
+       VALUES ($1, 'PASSWORD_CHANGE_REQUESTED', 'AUTH', 'success', $2::jsonb, NOW())`,
+      [user.id, JSON.stringify({ requested_by: user.id })]
+    ).catch(() => {});
+
+    return successResponse(
+      { status: 'pending' },
+      'Password change request sent to Super Admin for approval'
+    );
   } catch (err) {
     return errorResponse(err.message || 'Unable to change password');
   }

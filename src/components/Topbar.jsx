@@ -29,6 +29,7 @@ export default function Topbar({ onMenuOpen, sidebarExpanded = false }) {
   const [lowStockAlerts, setLowStockAlerts] = useState([]);
   const [requisitionRequests, setRequisitionRequests] = useState([]);
   const [procurementAlerts, setProcurementAlerts] = useState([]);
+  const [passwordRequests, setPasswordRequests] = useState([]);
   const profileRef = useRef(null);
   const notificationRef = useRef(null);
 
@@ -76,8 +77,14 @@ export default function Topbar({ onMenuOpen, sidebarExpanded = false }) {
     user?.permissions?.includes('*') ||
     user?.permissions?.includes('MANAGE_PURCHASE_ORDERS') ||
     user?.permissions?.includes('MANAGE_VENDORS');
+  const canReviewPasswordRequests = user?.role === 'super_admin';
   const returnNotificationTitle = canReviewReturns ? 'Return Requests' : 'My Return Updates';
-  const notificationCount = returnRequests.length + lowStockAlerts.length + requisitionRequests.length + procurementAlerts.length;
+  const notificationCount =
+    returnRequests.length +
+    lowStockAlerts.length +
+    requisitionRequests.length +
+    procurementAlerts.length +
+    passwordRequests.length;
 
   const loadReturnNotifications = useCallback(async () => {
     if (!user) {
@@ -148,12 +155,35 @@ export default function Topbar({ onMenuOpen, sidebarExpanded = false }) {
     }
   }, [canReviewProcurement, user]);
 
+  const loadPasswordRequestNotifications = useCallback(async () => {
+    if (!user || !canReviewPasswordRequests) {
+      setPasswordRequests([]);
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/auth/password-change-requests?status=pending', { cache: 'no-store' });
+      const json = await response.json();
+      const requests = json.success && Array.isArray(json.data?.requests) ? json.data.requests : [];
+      setPasswordRequests(requests);
+    } catch {
+      setPasswordRequests([]);
+    }
+  }, [canReviewPasswordRequests, user]);
+
   const loadNotifications = useCallback(() => {
     loadReturnNotifications();
     loadLowStockNotifications();
     loadRequisitionNotifications();
     loadProcurementNotifications();
-  }, [loadLowStockNotifications, loadProcurementNotifications, loadRequisitionNotifications, loadReturnNotifications]);
+    loadPasswordRequestNotifications();
+  }, [
+    loadLowStockNotifications,
+    loadPasswordRequestNotifications,
+    loadProcurementNotifications,
+    loadRequisitionNotifications,
+    loadReturnNotifications,
+  ]);
 
   useEffect(() => {
     loadNotifications();
@@ -185,6 +215,24 @@ export default function Topbar({ onMenuOpen, sidebarExpanded = false }) {
       setOpenProfile(false);
       router.push('/login');
       router.refresh();
+    }
+  };
+
+  const handlePasswordRequestAction = async (requestId, action) => {
+    try {
+      const response = await fetch(`/api/auth/password-change-requests/${requestId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+      const json = await response.json();
+      if (!response.ok || !json.success) {
+        throw new Error(json.message || `Unable to ${action} password request`);
+      }
+
+      await loadPasswordRequestNotifications();
+    } catch (err) {
+      alert(err.message || 'Unable to update password request');
     }
   };
 
@@ -232,7 +280,7 @@ export default function Topbar({ onMenuOpen, sidebarExpanded = false }) {
         return;
       }
 
-      setPasswordSuccess('Password updated successfully.');
+      setPasswordSuccess('Password change request sent to Super Admin for approval.');
       setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
     } catch (err) {
       setPasswordError(err.message || 'Unable to change password');
@@ -318,6 +366,57 @@ export default function Topbar({ onMenuOpen, sidebarExpanded = false }) {
                 <p className="px-4 py-5 text-sm text-gray-500">No notifications right now.</p>
               ) : (
                 <div className="max-h-80 overflow-auto py-1">
+                  {passwordRequests.length > 0 && (
+                    <div className="border-b border-gray-100">
+                      <p className="px-4 pb-1 pt-3 text-[11px] font-black uppercase tracking-widest text-red-600">
+                        Password Requests
+                      </p>
+                      {passwordRequests.map((request) => {
+                        const employeeName =
+                          [request.first_name, request.last_name].filter(Boolean).join(' ').trim() ||
+                          request.user_name ||
+                          request.username ||
+                          request.user_email;
+
+                        return (
+                          <div
+                            key={request.id}
+                            className="border-t border-gray-100 px-4 py-3 hover:bg-red-50"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold text-gray-900">
+                                  {employeeName}
+                                </p>
+                                <p className="mt-0.5 truncate text-xs text-gray-500">
+                                  {request.user_email || 'Employee'} requested password change
+                                </p>
+                              </div>
+                              <span className="shrink-0 rounded-full bg-red-100 px-2 py-1 text-xs font-bold text-red-700">
+                                Pending
+                              </span>
+                            </div>
+                            <div className="mt-3 flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handlePasswordRequestAction(request.id, 'reject')}
+                                className="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+                              >
+                                Reject
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handlePasswordRequestAction(request.id, 'approve')}
+                                className="flex-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
+                              >
+                                Approve
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                   {lowStockAlerts.length > 0 && (
                     <div className="border-b border-gray-100">
                       <p className="px-4 pb-1 pt-3 text-[11px] font-black uppercase tracking-widest text-amber-600">
@@ -407,7 +506,7 @@ export default function Topbar({ onMenuOpen, sidebarExpanded = false }) {
                               </p>
                             </div>
                             <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-1 text-xs font-bold text-emerald-700">
-                              {alert.status || 'Pending'}
+                              {alert.displayStatus || alert.status || 'Pending'}
                             </span>
                           </div>
                         </button>

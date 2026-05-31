@@ -4,6 +4,7 @@ import { UserProvider } from '@/hooks/useUser';
 import { OfflineSyncProvider } from '@/contexts/OfflineSyncContext';
 import OfflineIndicator from '@/components/OfflineIndicator';
 import PWARegister from '@/components/PWARegister';
+import PasswordChangeWatcher from '@/components/PasswordChangeWatcher';
 
 export default function AppProviders({ children }) {
   return (
@@ -11,6 +12,7 @@ export default function AppProviders({ children }) {
       <OfflineSyncProvider>
         {children}
         <OfflineIndicator />
+        <PasswordChangeWatcher />
         <PWARegister />
       </OfflineSyncProvider>
     </UserProvider>

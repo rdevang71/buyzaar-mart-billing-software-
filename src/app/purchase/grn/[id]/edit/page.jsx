@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import MainLayout from '@/components/MainLayout';
 
 function normalizeDate(value) {
@@ -14,7 +14,8 @@ function normalizeDate(value) {
   return `${year}-${month}-${day}`;
 }
 
-export default function EditGrnPage({ params }) {
+export default function EditGrnPage() {
+  const params = useParams();
   const id = params?.id;
   const [loading, setLoading] = useState(true);
   const [grn, setGrn] = useState(null);

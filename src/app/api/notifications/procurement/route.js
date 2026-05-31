@@ -7,6 +7,21 @@ import { ensureStockInSchema } from '@/lib/stockInSchema';
 import { ensureVendorInvoicesSchema } from '@/lib/vendorInvoicesSchema';
 
 function mapAlert(row) {
+  const rawStatus = String(row.status || '').trim().toLowerCase();
+  const displayStatus = (() => {
+    if (row.kind === 'grn' && rawStatus === 'draft') return 'Pending confirmation';
+    if (row.kind === 'purchase_order' && rawStatus === 'draft') return 'Pending';
+    if (rawStatus === 'submitted') return 'Submitted';
+    if (rawStatus === 'partial') return 'Partial';
+    if (rawStatus === 'pending') return 'Pending';
+    if (rawStatus === 'confirmed') return 'Confirmed';
+    if (!rawStatus) return 'Pending';
+    return rawStatus
+      .split('_')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+  })();
+
   return {
     id: `${row.kind}-${row.id}`,
     kind: row.kind,
@@ -18,6 +33,7 @@ function mapAlert(row) {
     vendorName: row.vendor_name || '',
     amount: Number(row.amount || 0),
     status: row.status || '',
+    displayStatus,
     createdAt: row.created_at,
     href: row.href || '/purchase',
   };
