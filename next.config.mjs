@@ -1,6 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactCompiler: true,
+  turbopack: {
+    root: 'c:\\Users\\74530\\OneDrive\\Desktop\\grocery-mart\\billing-software',
+  },
   async rewrites() {
     const backendUrl = process.env.BACKEND_URL || '';
     const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
