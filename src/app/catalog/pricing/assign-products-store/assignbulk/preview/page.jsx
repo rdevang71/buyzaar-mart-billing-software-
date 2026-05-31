@@ -7,7 +7,7 @@ export default function AssignBulkPreview() {
   const [storeIds, setStoreIds] = useState([]);
   const [stores, setStores] = useState([]);
   const [preview, setPreview] = useState([]);
-  const [selectedIds, setSelectedIds] = useState([]);
+  const [selectedKeys, setSelectedKeys] = useState([]);
 
   useEffect(() => {
     const r = JSON.parse(sessionStorage.getItem('assignBulk_preview_rows') || '[]');
@@ -36,15 +36,25 @@ export default function AssignBulkPreview() {
     })();
   }, []);
 
-  const toggleSelect = (id) => setSelectedIds(prev => prev.includes(id) ? prev.filter(x=>x!==id) : [...prev,id]);
+  const getKey = (row) => `${row.id}:${row.store_id || storeIds[0] || ''}`;
+  const toggleSelect = (row) => {
+    const key = getKey(row);
+    setSelectedKeys(prev => prev.includes(key) ? prev.filter(x=>x!==key) : [...prev, key]);
+  };
 
   const doApply = async () => {
     if (!storeIds.length) return alert('No stores selected');
-    if (!selectedIds.length) return alert('Select at least one product');
+    if (!selectedKeys.length) return alert('Select at least one product');
+    const assignments = preview
+      .filter((row) => selectedKeys.includes(getKey(row)))
+      .flatMap((row) => {
+        if (row.store_id) return [{ productId: row.id, storeId: row.store_id }];
+        return storeIds.map((storeId) => ({ productId: row.id, storeId }));
+      });
     const res = await fetch('/api/catalog/assign-products-store/bulk/execute', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ productIds: selectedIds, storeIds }),
+      body: JSON.stringify({ assignments, storeIds }),
     });
     const json = await res.json();
     if (json.success) {
@@ -71,7 +81,7 @@ export default function AssignBulkPreview() {
             {preview.map(p => (
               <tr key={p.id} className="border-t hover:bg-gray-50">
                 <td className="px-2 py-2 text-center">
-                  <input type="checkbox" checked={selectedIds.includes(p.id)} onChange={() => toggleSelect(p.id)} />
+                  <input type="checkbox" checked={selectedKeys.includes(getKey(p))} onChange={() => toggleSelect(p)} />
                 </td>
                 <td className="px-2 py-2">{p.id}</td>
                 <td className="px-2 py-2">{p.name}</td>
@@ -88,7 +98,7 @@ export default function AssignBulkPreview() {
 
       <div className="flex justify-end gap-2 mt-6">
         <button onClick={() => window.history.back()} className="px-4 py-2 border rounded-md">Back</button>
-        <button onClick={doApply} className={`px-4 py-2 rounded-md text-white ${selectedIds.length ? 'bg-blue-600' : 'bg-slate-300'}`} disabled={!selectedIds.length}>Apply</button>
+        <button onClick={doApply} className={`px-4 py-2 rounded-md text-white ${selectedKeys.length ? 'bg-blue-600' : 'bg-slate-300'}`} disabled={!selectedKeys.length}>Apply</button>
       </div>
     </div>
   );

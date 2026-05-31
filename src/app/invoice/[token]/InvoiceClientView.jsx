@@ -38,12 +38,28 @@ export default function InvoiceClientView({ data, invoiceURL }) {
   }, [invoiceURL]);
 
   const taxTotal    = n(bill.tax_total);
-  const cgst        = taxTotal / 2;
-  const sgst        = taxTotal / 2;
   const hasDiscount = n(bill.discount_total) > 0;
   const hasTax      = taxTotal > 0;
   const hasRoundOff = n(bill.round_off) !== 0;
   const storeName   = bill.store_name || 'BillingPro Store';
+  const taxRows = Object.values((items || []).reduce((acc, item) => {
+    const amount = n(item.tax_amount);
+    if (amount <= 0) return acc;
+    const type = String(item.tax_type || item.tax_name || 'GST').toUpperCase().includes('IGST')
+      ? 'IGST'
+      : String(item.tax_type || item.tax_name || 'GST').toUpperCase().includes('CGST')
+        ? 'CGST'
+        : String(item.tax_type || item.tax_name || 'GST').toUpperCase().includes('SGST')
+          ? 'SGST'
+          : 'GST';
+    const rate = n(item.tax_rate);
+    const includeTax = Boolean(item.include_tax);
+    const key = `${type}-${rate}-${includeTax ? 'inc' : 'ex'}`;
+    acc[key] ||= { type, rate, includeTax, taxable: 0, amount: 0 };
+    acc[key].taxable += n(item.taxable_amount) || Math.max(0, n(item.line_total) - amount);
+    acc[key].amount += amount;
+    return acc;
+  }, {}));
 
   // Build address string
   const addressParts = [
@@ -233,11 +249,16 @@ export default function InvoiceClientView({ data, invoiceURL }) {
                 {hasDiscount && (
                   <Row label="Discount" value={`-${fmt(bill.discount_total)}`} valueClass="text-red-600" />
                 )}
-                {hasTax && (
-                  <>
-                    <Row label="CGST" value={fmt(cgst)} subtle />
-                    <Row label="SGST" value={fmt(sgst)} subtle />
-                  </>
+                {hasTax && taxRows.length > 0 && taxRows.map((row) => (
+                  <Row
+                    key={`${row.type}-${row.rate}-${row.includeTax ? 'inc' : 'ex'}`}
+                    label={`${row.type}${row.rate ? ` ${row.rate}%` : ''}${row.includeTax ? ' (included)' : ''}`}
+                    value={fmt(row.amount)}
+                    subtle
+                  />
+                ))}
+                {hasTax && taxRows.length === 0 && (
+                  <Row label="GST" value={fmt(taxTotal)} subtle />
                 )}
                 {hasRoundOff && (
                   <Row label="Round Off" value={fmt(bill.round_off)} subtle />

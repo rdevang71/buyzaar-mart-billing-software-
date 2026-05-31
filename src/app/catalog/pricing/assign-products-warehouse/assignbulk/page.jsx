@@ -49,10 +49,28 @@ export default function AssignBulkPage() {
     })();
   }, []);
 
-  const downloadTemplate = () => {
-    const headers = [['product_id','barcode','sku','quantity','location']];
+  const downloadTemplate = async () => {
+    if (!selectedWarehouseIds.length) return alert('Select at least one warehouse first');
+    const rows = [['warehouse_id','product_id','sku','quantity','location']];
+    for (const warehouseId of selectedWarehouseIds) {
+      try {
+        const res = await fetch(`/api/catalog/assign-products-warehouse?warehouseId=${warehouseId}`);
+        const json = await res.json();
+        if (json.success) {
+          (json.data?.records || [])
+            .filter((record) => record.is_assigned)
+            .forEach((record) => rows.push([
+              warehouseId,
+              record.id,
+              record.sku || '',
+              '',
+              '',
+            ]));
+        }
+      } catch {}
+    }
     const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet(headers);
+    const ws = XLSX.utils.aoa_to_sheet(rows);
     XLSX.utils.book_append_sheet(wb, ws, 'Template');
     XLSX.writeFile(wb, `assign-products-warehouse-template.xlsx`);
   };

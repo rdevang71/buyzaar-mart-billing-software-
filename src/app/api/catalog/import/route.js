@@ -22,6 +22,24 @@ async function ensureProductDiscountSchema() {
   `);
 }
 
+const PRODUCT_TAX_COLUMNS = [
+  '1-CGST-2.5%',
+  '2-SGST-2.5%',
+  '3-IGST-5%',
+  '4-CGST-6%',
+  '5-SGST-6%',
+  '6-IGST-12%',
+  '7-CGST-9%',
+  '8-SGST-9%',
+  '9-IGST-18%',
+  '10-CGST-14%',
+  '11-SGST-14%',
+  '12-IGST-28%',
+  '13-CGST-20%',
+  '14-SGST-20%',
+  '15-IGST-40%',
+];
+
 function normalizeText(value) {
   if (value === null || value === undefined) return '';
   return String(value)
@@ -29,6 +47,108 @@ function normalizeText(value) {
     .replace(/[‘’]/g, "'")
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function normalizeImportKey(key) {
+  return String(key || '')
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function parseProductTaxHeader(header) {
+  const match = String(header || '').match(/^\d+-(CGST|SGST|IGST)-([\d.]+)%$/i);
+  if (!match) return null;
+  return { label: `${match[1].toUpperCase()}-${match[2]}%`, type: match[1].toUpperCase(), rate: Number(match[2]) };
+}
+
+function normalizeProductImportRow(row = {}) {
+  const aliases = {
+    product_name: 'name',
+    product_code: 'product_id',
+    existing_product_id: 'product_id',
+    brand: 'brand_name',
+    category: 'category_name',
+    sub_category: 'sub_category_name',
+    sub_catalogy: 'sub_category_name',
+    sub_category_name: 'sub_category_name',
+    income_head: 'income_head_name',
+    price_includes_tax: 'include_tax',
+    gst_included: 'include_tax',
+    manage_inventory: 'manage_inventory_enabled',
+    stock_item_type: 'stock_item_type',
+    is_sellable_on_pos: 'is_sellable_on_pos',
+    is_sellable_on: 'is_sellable_on_pos',
+    allow_variable_pricing: 'allow_variable_pricing',
+    allow_discount_on_pos: 'allow_discount_on_pos',
+    hsn_sac_code: 'hsn_code',
+    hsn_sac: 'hsn_code',
+    default_price: 'selling_price',
+    selling_price: 'selling_price',
+    mrp: 'mrp',
+    cost_price: 'cost_price',
+    barcode: 'barcode',
+    sku: 'sku',
+    description: 'description',
+    gst: 'tax_name',
+    tax: 'tax_name',
+    tax_name: 'tax_name',
+    opening_stock_store: 'inventory_store_name',
+    inventory_store: 'inventory_store_name',
+    opening_stock_qty: 'opening_stock_qty',
+    default_low_stock_value: 'default_low_stock_value',
+    disable_billing_on_zero: 'disable_billing_on_zero',
+    disable_sales_on_expiry: 'disable_sales_on_expiry',
+    inventory_method: 'inventory_method',
+    manufacturer: 'manufacturer_name',
+    department: 'department_name',
+    unit: 'unit',
+    size: 'size',
+  };
+
+  return Object.entries(row || {}).reduce((acc, [key, value]) => {
+    const taxHeader = parseProductTaxHeader(key);
+    if (taxHeader) {
+      acc[normalizeImportKey(key)] = value;
+      if (toBoolean(value, false)) acc.tax_name = taxHeader.label;
+      return acc;
+    }
+
+    const normalizedKey = normalizeImportKey(key);
+    acc[aliases[normalizedKey] || normalizedKey] = value;
+    return acc;
+  }, {});
+}
+
+async function findExistingProductForImport(client, row) {
+  const checks = [];
+  const values = [];
+  const addCheck = (field, value) => {
+    const text = normalizeText(value);
+    if (!text) return;
+    values.push(field === 'name' ? text.toLowerCase() : text);
+    checks.push(field === 'name'
+      ? `regexp_replace(lower(trim(name)), '\\s+', ' ', 'g') = $${values.length}`
+      : `${field} = $${values.length}`);
+  };
+
+  addCheck('product_id', row.product_id);
+  addCheck('sku', row.sku);
+  addCheck('barcode', row.barcode);
+  addCheck('name', row.name);
+
+  if (!checks.length) return null;
+
+  const result = await client.query(
+    `SELECT id, name
+     FROM products
+     WHERE ${checks.join(' OR ')}
+     LIMIT 1`,
+    values
+  );
+  return result.rows[0] || null;
 }
 
 function normalizeReferenceName(value) {
@@ -93,6 +213,65 @@ async function resolveIdByName(client, table, name, { categoryId = null } = {}) 
     [normalizedLookup]
   );
   return res.rows[0]?.id || null;
+}
+
+async function findExistingNamedRecord(table, name, { categoryId = null } = {}) {
+  const lookup = normalizeReferenceName(name);
+  if (!lookup) return null;
+
+  const params = [lookup.toLowerCase()];
+  let scopedClause = '';
+  if (table === 'sub_categories' && categoryId) {
+    params.push(categoryId);
+    scopedClause = `AND category_id = $${params.length}`;
+  }
+  if (table === 'product_groups' && categoryId) {
+    params.push(categoryId);
+    scopedClause = `AND COALESCE(category_id, 0) = COALESCE($${params.length}::bigint, 0)`;
+  }
+
+  const result = await query(
+    `SELECT id, name
+     FROM ${table}
+     WHERE regexp_replace(lower(trim(name)), '\\s+', ' ', 'g') = $1
+       ${scopedClause}
+     LIMIT 1`,
+    params
+  );
+  return result.rows[0] || null;
+}
+
+async function resolveTaxIdForImport(client, taxName) {
+  const lookup = normalizeReferenceName(taxName);
+  if (!lookup) return null;
+
+  const directId = await resolveIdByName(client, 'taxes', lookup);
+  if (directId) return directId;
+
+  const parsed = parseProductTaxHeader(`1-${lookup}`) || parseProductTaxHeader(lookup);
+  if (!parsed) return null;
+
+  const byTypeAndRate = await client.query(
+    `SELECT id
+     FROM taxes
+     WHERE upper(tax_type) = $1
+       AND ABS(COALESCE(rate, 0)::numeric - $2::numeric) < 0.001
+     ORDER BY id DESC
+     LIMIT 1`,
+    [parsed.type, parsed.rate]
+  );
+  if (byTypeAndRate.rows.length) return byTypeAndRate.rows[0].id;
+
+  const byNameAndRate = await client.query(
+    `SELECT id
+     FROM taxes
+     WHERE upper(name) LIKE $1
+       AND ABS(COALESCE(rate, 0)::numeric - $2::numeric) < 0.001
+     ORDER BY id DESC
+     LIMIT 1`,
+    [`%${parsed.type}%`, parsed.rate]
+  );
+  return byNameAndRate.rows[0]?.id || null;
 }
 
 async function ensureReferenceId(client, table, name, { categoryId = null, manufacturerId = null } = {}) {
@@ -210,7 +389,7 @@ async function insertProductWithIntegrations(client, row, user) {
   const brandId = await ensureReferenceId(client, 'brands', row.brand_name, { manufacturerId });
   const departmentId = await ensureReferenceId(client, 'departments', row.department_name);
   const incomeHeadId = await resolveIdByName(client, 'income_heads', row.income_head_name);
-  const taxId = await resolveIdByName(client, 'taxes', row.tax_name);
+  const taxId = await resolveTaxIdForImport(client, row.tax_name);
   const inventoryStoreId = await resolveIdByName(client, 'stores', row.inventory_store_name);
   const includeTax = toBoolean(row.include_tax, false);
   const barcode = nullableText(row.barcode);
@@ -416,34 +595,36 @@ export async function POST(request) {
     let skipped  = 0;
     const errors = [];
     const seenProductKeys = new Set();
+    const seenImportKeys = new Set();
 
     for (let index = 0; index < rows.length; index++) {
-      const row = rows[index];
+      let row = rows[index];
       try {
         if (type === 'products') {
-          const duplicateKeys = ['product_id', 'sku', 'barcode']
-            .map((field) => [field, normalizeText(row[field]).toLowerCase()])
-            .filter(([, value]) => value);
-          for (const [field, value] of duplicateKeys) {
-            const key = `${field}:${value}`;
-            if (seenProductKeys.has(key)) {
-              throw new Error(`Duplicate ${field.replace('_', ' ')} in import file`);
-            }
-            seenProductKeys.add(key);
-          }
+          row = normalizeProductImportRow(row);
         }
 
         if (type === 'categories') {
-          if (!row.name?.trim()) { skipped++; continue; }
-          await query(
+          const name = normalizeReferenceName(row.name);
+          if (!name) { skipped++; continue; }
+          const importKey = `categories:${name.toLowerCase()}`;
+          if (seenImportKeys.has(importKey) || await findExistingNamedRecord('categories', name)) {
+            skipped++;
+            continue;
+          }
+          seenImportKeys.add(importKey);
+          const insert = await query(
             `INSERT INTO categories (name, description, sort_sequence, is_active)
              VALUES ($1, $2, $3, $4)
-             ON CONFLICT DO NOTHING`,
-            [row.name.trim(), row.description || null, row.sort_sequence ?? 0, row.is_active ?? true]
+             ON CONFLICT DO NOTHING
+             RETURNING id`,
+            [name, row.description || null, row.sort_sequence ?? 0, row.is_active ?? true]
           );
-          inserted++;
+          if (insert.rowCount) inserted++;
+          else skipped++;
         } else if (type === 'sub-categories') {
-          if (!row.name?.trim()) { skipped++; continue; }
+          const name = normalizeReferenceName(row.name);
+          if (!name) { skipped++; continue; }
           // Find category by name if provided
           let category_id = null;
           if (row.category_name) {
@@ -453,16 +634,41 @@ export async function POST(request) {
             );
             if (cat.rows.length) category_id = cat.rows[0].id;
           }
-          await query(
+          const importKey = `sub-categories:${category_id || 'none'}:${name.toLowerCase()}`;
+          if (seenImportKeys.has(importKey) || await findExistingNamedRecord('sub_categories', name, { categoryId: category_id })) {
+            skipped++;
+            continue;
+          }
+          seenImportKeys.add(importKey);
+          const insert = await query(
             `INSERT INTO sub_categories (name, description, category_id, sort_sequence, is_active)
              VALUES ($1, $2, $3, $4, $5)
-             ON CONFLICT DO NOTHING`,
-            [row.name.trim(), row.description || null, category_id, row.sort_sequence ?? 0, row.is_active ?? true]
+             ON CONFLICT DO NOTHING
+             RETURNING id`,
+            [name, row.description || null, category_id, row.sort_sequence ?? 0, row.is_active ?? true]
           );
-          inserted++;
+          if (insert.rowCount) inserted++;
+          else skipped++;
         } else if (type === 'products') {
           const client = await getClient();
           try {
+            const existingProduct = await findExistingProductForImport(client, row);
+            if (existingProduct) {
+              skipped++;
+              continue;
+            }
+
+            const duplicateKeys = ['product_id', 'sku', 'barcode']
+              .map((field) => [field, normalizeText(row[field]).toLowerCase()])
+              .filter(([, value]) => value);
+            for (const [field, value] of duplicateKeys) {
+              const key = `${field}:${value}`;
+              if (seenProductKeys.has(key)) {
+                throw new Error(`Duplicate ${field.replace('_', ' ')} in import file`);
+              }
+              seenProductKeys.add(key);
+            }
+
             await client.query('BEGIN');
             await insertProductWithIntegrations(client, row, auth.user);
             await client.query('COMMIT');
@@ -474,7 +680,8 @@ export async function POST(request) {
             client.release();
           }
         } else if (type === 'product-groups') {
-          if (!row.name?.trim()) { skipped++; continue; }
+          const name = normalizeReferenceName(row.name);
+          if (!name) { skipped++; continue; }
           // Resolve category by name if provided
           let category_id = null;
           if (row.category_name) {
@@ -484,13 +691,21 @@ export async function POST(request) {
             );
             if (cat.rows.length) category_id = cat.rows[0].id;
           }
-          await query(
+          const importKey = `product-groups:${category_id || 'none'}:${name.toLowerCase()}`;
+          if (seenImportKeys.has(importKey) || await findExistingNamedRecord('product_groups', name, { categoryId: category_id })) {
+            skipped++;
+            continue;
+          }
+          seenImportKeys.add(importKey);
+          const insert = await query(
             `INSERT INTO product_groups (name, description, category_id, is_active)
              VALUES ($1, $2, $3, COALESCE($4, true))
-             ON CONFLICT DO NOTHING`,
-            [row.name.trim(), row.description || null, category_id, row.is_active ?? true]
+             ON CONFLICT DO NOTHING
+             RETURNING id`,
+            [name, row.description || null, category_id, row.is_active ?? true]
           );
-          inserted++;
+          if (insert.rowCount) inserted++;
+          else skipped++;
         } else {
           throw new Error(`Unsupported import type: ${type}`);
         }

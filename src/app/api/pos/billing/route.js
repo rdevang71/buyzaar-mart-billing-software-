@@ -54,6 +54,7 @@ export async function POST(req) {
     const normalizedItems = [];
     let calculatedSubtotal = 0;
     let calculatedTax = 0;
+    let calculatedExclusiveTax = 0;
 
     for (const item of items) {
       const productId = Number(item.product_id || item.productId);
@@ -61,32 +62,40 @@ export async function POST(req) {
       if (!productId || qty <= 0) throw new Error('Invalid product or quantity');
 
       const productRes = await client.query(
-        `SELECT id, name, sku, barcode, mrp, selling_price, cost_price
-         FROM products
-         WHERE id = $1
-         FOR UPDATE`,
+        `SELECT p.id, p.name, p.sku, p.barcode, p.mrp, p.selling_price, p.cost_price,
+                p.include_tax, COALESCE(t.rate, 0) AS tax_rate, t.name AS tax_name, t.tax_type
+         FROM products p
+         LEFT JOIN taxes t ON p.tax_id = t.id
+         WHERE p.id = $1
+         FOR UPDATE OF p`,
         [productId]
       );
       const product = productRes.rows[0];
       if (!product) throw new Error(`Product ${productId} not found`);
 
       const sellingPrice = toNumber(item.selling_price ?? item.sellingPrice, toNumber(product.selling_price));
-      const taxRate = toNumber(item.tax_rate ?? item.taxRate);
+      const taxRate = toNumber(product.tax_rate);
       const itemDiscount = toNumber(item.discount_amount ?? item.discountAmount);
       const lineSubtotal = qty * sellingPrice;
-      const lineTax = toNumber(item.tax_amount ?? item.taxAmount, (Math.max(0, lineSubtotal - itemDiscount) * taxRate) / 100);
-      const lineTotal = Math.max(0, lineSubtotal - itemDiscount + lineTax);
+      const taxableGross = Math.max(0, lineSubtotal - itemDiscount);
+      const lineTax = taxRate
+        ? product.include_tax
+          ? taxableGross - taxableGross / (1 + taxRate / 100)
+          : (taxableGross * taxRate) / 100
+        : 0;
+      const lineTotal = product.include_tax ? taxableGross : Math.max(0, taxableGross + lineTax);
 
       calculatedSubtotal += lineSubtotal;
       calculatedTax += lineTax;
+      if (!product.include_tax) calculatedExclusiveTax += lineTax;
       normalizedItems.push({ item, product, productId, qty, sellingPrice, taxRate, itemDiscount, lineTax, lineTotal });
     }
 
     const billNumber = invoice_number || `POS-${Date.now()}`;
     const subtotal = calculatedSubtotal;
-    const taxTotal = toNumber(total_tax, calculatedTax);
+    const taxTotal = calculatedTax;
     const discountTotal = toNumber(discount_amount);
-    const grandTotal = toNumber(total_amount, Math.max(0, subtotal - discountTotal + taxTotal + toNumber(round_off)));
+    const grandTotal = Math.max(0, subtotal - discountTotal + calculatedExclusiveTax + toNumber(round_off));
     const normalizedPayments = (Array.isArray(payments) && payments.length ? payments : [{ method: payment_mode || 'cash', amount: grandTotal, referenceNo: '' }])
       .map((payment) => ({
         method: String(payment.method || payment.payment_mode || payment_mode || 'cash').trim().toLowerCase(),
@@ -177,8 +186,9 @@ export async function POST(req) {
       await client.query(`
         INSERT INTO sales_bill_items (
           sales_bill_id, product_id, product_name, barcode, sku, qty,
-          selling_price, mrp, tax_rate, discount_amount, tax_amount, line_total, batch_allocations
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)
+          selling_price, mrp, tax_rate, tax_name, tax_type, include_tax,
+          taxable_amount, discount_amount, tax_amount, line_total, batch_allocations
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb)
       `, [
         bill_id,
         row.productId,
@@ -189,6 +199,12 @@ export async function POST(req) {
         row.sellingPrice,
         toNumber(row.item.mrp, toNumber(row.product.mrp)),
         row.taxRate,
+        row.product.tax_name || null,
+        row.product.tax_type || null,
+        !!row.product.include_tax,
+        row.product.include_tax
+          ? Math.max(0, row.qty * row.sellingPrice - row.itemDiscount - row.lineTax)
+          : Math.max(0, row.qty * row.sellingPrice - row.itemDiscount),
         row.itemDiscount,
         row.lineTax,
         row.lineTotal,

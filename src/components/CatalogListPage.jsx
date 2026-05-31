@@ -8,6 +8,28 @@ const PAGE_SIZES = [10, 25, 50, 100];
 const TEMPLATE_ROW_LIMIT = 5001;
 const OPTIONS_SHEET_NAME = 'Options';
 const EXCEL_CELL_TEXT_LIMIT = 32767;
+const PRODUCT_TAX_COLUMNS = [
+  '1-CGST-2.5%',
+  '2-SGST-2.5%',
+  '3-IGST-5%',
+  '4-CGST-6%',
+  '5-SGST-6%',
+  '6-IGST-12%',
+  '7-CGST-9%',
+  '8-SGST-9%',
+  '9-IGST-18%',
+  '10-CGST-14%',
+  '11-SGST-14%',
+  '12-IGST-28%',
+  '13-CGST-20%',
+  '14-SGST-20%',
+  '15-IGST-40%',
+];
+const PRODUCT_ATTRIBUTE_COLUMNS = [
+  'Use attribute - M.R.P. 85',
+  'Use attribute - Cost Price',
+  'Use attribute - Expiry Date',
+];
 
 function escapeXml(value) {
   return String(value ?? '')
@@ -202,17 +224,79 @@ async function saveWorkbookWithValidations(workbook, fileName, validations) {
   URL.revokeObjectURL(url);
 }
 
-async function fetchTaxNames() {
+async function fetchOptionNames(url, labelFields = ['name']) {
   try {
-    const res = await fetch('/api/catalog/taxes?pageSize=500');
+    const res = await fetch(url);
     const json = await res.json();
     if (!json.success) return [];
     return [...new Set((json.data?.records || [])
-      .map((tax) => String(tax.name || '').trim())
+      .map((record) => {
+        for (const field of labelFields) {
+          const value = String(record[field] || '').trim();
+          if (value) return value;
+        }
+        return '';
+      })
       .filter(Boolean))];
   } catch {
     return [];
   }
+}
+
+async function fetchStoresForTemplate() {
+  try {
+    const res = await fetch('/api/stores');
+    const json = await res.json();
+    if (!json.success) return [];
+    return [...new Set((json.data?.stores || [])
+      .map((store) => String(store.name || '').trim())
+      .filter(Boolean))];
+  } catch {
+    return [];
+  }
+}
+
+function optionSheetColumn(index) {
+  return XLSX.utils.encode_col(index);
+}
+
+function buildOptionsSheet(optionGroups) {
+  const maxRows = Math.max(1, ...optionGroups.map((group) => group.values.length + 1));
+  const rows = Array.from({ length: maxRows }, () => []);
+  optionGroups.forEach((group, col) => {
+    rows[0][col] = group.key;
+    group.values.forEach((value, row) => {
+      rows[row + 1][col] = value;
+    });
+  });
+  return XLSX.utils.aoa_to_sheet(rows);
+}
+
+function optionFormula(optionGroups, key) {
+  const index = optionGroups.findIndex((group) => group.key === key);
+  if (index < 0) return '';
+  const count = optionGroups[index].values.length;
+  if (!count) return '';
+  const col = optionSheetColumn(index);
+  return `'${OPTIONS_SHEET_NAME}'!$${col}$2:$${col}$${count + 1}`;
+}
+
+function parseProductTaxHeader(header) {
+  const match = String(header || '').match(/^\d+-(CGST|SGST|IGST)-([\d.]+)%$/i);
+  if (!match) return null;
+  return { type: match[1].toUpperCase(), rate: Number(match[2]) };
+}
+
+function productTaxColumnMatchesRecord(header, record) {
+  const parsed = parseProductTaxHeader(header);
+  if (!parsed || !record) return false;
+  const taxName = String(record.tax_name || record.tax || '').toUpperCase();
+  const taxRate = Number(record.tax_rate ?? record.rate ?? NaN);
+  const nameHasType = taxName.includes(parsed.type);
+  const nameHasRate = taxName.includes(`${parsed.rate}%`) || taxName.includes(String(parsed.rate));
+  const rateMatches = Number.isFinite(taxRate) && Math.abs(taxRate - parsed.rate) < 0.001;
+  if (nameHasType && (nameHasRate || rateMatches)) return true;
+  return !taxName && rateMatches;
 }
 
 export default function CatalogListPage({
@@ -300,10 +384,6 @@ export default function CatalogListPage({
   const fetchTemplateRecords = async () => {
     if (!endpoint) return rows;
     const params = new URLSearchParams({ page: '1', pageSize: String(Math.min(Math.max(total || rows.length || 5000, 5000), 10000)) });
-    if (curSearch) params.set('search', curSearch);
-    Object.entries(extraQueryParams || {}).forEach(([key, value]) => {
-      if (value !== undefined && value !== null && String(value).trim() !== '') params.set(key, String(value));
-    });
     try {
       const response = await fetch(`${endpoint}?${params.toString()}`);
       const json = await response.json();
@@ -313,9 +393,11 @@ export default function CatalogListPage({
     }
   };
 
-  const getTemplateCellValue = (record, header) => {
+    const getTemplateCellValue = (record, header) => {
     if (!record) return '';
     if (header === 'image_url') return '';
+    if (PRODUCT_TAX_COLUMNS.includes(header)) return productTaxColumnMatchesRecord(header, record) ? 'Yes' : 'No';
+    if (PRODUCT_ATTRIBUTE_COLUMNS.includes(header)) return '';
     const direct = record[header];
     let value = '';
     if (direct !== undefined && direct !== null) value = direct;
@@ -334,95 +416,138 @@ export default function CatalogListPage({
   // ── Download template ──────────────────────────────────────
   const downloadTemplate = async () => {
     try {
+    const productTemplateHeaders = [
+      'Product Name',
+      'Product Code',
+      'Brand',
+      'Category',
+      'Sub Category',
+      'Income Head',
+      'Unit',
+      'Price Includes Tax',
+      'Manage Inventory',
+      'Stock Item Type',
+      'Is Sellable On POS',
+      'Allow Variable Pricing',
+      'Allow Discount On POS',
+      'HSN/SAC Code',
+      'Default Price',
+      'MRP',
+      'Cost Price',
+      'Barcode',
+      'SKU',
+      'Description',
+      ...PRODUCT_TAX_COLUMNS,
+      ...PRODUCT_ATTRIBUTE_COLUMNS,
+      'Opening Stock Store',
+      'Opening Stock Qty',
+      'Default Low Stock Value',
+      'Disable Billing On Zero',
+      'Disable Sales On Expiry',
+      'Inventory Method',
+      'Manufacturer',
+      'Department',
+    ];
     const baseHeaders = bulkImportType === 'categories'
       ? ['name', 'description', 'sort_sequence', 'is_active']
       : bulkImportType === 'sub-categories'
         ? ['name', 'category_name', 'description', 'sort_sequence', 'is_active']
       : bulkImportType === 'product-groups'
         ? ['name', 'description', 'category_name', 'is_active']
-        : [
-            'name',
-            'description',
-            'barcode',
-            'sku',
-            'category_name',
-            'sub_category_name',
-            'brand_name',
-            'manufacturer_name',
-            'department_name',
-            'tax_name',
-            'mrp',
-            'selling_price',
-            'cost_price',
-            'unit',
-            'is_active',
-            'is_service',
-            'allow_discount_on_pos',
-            'include_tax',
-            'image_url',
-            'manage_inventory_enabled',
-            'inventory_store_name',
-            'opening_stock_qty',
-            'default_low_stock_value',
-            'disable_billing_on_zero',
-            'disable_sales_on_expiry',
-            'inventory_method',
-            'stock_item_type',
-          ];
+        : productTemplateHeaders;
 
     const headers = [...baseHeaders];
-    const requiredHeaders = new Set(bulkImportType === 'products' ? ['name', 'selling_price', 'unit'] : ['name']);
-    const requirementRow = headers.map((header) => requiredHeaders.has(header) ? 'Required' : 'Optional');
+    const requiredHeaders = new Set(bulkImportType === 'products' ? ['Product Name', 'Default Price', 'Unit'] : ['name']);
     const templateRecords = await fetchTemplateRecords();
-    const dataRows = templateRecords.map((record) => headers.map((header) => getTemplateCellValue(record, header)));
+    const productValueMap = {
+      'Product Name': 'name',
+      'Product Code': 'product_id',
+      Brand: 'brand_name',
+      Category: 'category_name',
+      'Sub Category': 'sub_category_name',
+      'Income Head': 'income_head_name',
+      Unit: 'unit',
+      'Price Includes Tax': 'include_tax',
+      'Manage Inventory': 'manage_inventory_enabled',
+      'Stock Item Type': 'stock_item_type',
+      'Is Sellable On POS': 'is_sellable_on_pos',
+      'Allow Variable Pricing': 'allow_variable_pricing',
+      'Allow Discount On POS': 'allow_discount_on_pos',
+      'HSN/SAC Code': 'hsn_code',
+      'Default Price': 'selling_price',
+      MRP: 'mrp',
+      'Cost Price': 'cost_price',
+      Barcode: 'barcode',
+      SKU: 'sku',
+      Description: 'description',
+      'Opening Stock Store': 'inventory_store_name',
+      'Opening Stock Qty': 'opening_stock_qty',
+      'Default Low Stock Value': 'default_low_stock_value',
+      'Disable Billing On Zero': 'disable_billing_on_zero',
+      'Disable Sales On Expiry': 'disable_sales_on_expiry',
+      'Inventory Method': 'inventory_method',
+      Manufacturer: 'manufacturer_name',
+      Department: 'department_name',
+    };
+    const dataRows = templateRecords.map((record) => headers.map((header) => getTemplateCellValue(record, productValueMap[header] || header)));
     const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet([requirementRow, headers, ...dataRows]);
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
     headers.forEach((header, index) => {
-      const requirementRef = XLSX.utils.encode_cell({ r: 0, c: index });
-      const headerRef = XLSX.utils.encode_cell({ r: 1, c: index });
-      if (ws[requirementRef]) {
-        ws[requirementRef].s = { font: { bold: true, color: { rgb: requiredHeaders.has(header) ? '9F1239' : '166534' } } };
-      }
-      if (requiredHeaders.has(header)) {
-        ws[headerRef].s = { font: { bold: true, color: { rgb: '9F1239' } } };
+      const headerRef = XLSX.utils.encode_cell({ r: 0, c: index });
+      if (ws[headerRef]) {
+        ws[headerRef].s = { font: { bold: true, color: { rgb: requiredHeaders.has(header) ? '9F1239' : '111827' } } };
       }
     });
-    ws['!freeze'] = { xSplit: 0, ySplit: 2 };
-    const taxNames = bulkImportType === 'products' ? await fetchTaxNames() : [];
-    const includeTaxCol = headers.indexOf('include_tax');
-    const taxNameCol = headers.indexOf('tax_name');
-    const unitCol = headers.indexOf('unit');
-    const inventoryMethodCol = headers.indexOf('inventory_method');
-    const stockTypeCol = headers.indexOf('stock_item_type');
+    ws['!freeze'] = { xSplit: 0, ySplit: 1 };
+    const optionGroups = bulkImportType === 'products' ? [
+      { key: 'brands', values: await fetchOptionNames('/api/catalog/brands?pageSize=1000') },
+      { key: 'categories', values: await fetchOptionNames('/api/catalog/categories?pageSize=1000') },
+      { key: 'sub_categories', values: await fetchOptionNames('/api/catalog/sub-categories?pageSize=1000') },
+      { key: 'income_heads', values: await fetchOptionNames('/api/catalog/income-heads?pageSize=1000') },
+      { key: 'stores', values: await fetchStoresForTemplate() },
+      { key: 'manufacturers', values: await fetchOptionNames('/api/catalog/manufacturers?pageSize=1000') },
+      { key: 'departments', values: await fetchOptionNames('/api/catalog/departments?pageSize=1000') },
+    ] : [];
+    const includeTaxCol = headers.indexOf('Price Includes Tax');
+    const unitCol = headers.indexOf('Unit');
+    const inventoryMethodCol = headers.indexOf('Inventory Method');
+    const stockTypeCol = headers.indexOf('Stock Item Type');
     const booleanCols = [
-      'is_active',
-      'is_service',
-      'allow_discount_on_pos',
-      'include_tax',
-      'manage_inventory_enabled',
-      'disable_billing_on_zero',
-      'disable_sales_on_expiry',
+      'Price Includes Tax',
+      'Manage Inventory',
+      'Is Sellable On POS',
+      'Allow Variable Pricing',
+      'Allow Discount On POS',
+      'Disable Billing On Zero',
+      'Disable Sales On Expiry',
+      ...PRODUCT_TAX_COLUMNS,
+      ...PRODUCT_ATTRIBUTE_COLUMNS,
     ].map((header) => headers.indexOf(header)).filter((index) => index >= 0);
     const validations = [];
     const addValidation = (col, formula) => {
       if (col < 0 || !formula) return;
       validations.push({
-        range: `${XLSX.utils.encode_col(col)}3:${XLSX.utils.encode_col(col)}${TEMPLATE_ROW_LIMIT}`,
+        range: `${XLSX.utils.encode_col(col)}2:${XLSX.utils.encode_col(col)}${TEMPLATE_ROW_LIMIT}`,
         formula,
       });
     };
     for (const col of booleanCols) addValidation(col, '"Yes,No"');
     addValidation(unitCol, '"PCS,KG,LTR"');
-    if (taxNameCol >= 0 && taxNames.length) {
-      addValidation(taxNameCol, `'${OPTIONS_SHEET_NAME}'!$A$2:$A$${taxNames.length + 1}`);
-    }
     addValidation(includeTaxCol, '"Yes,No"');
     addValidation(inventoryMethodCol, '"direct,indirect"');
     addValidation(stockTypeCol, '"batched,unbatched"');
+    if (bulkImportType === 'products') {
+      addValidation(headers.indexOf('Brand'), optionFormula(optionGroups, 'brands'));
+      addValidation(headers.indexOf('Category'), optionFormula(optionGroups, 'categories'));
+      addValidation(headers.indexOf('Sub Category'), optionFormula(optionGroups, 'sub_categories'));
+      addValidation(headers.indexOf('Income Head'), optionFormula(optionGroups, 'income_heads'));
+      addValidation(headers.indexOf('Opening Stock Store'), optionFormula(optionGroups, 'stores'));
+      addValidation(headers.indexOf('Manufacturer'), optionFormula(optionGroups, 'manufacturers'));
+      addValidation(headers.indexOf('Department'), optionFormula(optionGroups, 'departments'));
+    }
     XLSX.utils.book_append_sheet(wb, ws, 'Template');
-    if (bulkImportType === 'products' && taxNames.length) {
-      const options = XLSX.utils.aoa_to_sheet([['tax_name'], ...taxNames.map((name) => [name])]);
-      XLSX.utils.book_append_sheet(wb, options, OPTIONS_SHEET_NAME);
+    if (bulkImportType === 'products' && optionGroups.some((group) => group.values.length)) {
+      XLSX.utils.book_append_sheet(wb, buildOptionsSheet(optionGroups), OPTIONS_SHEET_NAME);
       const optionSheet = wb.Workbook?.Sheets?.find((sheet) => sheet.name === OPTIONS_SHEET_NAME);
       if (optionSheet) optionSheet.Hidden = 1;
     }
@@ -433,7 +558,7 @@ export default function CatalogListPage({
         ['selling_price', 'Required'],
         ['unit', 'Required: PCS, KG, or LTR'],
         ['include_tax', 'Yes/No. Use Yes when GST is already included in selling_price.'],
-        ['tax_name', taxNames.length ? 'Choose from dropdown. Required when include_tax is Yes.' : 'Required when include_tax is Yes. Must match an existing GST slab name.'],
+        ['GST', optionFormula(optionGroups, 'taxes') ? 'Choose from dropdown. Required when Price Includes Tax is Yes.' : 'Required when Price Includes Tax is Yes. Must match an existing GST slab name.'],
         ['stock_item_type', 'batched/unbatched'],
       ]);
       XLSX.utils.book_append_sheet(wb, info, 'Instructions');
