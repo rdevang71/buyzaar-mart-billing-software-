@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
+import SearchableSelect from '@/components/SearchableSelect';
 
 export default function EditSubCategoryPage() {
   const router     = useRouter();
@@ -202,18 +203,7 @@ export default function EditSubCategoryPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Select Category</label>
-              <div className="relative">
-                <select value={form.category_id} onChange={e => set('category_id', e.target.value)}
-                  className="w-full appearance-none border border-gray-300 rounded-lg px-3 py-2.5 pr-9 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-blue-500">
-                  <option value="">Select Category</option>
-                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
-                  <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none">
-                    <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                  </svg>
-                </span>
-              </div>
+              <SearchableSelect value={form.category_id} onChange={(value) => set('category_id', value)} placeholder="Select Category" searchPlaceholder="Search category..." options={categories.map((c) => ({ value: c.id, label: c.name }))} />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Sort Sequence</label>

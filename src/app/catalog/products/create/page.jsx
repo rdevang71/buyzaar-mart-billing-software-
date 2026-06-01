@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import SearchableSelect from '@/components/SearchableSelect';
 
 const COLOR_OPTIONS = [
   { name: 'Red', value: '#ef4444' },
@@ -439,31 +440,19 @@ export default function CreateProductPage() {
             <div className="space-y-4">
               <div>
                 <Label>Category</Label>
-                <select value={form.category_id} onChange={(event) => set('category_id', event.target.value)} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500">
-                  <option value="">Select category</option>
-                  {categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                </select>
+                <SearchableSelect value={form.category_id} onChange={(value) => set('category_id', value)} placeholder="Select category" searchPlaceholder="Search category..." options={categories.map((item) => ({ value: item.id, label: item.name }))} />
               </div>
               <div>
                 <Label>Sub Category</Label>
-                <select value={form.sub_category_id} onChange={(event) => set('sub_category_id', event.target.value)} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500">
-                  <option value="">Select sub category</option>
-                  {subCategories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                </select>
+                <SearchableSelect value={form.sub_category_id} onChange={(value) => set('sub_category_id', value)} placeholder="Select sub category" searchPlaceholder="Search sub category..." options={subCategories.map((item) => ({ value: item.id, label: item.name }))} disabled={!form.category_id} />
               </div>
               <div>
                 <Label>Brand</Label>
-                <select value={form.brand_id} onChange={(event) => set('brand_id', event.target.value)} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500">
-                  <option value="">Select brand</option>
-                  {brands.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                </select>
+                <SearchableSelect value={form.brand_id} onChange={(value) => set('brand_id', value)} placeholder="Select brand" searchPlaceholder="Search brand..." options={brands.map((item) => ({ value: item.id, label: item.name }))} />
               </div>
               <div>
                 <Label>Manufacturer</Label>
-                <select value={form.manufacturer_id} onChange={(event) => set('manufacturer_id', event.target.value)} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500">
-                  <option value="">Select manufacturer</option>
-                  {manufacturers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                </select>
+                <SearchableSelect value={form.manufacturer_id} onChange={(value) => set('manufacturer_id', value)} placeholder="Select manufacturer" searchPlaceholder="Search manufacturer..." options={manufacturers.map((item) => ({ value: item.id, label: item.name }))} />
               </div>
             </div>
           </div>
@@ -473,10 +462,7 @@ export default function CreateProductPage() {
           <div className="grid gap-4 lg:grid-cols-3">
             <div>
               <Label>Department</Label>
-              <select value={form.department_id} onChange={(event) => set('department_id', event.target.value)} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500">
-                <option value="">Select department</option>
-                {departments.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </select>
+              <SearchableSelect value={form.department_id} onChange={(value) => set('department_id', value)} placeholder="Select department" searchPlaceholder="Search department..." options={departments.map((item) => ({ value: item.id, label: item.name }))} />
             </div>
             <div>
               <Label required>Unit</Label>
@@ -636,14 +622,13 @@ export default function CreateProductPage() {
                 <div className="grid gap-4 md:grid-cols-3">
                   <div>
                     <Label>Opening Stock Store</Label>
-                    <select
+                    <SearchableSelect
                       value={form.inventory_store_id}
-                      onChange={(event) => set('inventory_store_id', event.target.value)}
-                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500"
-                    >
-                      <option value="">Select store</option>
-                      {stores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}
-                    </select>
+                      onChange={(value) => set('inventory_store_id', value)}
+                      placeholder="Select store"
+                      searchPlaceholder="Search store..."
+                      options={stores.map((store) => ({ value: store.id, label: store.name }))}
+                    />
                   </div>
                   <div>
                     <Label>Opening Stock Qty</Label>

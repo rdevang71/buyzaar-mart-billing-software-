@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
+import SearchableSelect from "@/components/SearchableSelect";
 import {
   OPTIONS_SHEET_NAME,
   addOptionNamedRanges,
@@ -43,8 +44,15 @@ export default function AssignBulkPage() {
   const [fileName, setFileName] = useState("");
   const fileRef = useRef();
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [warehouseQuery, setWarehouseQuery] = useState("");
+  const [categoryId, setCategoryId] = useState("");
   const dropdownRef = useRef(null);
   const canProceed = !!(rows && rows.length);
+  const filteredWarehouses = warehouses.filter((warehouse) =>
+    String(warehouse.name || "")
+      .toLowerCase()
+      .includes(warehouseQuery.trim().toLowerCase()),
+  );
   const nextButtonClass = canProceed
     ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/25 hover:from-blue-700 hover:to-indigo-700 hover:shadow-blue-500/35"
     : "bg-slate-400 text-white/90 shadow-sm cursor-not-allowed";
@@ -120,7 +128,7 @@ export default function AssignBulkPage() {
       {
         key: "product_ids",
         name: "WarehouseAssignProductIds",
-        values: uniqueOptions(products.map((product) => product.id)),
+        values: sortOptions(uniqueOptions(products.map((product) => product.id))),
       },
       {
         key: "product_names",
@@ -132,7 +140,7 @@ export default function AssignBulkPage() {
       {
         key: "skus",
         name: "WarehouseAssignProductSkus",
-        values: uniqueOptions(products.map((product) => product.sku)),
+        values: sortOptions(uniqueOptions(products.map((product) => product.sku))),
       },
     ];
     const validations = [
@@ -144,10 +152,11 @@ export default function AssignBulkPage() {
         const columnIndex = TEMPLATE_HEADERS.indexOf(header);
         if (columnIndex < 0) return null;
         const column = XLSX.utils.encode_col(columnIndex);
-        const formula =
-          optionKey === "product_names"
-            ? prefixMatchOptionFormula(optionGroups, optionKey, `${column}2`)
-            : optionFormula(optionGroups, optionKey);
+        const formula = prefixMatchOptionFormula(
+          optionGroups,
+          optionKey,
+          `${column}2`,
+        );
         if (!formula) return null;
         return { range: `${column}2:${column}${TEMPLATE_ROW_LIMIT}`, formula };
       })
@@ -256,8 +265,16 @@ export default function AssignBulkPage() {
 
               {dropdownOpen && (
                 <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded shadow-lg max-h-60 overflow-auto">
-                  <div className="p-2">
-                    {warehouses.map((w) => (
+                  <div className="sticky top-0 bg-white p-2">
+                    <input
+                      value={warehouseQuery}
+                      onChange={(e) => setWarehouseQuery(e.target.value)}
+                      placeholder="Search warehouse..."
+                      className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <div className="p-2 pt-0">
+                    {filteredWarehouses.map((w) => (
                       <label
                         key={w.id}
                         className="flex items-center gap-2 px-2 py-1 hover:bg-gray-50 rounded"
@@ -277,6 +294,11 @@ export default function AssignBulkPage() {
                         <span className="text-sm text-gray-700">{w.name}</span>
                       </label>
                     ))}
+                    {!filteredWarehouses.length && (
+                      <div className="px-2 py-3 text-center text-xs text-gray-400">
+                        No matching warehouses
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -287,14 +309,13 @@ export default function AssignBulkPage() {
             <label className="text-sm text-gray-600 mb-1 block">
               Category (optional)
             </label>
-            <select className="w-full border border-slate-200 rounded-md px-3 py-2 text-sm bg-white">
-              <option value="">Any</option>
-              {categoryList.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={categoryId}
+              onChange={setCategoryId}
+              placeholder="Any"
+              searchPlaceholder="Search category..."
+              options={categoryList.map((c) => ({ value: c.id, label: c.name }))}
+            />
           </div>
         </div>
 

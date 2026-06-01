@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
+import SearchableSelect from "@/components/SearchableSelect";
 import {
   OPTIONS_SHEET_NAME,
   addOptionNamedRanges,
@@ -47,8 +48,14 @@ export default function AssignBulkStep1() {
   const [fileName, setFileName] = useState("");
   const [loadingStores, setLoadingStores] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [storeQuery, setStoreQuery] = useState("");
   const dropdownRef = useRef(null);
   const canProceed = !!(uploadRows && uploadRows.length);
+  const filteredStores = stores.filter((store) =>
+    String(store.name || "")
+      .toLowerCase()
+      .includes(storeQuery.trim().toLowerCase()),
+  );
   const nextButtonClass = canProceed
     ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/25 hover:from-blue-700 hover:to-indigo-700 hover:shadow-blue-500/35"
     : "bg-slate-400 text-white/90 shadow-sm cursor-not-allowed";
@@ -91,7 +98,7 @@ export default function AssignBulkStep1() {
       {
         key: "product_ids",
         name: "StoreAssignProductIds",
-        values: uniqueOptions(products.map((product) => product.id)),
+        values: sortOptions(uniqueOptions(products.map((product) => product.id))),
       },
       {
         key: "product_names",
@@ -103,12 +110,12 @@ export default function AssignBulkStep1() {
       {
         key: "barcodes",
         name: "StoreAssignProductBarcodes",
-        values: uniqueOptions(products.map((product) => product.barcode)),
+        values: sortOptions(uniqueOptions(products.map((product) => product.barcode))),
       },
       {
         key: "skus",
         name: "StoreAssignProductSkus",
-        values: uniqueOptions(products.map((product) => product.sku)),
+        values: sortOptions(uniqueOptions(products.map((product) => product.sku))),
       },
       {
         key: "sell_on_store",
@@ -128,9 +135,9 @@ export default function AssignBulkStep1() {
         if (columnIndex < 0) return null;
         const column = XLSX.utils.encode_col(columnIndex);
         const formula =
-          optionKey === "product_names"
-            ? prefixMatchOptionFormula(optionGroups, optionKey, `${column}2`)
-            : optionFormula(optionGroups, optionKey);
+          optionKey === "sell_on_store"
+            ? optionFormula(optionGroups, optionKey)
+            : prefixMatchOptionFormula(optionGroups, optionKey, `${column}2`);
         if (!formula) return null;
         return { range: `${column}2:${column}${TEMPLATE_ROW_LIMIT}`, formula };
       })
@@ -260,8 +267,16 @@ export default function AssignBulkStep1() {
 
               {dropdownOpen && (
                 <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded shadow-lg max-h-60 overflow-auto">
-                  <div className="p-2">
-                    {stores.map((s) => (
+                  <div className="sticky top-0 bg-white p-2">
+                    <input
+                      value={storeQuery}
+                      onChange={(e) => setStoreQuery(e.target.value)}
+                      placeholder="Search store..."
+                      className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <div className="p-2 pt-0">
+                    {filteredStores.map((s) => (
                       <label
                         key={s.id}
                         className="flex items-center gap-2 px-2 py-1 hover:bg-gray-50 rounded"
@@ -281,6 +296,11 @@ export default function AssignBulkStep1() {
                         <span className="text-sm text-gray-700">{s.name}</span>
                       </label>
                     ))}
+                    {!filteredStores.length && (
+                      <div className="px-2 py-3 text-center text-xs text-gray-400">
+                        No matching stores
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -288,18 +308,13 @@ export default function AssignBulkStep1() {
           </div>
           <div className="col-span-5">
             <label className="text-sm text-gray-600 mb-1 block">Category</label>
-            <select
+            <SearchableSelect
               value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="w-full border border-slate-200 rounded-md px-3 py-2 text-sm bg-white"
-            >
-              <option value="">select</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+              onChange={setCategory}
+              placeholder="select"
+              searchPlaceholder="Search category..."
+              options={categories.map((c) => ({ value: c.id, label: c.name }))}
+            />
           </div>
         </div>
         <div className="mt-4">

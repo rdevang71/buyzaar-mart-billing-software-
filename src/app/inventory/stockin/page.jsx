@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import InventoryShell from "@/components/inventory/InventoryShell";
+import SearchableSelect from "@/components/SearchableSelect";
 import {
   getBulkField,
   parseBulkSheet,
@@ -270,6 +271,7 @@ export default function StockInPage() {
   const [purchaseOrderId, setPurchaseOrderId] = useState("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [vendors, setVendors] = useState([]);
+  const [vendorQuery, setVendorQuery] = useState("");
   const [selectedVendorIds, setSelectedVendorIds] = useState([]);
   const [applyTaxes, setApplyTaxes] = useState(true);
   const [addProductsPrefill, setAddProductsPrefill] = useState(true);
@@ -290,6 +292,11 @@ export default function StockInPage() {
     sourceType === "vendor"
       ? stores
       : stores.filter((store) => !isWarehouseLocation(store));
+  const filteredVendors = vendors.filter((vendor) =>
+    `${vendor.name || ""} ${vendor.company || ""}`
+      .toLowerCase()
+      .includes(vendorQuery.trim().toLowerCase()),
+  );
 
   useEffect(() => {
     if (sourceType === "vendor") return;
@@ -568,7 +575,7 @@ export default function StockInPage() {
         {
           key: "product_ids",
           name: "StockInProductIds",
-          values: uniqueOptions(records.map((product) => product.id)),
+          values: sortOptions(uniqueOptions(records.map((product) => product.id))),
         },
         {
           key: "product_names",
@@ -580,32 +587,32 @@ export default function StockInPage() {
         {
           key: "size_ids",
           name: "StockInSizeIds",
-          values: uniqueOptions(records.map((product) => product.sizeId)),
+          values: sortOptions(uniqueOptions(records.map((product) => product.sizeId))),
         },
         {
           key: "size_names",
           name: "StockInSizeNames",
-          values: uniqueOptions(records.map((product) => product.sizeName)),
+          values: sortOptions(uniqueOptions(records.map((product) => product.sizeName))),
         },
         {
           key: "categories",
           name: "StockInCategories",
-          values: uniqueOptions(records.map((product) => product.category)),
+          values: sortOptions(uniqueOptions(records.map((product) => product.category))),
         },
         {
           key: "brands",
           name: "StockInBrands",
-          values: uniqueOptions(records.map((product) => product.brand)),
+          values: sortOptions(uniqueOptions(records.map((product) => product.brand))),
         },
         {
           key: "barcodes",
           name: "StockInBarcodes",
-          values: uniqueOptions(records.map((product) => product.barcode)),
+          values: sortOptions(uniqueOptions(records.map((product) => product.barcode))),
         },
         {
           key: "skus",
           name: "StockInSkus",
-          values: uniqueOptions(records.map((product) => product.sku)),
+          values: sortOptions(uniqueOptions(records.map((product) => product.sku))),
         },
         {
           key: "units",
@@ -642,9 +649,9 @@ export default function StockInPage() {
           if (columnIndex < 0) return null;
           const column = XLSX.utils.encode_col(columnIndex);
           const formula =
-            optionKey === "product_names"
-              ? prefixMatchOptionFormula(optionGroups, optionKey, `${column}2`)
-              : optionFormula(optionGroups, optionKey);
+            optionKey === "stock_item_types" || optionKey === "units"
+              ? optionFormula(optionGroups, optionKey)
+              : prefixMatchOptionFormula(optionGroups, optionKey, `${column}2`);
           if (!formula) return null;
           return {
             range: `${column}2:${column}${STOCK_IN_TEMPLATE_ROW_LIMIT}`,
@@ -858,6 +865,12 @@ export default function StockInPage() {
                       <label className="block text-sm text-gray-800 mb-2">
                         Vendors*
                       </label>
+                      <input
+                        value={vendorQuery}
+                        onChange={(e) => setVendorQuery(e.target.value)}
+                        placeholder="Search vendor..."
+                        className="mb-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 outline-none focus:border-blue-500"
+                      />
                       <select
                         multiple
                         value={selectedVendorIds}
@@ -870,7 +883,7 @@ export default function StockInPage() {
                         }
                         className="h-32 w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-700"
                       >
-                        {vendors.map((vendor) => (
+                        {filteredVendors.map((vendor) => (
                           <option key={vendor.id} value={String(vendor.id)}>
                             {vendor.name}
                             {vendor.company ? ` - ${vendor.company}` : ""}
@@ -928,22 +941,14 @@ export default function StockInPage() {
                     <label className="block text-sm text-gray-800 mb-2">
                       Destination*
                     </label>
-                    <select
-                      className="w-full border border-gray-300 rounded px-3 py-2 text-gray-700"
+                    <SearchableSelect
                       value={destination}
-                      onChange={(e) => setDestination(e.target.value)}
-                    >
-                      <option value="">Select Destination</option>
-                      {loadingStores ? (
-                        <option>Loading...</option>
-                      ) : (
-                        destinationStores.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.name}
-                          </option>
-                        ))
-                      )}
-                    </select>
+                      onChange={setDestination}
+                      placeholder={loadingStores ? "Loading..." : "Select Destination"}
+                      searchPlaceholder="Search destination..."
+                      options={destinationStores.map((s) => ({ value: s.id, label: s.name }))}
+                      disabled={loadingStores}
+                    />
                   </div>
 
                   <div className="flex items-center gap-3">

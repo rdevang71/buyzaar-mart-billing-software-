@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import CatalogDataPage from '@/components/CatalogDataPage';
+import SearchableSelect from '@/components/SearchableSelect';
 
 const columns = [
   { key: 'sno',      label: 'S. No.',        sortable: true },
@@ -46,42 +47,33 @@ export default function ProductsPage() {
     <div className="grid gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:grid-cols-3">
       <div>
         <label className="mb-1 block text-xs font-medium text-gray-600">Department</label>
-        <select
+        <SearchableSelect
           value={departmentId}
-          onChange={(event) => setDepartmentId(event.target.value)}
-          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500"
-        >
-          <option value="">ALL</option>
-          {departments.map((item) => (
-            <option key={item.id} value={item.id}>{item.name}</option>
-          ))}
-        </select>
+          onChange={setDepartmentId}
+          placeholder="ALL"
+          searchPlaceholder="Search department..."
+          options={departments.map((item) => ({ value: item.id, label: item.name }))}
+        />
       </div>
       <div>
         <label className="mb-1 block text-xs font-medium text-gray-600">Brand</label>
-        <select
+        <SearchableSelect
           value={brandId}
-          onChange={(event) => setBrandId(event.target.value)}
-          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500"
-        >
-          <option value="">ALL</option>
-          {brands.map((item) => (
-            <option key={item.id} value={item.id}>{item.name}</option>
-          ))}
-        </select>
+          onChange={setBrandId}
+          placeholder="ALL"
+          searchPlaceholder="Search brand..."
+          options={brands.map((item) => ({ value: item.id, label: item.name }))}
+        />
       </div>
       <div>
         <label className="mb-1 block text-xs font-medium text-gray-600">Category</label>
-        <select
+        <SearchableSelect
           value={categoryId}
-          onChange={(event) => setCategoryId(event.target.value)}
-          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500"
-        >
-          <option value="">ALL</option>
-          {categories.map((item) => (
-            <option key={item.id} value={item.id}>{item.name}</option>
-          ))}
-        </select>
+          onChange={setCategoryId}
+          placeholder="ALL"
+          searchPlaceholder="Search category..."
+          options={categories.map((item) => ({ value: item.id, label: item.name }))}
+        />
       </div>
     </div>
   ), [brandId, brands, categoryId, categories, departmentId, departments]);

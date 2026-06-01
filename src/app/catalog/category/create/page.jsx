@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import SearchableSelect from '@/components/SearchableSelect';
 
 export default function CreateCategoryPage() {
   const router = useRouter();
@@ -194,18 +195,7 @@ export default function CreateCategoryPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
-                <div className="relative">
-                  <select value={form.department_id} onChange={e => set('department_id', e.target.value)}
-                    className="w-full appearance-none border border-gray-300 rounded-lg px-3 py-2.5 pr-9 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-blue-500">
-                    <option value="">Default Department</option>
-                    {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                  </select>
-                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
-                    <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none">
-                      <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                    </svg>
-                  </span>
-                </div>
+                <SearchableSelect value={form.department_id} onChange={(value) => set('department_id', value)} placeholder="Default Department" searchPlaceholder="Search department..." options={departments.map((d) => ({ value: d.id, label: d.name }))} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Category Description</label>
