@@ -2,7 +2,7 @@
 const nextConfig = {
   reactCompiler: true,
   turbopack: {
-    root: 'c:\\Users\\74530\\OneDrive\\Desktop\\grocery-mart\\billing-software',
+    root: process.cwd(),
   },
   async rewrites() {
     const backendUrl = process.env.BACKEND_URL || '';
