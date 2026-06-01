@@ -69,20 +69,30 @@ export default function InventoryShell({
 
         {actions.length > 0 && (
           <div className="flex items-center gap-3 flex-shrink-0">
-            {actions.map((action, index) => (
-              <button
-                key={action.label}
-                type={action.type || 'button'}
-                onClick={action.onClick}
-                className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-medium transition-colors ${
+            {actions.map((action, index) => {
+              const className = `flex items-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-medium transition-colors ${
                   index === actions.length - 1 && action.primary
                     ? 'bg-indigo-600 text-white hover:bg-indigo-700'
                     : 'border border-indigo-200 text-indigo-600 hover:bg-indigo-50'
-                }`}
-              >
-                {action.label}
-              </button>
-            ))}
+                }`;
+              if (action.href) {
+                return (
+                  <Link key={action.label} href={action.href} className={className}>
+                    {action.label}
+                  </Link>
+                );
+              }
+              return (
+                <button
+                  key={action.label}
+                  type={action.type || 'button'}
+                  onClick={action.onClick}
+                  className={className}
+                >
+                  {action.label}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
