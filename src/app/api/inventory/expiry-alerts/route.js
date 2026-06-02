@@ -137,7 +137,90 @@ export async function GET(request) {
       params
     );
 
-    const records = result.rows.map((row) => {
+    const stockInParams = [];
+    const stockInWhere = [
+      "si.status = 'confirmed'",
+      'sii.qty > 0',
+      `NOT EXISTS (
+        SELECT 1
+        FROM inventory_batches existing
+        WHERE existing.source_type = 'stock_in'
+          AND NULLIF(existing.source_id, '') ~ '^[0-9]+$'
+          AND NULLIF(existing.source_id, '')::BIGINT = sii.id
+      )`,
+    ];
+
+    const stockInScope = appendStoreScope(stockInWhere, stockInParams, 'si.destination_id', auth.user);
+    if (stockInScope.error) return stockInScope.error;
+
+    if (storeId) {
+      stockInParams.push(storeId);
+      stockInWhere.push(`si.destination_id = $${stockInParams.length}`);
+    }
+
+    if (search) {
+      stockInParams.push(`%${search}%`);
+      stockInWhere.push(`(
+        COALESCE(sii.product_name, p.name, '') ILIKE $${stockInParams.length}
+        OR COALESCE(p.sku, '') ILIKE $${stockInParams.length}
+        OR COALESCE(p.barcode, '') ILIKE $${stockInParams.length}
+        OR COALESCE(sii.batch_no, '') ILIKE $${stockInParams.length}
+        OR COALESCE(s.name, '') ILIKE $${stockInParams.length}
+      )`);
+    }
+
+    if (status === 'expired') {
+      stockInWhere.push('sii.expiry_date < CURRENT_DATE');
+    } else if (status === 'urgent') {
+      stockInWhere.push("sii.expiry_date >= CURRENT_DATE AND sii.expiry_date <= CURRENT_DATE + INTERVAL '7 days'");
+    } else if (status === 'upcoming') {
+      stockInParams.push(days);
+      stockInWhere.push(`sii.expiry_date >= CURRENT_DATE AND sii.expiry_date <= CURRENT_DATE + ($${stockInParams.length}::INT * INTERVAL '1 day')`);
+    } else if (status === 'missing') {
+      stockInWhere.push('sii.expiry_date IS NULL');
+    } else {
+      stockInParams.push(days);
+      stockInWhere.push(`(
+        sii.expiry_date IS NULL
+        OR sii.expiry_date <= CURRENT_DATE + ($${stockInParams.length}::INT * INTERVAL '1 day')
+      )`);
+    }
+
+    const stockInResult = await query(
+      `SELECT
+        sii.id,
+        COALESCE(sii.batch_no, si.transaction_id, CONCAT('STK-', si.id::text)) AS batch_no,
+        sii.expiry_date,
+        sii.qty AS available_qty,
+        sii.qty AS received_qty,
+        sii.cost_price,
+        p.id AS product_id,
+        COALESCE(sii.product_name, p.name) AS product_name,
+        p.sku,
+        p.barcode,
+        COALESCE(b.name, '') AS brand_name,
+        COALESCE(c.name, '') AS category_name,
+        s.id AS store_id,
+        s.name AS store_name,
+        COALESCE(s.meta->>'locationType', 'Store') AS location_type,
+        CASE
+          WHEN sii.expiry_date IS NULL THEN NULL
+          ELSE (sii.expiry_date - CURRENT_DATE)
+        END AS days_to_expiry,
+        (sii.qty * sii.cost_price) AS stock_value
+      FROM stock_in_items sii
+      INNER JOIN stock_in si ON si.id = sii.stock_in_id
+      LEFT JOIN products p ON p.id = sii.product_id
+      LEFT JOIN brands b ON b.id = p.brand_id
+      LEFT JOIN categories c ON c.id = p.category_id
+      LEFT JOIN stores s ON s.id = si.destination_id
+      WHERE ${stockInWhere.join(' AND ')}
+      ORDER BY sii.expiry_date ASC NULLS LAST, sii.qty DESC, COALESCE(sii.product_name, p.name) ASC
+      LIMIT 500`,
+      stockInParams
+    );
+
+    const records = [...result.rows, ...stockInResult.rows].map((row) => {
       const daysToExpiry = row.days_to_expiry === null ? null : Number(row.days_to_expiry);
       const isExpired = daysToExpiry !== null && daysToExpiry < 0;
       const bucket = daysToExpiry === null
