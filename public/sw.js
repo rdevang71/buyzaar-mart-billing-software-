@@ -1,10 +1,10 @@
-const CACHE_NAME = 'buyzaar-sync-shell-v2';
+const CACHE_NAME = 'buyzaar-sync-shell-v3';
 const APP_SHELL = [
   '/',
   '/login',
   '/sales/pos',
   '/manifest.webmanifest',
-  '/pwa-icon.svg'
+  '/buyzaar-sync-icon.svg'
 ];
 
 self.addEventListener('message', (event) => {

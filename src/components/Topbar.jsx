@@ -559,7 +559,7 @@ export default function Topbar({ onMenuOpen, sidebarExpanded = false }) {
             onClick={() => setOpenProfile((prev) => !prev)}
             className="flex items-center gap-2 rounded-2xl px-1.5 py-1 transition-colors hover:bg-blue-50"
           >
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-600 to-green-500 flex items-center justify-center flex-shrink-0 shadow-[0_8px_18px_rgba(176,0,0,0.22)]">
+            <div className="w-8 h-8 rounded-full bg-[#B00000] flex items-center justify-center flex-shrink-0 shadow-[0_8px_18px_rgba(176,0,0,0.22)]">
               <span className="text-[11px] font-bold text-white">{initials}</span>
             </div>
             <div className="hidden sm:block text-left">
@@ -577,7 +577,7 @@ export default function Topbar({ onMenuOpen, sidebarExpanded = false }) {
             <div className="fixed left-3 right-3 top-[58px] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_16px_50px_rgba(15,23,42,0.16)] sm:absolute sm:left-auto sm:right-0 sm:top-[44px] sm:w-[320px]">
               <div className="bg-slate-100 px-4 py-3.5">
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-blue-600 flex items-center justify-center">
+                  <div className="w-12 h-12 rounded-full bg-[#B00000] flex items-center justify-center">
                     <span className="text-white text-[16px] font-bold">{initials}</span>
                   </div>
                   <div>
