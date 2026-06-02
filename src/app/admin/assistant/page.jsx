@@ -236,7 +236,7 @@ export default function AdminAssistantPage() {
                 {loading ? (
                   <div className="flex justify-start">
                     <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 shadow-sm">
-                      Data check ho raha hai...
+                      fetching the data...
                     </div>
                   </div>
                 ) : null}
