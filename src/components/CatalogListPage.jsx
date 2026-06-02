@@ -488,7 +488,7 @@ export default function CatalogListPage({
     .sort((a, b) => b.count - a.count);
 
   return (
-    <div className="min-h-screen bg-gray-100 p-6 font-sans text-sm text-gray-800">
+    <div className="min-h-screen bg-gray-100 p-3 font-sans text-sm text-gray-800 sm:p-5 md:p-6">
 
       {/* Toast */}
       {toast && (
@@ -503,8 +503,8 @@ export default function CatalogListPage({
 
       {/* Import loading overlay */}
       {importing && (
-        <div className="fixed inset-0 z-[998] flex items-center justify-center bg-black/30">
-          <div className="bg-white rounded-xl shadow-xl px-8 py-6 flex items-center gap-3">
+        <div className="fixed inset-0 z-[998] flex items-center justify-center bg-black/30 px-4">
+          <div className="flex max-w-full items-center gap-3 rounded-xl bg-white px-5 py-5 shadow-xl sm:px-8 sm:py-6">
             <svg className="animate-spin w-5 h-5 text-blue-600" viewBox="0 0 24 24" fill="none">
               <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"
                 strokeDasharray="32" strokeDashoffset="12"/>
@@ -516,8 +516,8 @@ export default function CatalogListPage({
 
       {/* Import Result Modal */}
       {importResult && (
-        <div className="fixed inset-0 z-[998] flex items-center justify-center bg-black/30">
-          <div className="w-[min(92vw,560px)] rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+        <div className="fixed inset-0 z-[998] flex items-center justify-center bg-black/30 px-4">
+          <div className="max-h-[90vh] w-[min(92vw,560px)] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl sm:p-6">
             <div className="mb-4 flex items-start gap-3">
               <div className={`mt-0.5 flex h-9 w-9 items-center justify-center rounded-full ${importErrors.length ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
                 <span className="text-base font-bold">{importErrors.length ? '!' : '✓'}</span>
@@ -595,7 +595,7 @@ export default function CatalogListPage({
       )}
 
       {/* Breadcrumb */}
-      <nav className="flex items-center gap-1.5 text-xs text-gray-500 mb-4">
+      <nav className="mb-4 flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
         {breadcrumbs.map((crumb, i) => (
           <span key={i} className="flex items-center gap-1.5">
             {i > 0 && <span className="text-gray-400">›</span>}
@@ -607,8 +607,8 @@ export default function CatalogListPage({
       </nav>
 
       {/* Header */}
-      <div className="flex items-start justify-between mb-5">
-        <div>
+      <div className="mb-5 flex flex-col items-start justify-between gap-3 sm:flex-row">
+        <div className="min-w-0">
           <h1 className="text-xl font-bold text-gray-900">{title}</h1>
           {description && (
             <p className="text-xs text-gray-500 mt-1">
@@ -619,12 +619,12 @@ export default function CatalogListPage({
             </p>
           )}
         </div>
-        <div className="flex items-center gap-2 relative">
+        <div className="relative flex w-full flex-wrap items-center gap-2 sm:w-auto">
           {bulkOperations && (
             <div className="relative">
               <button
                 onClick={() => setBulkOpen(o => !o)}
-                className="flex items-center gap-1.5 px-4 py-2 border border-gray-300 rounded-lg bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 transition">
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 sm:w-auto">
                 Bulk Operations
                 <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none">
                   <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
@@ -656,7 +656,7 @@ export default function CatalogListPage({
           )}
           {createLabel && (
             <button onClick={onCreateClick}
-              className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition">
+              className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 sm:w-auto">
               <span className="text-base leading-none">+</span>
               {createLabel}
             </button>
@@ -676,10 +676,10 @@ export default function CatalogListPage({
           {selectorLabel && (
             <label className="block text-sm font-medium text-gray-700 mb-1">{selectorLabel}</label>
           )}
-          <div className="relative inline-block">
+          <div className="relative block w-full sm:inline-block sm:w-auto">
             <select value={storeVal}
               onChange={e => { setStoreVal(e.target.value); onStoreChange?.(e.target.value); }}
-              className="w-56 appearance-none border border-gray-300 rounded-lg px-3 py-2 pr-8 bg-white text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500">
+              className="w-full appearance-none rounded-lg border border-gray-300 bg-white px-3 py-2 pr-8 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:w-56">
               <option value="">{selectorPlaceholder}</option>
               {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
@@ -694,15 +694,15 @@ export default function CatalogListPage({
 
       {/* Table Card */}
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-        <div className="flex justify-end px-4 py-3 border-b border-gray-100">
-          <div className="relative">
+        <div className="flex justify-end border-b border-gray-100 px-3 py-3 sm:px-4">
+          <div className="relative w-full sm:w-auto">
             <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 20 20">
               <circle cx="9" cy="9" r="6" stroke="currentColor" strokeWidth="1.5"/>
               <path d="M15 15l-3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
             </svg>
             <input type="text" placeholder="Search" value={curSearch}
               onChange={e => handleSearch(e.target.value)}
-              className="pl-8 pr-3 py-2 w-60 border border-gray-200 rounded-lg text-sm bg-gray-50 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:bg-white"/>
+              className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2 pl-8 pr-3 text-sm placeholder-gray-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 sm:w-60"/>
           </div>
         </div>
 
@@ -808,8 +808,8 @@ export default function CatalogListPage({
         </div>
 
         {/* Pagination */}
-        <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-col items-start justify-between gap-3 border-t border-gray-100 px-4 py-3 sm:flex-row sm:items-center">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="relative">
               <select value={curPageSize}
                 onChange={e => handlePageSizeChange(Number(e.target.value))}
@@ -824,7 +824,7 @@ export default function CatalogListPage({
                 : '0 to 0'} of {curTotal} {totalLabel}
             </span>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex max-w-full flex-wrap items-center gap-1">
             <button onClick={() => handlePageChange(Math.max(1, curPage - 1))}
               disabled={curPage === 1}
               className="p-1.5 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50 transition">

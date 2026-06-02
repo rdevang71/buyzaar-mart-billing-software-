@@ -176,10 +176,10 @@ export default function AdminAssistantPage() {
 
   return (
     <MainLayout>
-      <div className="min-h-[calc(100vh-110px)] bg-slate-50 px-5 py-5">
+      <div className="min-h-[calc(100vh-110px)] bg-slate-50 px-3 py-4 sm:px-5 sm:py-5">
         <div className="mx-auto flex max-w-7xl flex-col gap-4">
-          <div className="flex flex-wrap items-end justify-between gap-3 rounded-lg border border-slate-200 bg-white px-5 py-4 shadow-sm">
-            <div>
+          <div className="flex flex-col items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm sm:px-5 md:flex-row md:items-end">
+            <div className="min-w-0">
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-500">Super Admin</div>
               <h1 className="mt-1 text-2xl font-bold text-slate-950">Admin Assistant</h1>
               <p className="mt-1 text-sm text-slate-500">
@@ -188,13 +188,13 @@ export default function AdminAssistantPage() {
             </div>
             <Link
               href="/inventory/expiry-alerts"
-              className="rounded-lg border border-indigo-200 px-4 py-2 text-sm font-semibold text-indigo-600 hover:bg-indigo-50"
+              className="w-full rounded-lg border border-indigo-200 px-4 py-2 text-center text-sm font-semibold text-indigo-600 hover:bg-indigo-50 sm:w-auto"
             >
               Near Expiry
             </Link>
           </div>
 
-          <div className="grid min-h-[620px] gap-4 lg:grid-cols-[280px_1fr]">
+          <div className="grid gap-4 lg:min-h-[620px] lg:grid-cols-[280px_1fr]">
             <aside className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
               <h2 className="text-[13px] font-bold text-slate-950">Quick questions</h2>
               <div className="mt-3 space-y-2">
@@ -215,8 +215,8 @@ export default function AdminAssistantPage() {
               </div>
             </aside>
 
-            <section className="flex min-h-[620px] flex-col rounded-lg border border-slate-200 bg-white shadow-sm">
-              <div className="flex-1 space-y-4 overflow-y-auto p-4">
+            <section className="flex min-h-[520px] flex-col rounded-lg border border-slate-200 bg-white shadow-sm lg:min-h-[620px]">
+              <div className="flex-1 space-y-4 overflow-y-auto p-3 sm:p-4">
                 {messages.map((message, index) => (
                   <div
                     key={`${message.role}-${index}`}
@@ -225,8 +225,8 @@ export default function AdminAssistantPage() {
                     <div
                       className={
                         message.role === 'user'
-                          ? 'max-w-[78%] rounded-lg bg-indigo-600 px-4 py-3 text-sm font-medium text-white'
-                          : 'max-w-[94%] rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm'
+                          ? 'max-w-[90%] rounded-lg bg-indigo-600 px-4 py-3 text-sm font-medium text-white sm:max-w-[78%]'
+                          : 'max-w-full rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm sm:max-w-[94%]'
                       }
                     >
                       {message.role === 'user' ? message.answer : <AssistantResult message={message} />}
@@ -248,9 +248,9 @@ export default function AdminAssistantPage() {
                   event.preventDefault();
                   askAssistant();
                 }}
-                className="border-t border-slate-200 p-4"
+                className="border-t border-slate-200 p-3 sm:p-4"
               >
-                <div className="flex gap-3">
+                <div className="flex flex-col gap-3 sm:flex-row">
                   <input
                     value={input}
                     onChange={(event) => setInput(event.target.value)}
@@ -260,7 +260,7 @@ export default function AdminAssistantPage() {
                   <button
                     type="submit"
                     disabled={loading || !input.trim()}
-                    className="rounded-lg bg-indigo-600 px-5 py-3 text-sm font-bold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                    className="rounded-lg bg-indigo-600 px-5 py-3 text-sm font-bold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300 sm:w-auto"
                   >
                     Ask
                   </button>
