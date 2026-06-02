@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import SearchableSelect from '@/components/SearchableSelect';
 
 const COLOR_OPTIONS = [
   { name: 'Red', value: '#ef4444' },
@@ -14,6 +15,7 @@ const COLOR_OPTIONS = [
 ];
 
 const initialForm = {
+  product_id: '',
   name: '',
   description: '',
   barcode: '',
@@ -73,6 +75,7 @@ function Label({ children, required = false }) {
 export default function CreateProductPage() {
   const router = useRouter();
   const fileRef = useRef(null);
+  const bulkPrefillAppliedRef = useRef(false);
 
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState(null);
@@ -133,8 +136,49 @@ export default function CreateProductPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const name = params.get('name');
-    if (name) setForm((prev) => ({ ...prev, name }));
-  }, []);
+    const source = params.get('source');
+    if (source !== 'stock-in-bulk') {
+      if (name) setForm((prev) => ({ ...prev, name }));
+      return;
+    }
+    if (bulkPrefillAppliedRef.current) return;
+    if (!categories.length && params.get('category_name')) return;
+    if (!brands.length && params.get('brand_name')) return;
+
+    const findByName = (records, value) => {
+      const normalized = String(value || '').trim().toLowerCase();
+      if (!normalized) return '';
+      return records.find((record) => String(record.name || '').trim().toLowerCase() === normalized)?.id || '';
+    };
+    const normalizeBulkUnit = (value) => {
+      const unit = String(value || '').trim().toUpperCase();
+      if (unit === 'PIECE' || unit === 'PCS') return 'PCS';
+      if (unit === 'KG') return 'KG';
+      if (unit === 'LTR' || unit === 'LITER' || unit === 'LITRE') return 'LTR';
+      return 'PCS';
+    };
+    const normalizeBulkStockType = (value) => {
+      return String(value || '').trim().toLowerCase().includes('batch') ? 'batched' : 'unbatched';
+    };
+
+    bulkPrefillAppliedRef.current = true;
+    setForm((prev) => ({
+      ...prev,
+      name: params.get('name') || prev.name,
+      product_id: params.get('product_id') || prev.product_id,
+      barcode: params.get('barcode') || prev.barcode,
+      sku: params.get('sku') || prev.sku,
+      unit: normalizeBulkUnit(params.get('unit') || prev.unit),
+      category_id: findByName(categories, params.get('category_name')) || prev.category_id,
+      brand_id: findByName(brands, params.get('brand_name')) || prev.brand_id,
+      mrp: params.get('mrp') || prev.mrp,
+      selling_price: params.get('selling_price') || prev.selling_price,
+      cost_price: params.get('cost_price') || prev.cost_price,
+      opening_stock_qty: params.get('opening_stock_qty') || prev.opening_stock_qty,
+      stock_item_type: normalizeBulkStockType(params.get('stock_item_type') || prev.stock_item_type),
+      expiry_date: params.get('expiry_date') || prev.expiry_date,
+    }));
+  }, [brands, categories]);
 
   useEffect(() => {
     if (!form.category_id) {
@@ -360,11 +404,15 @@ export default function CreateProductPage() {
         <Card title="Basic Information" description="Provide the product identity and classification information.">
           <div className="grid gap-5 lg:grid-cols-3">
             <div className="space-y-4 lg:col-span-2">
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-4 sm:grid-cols-3">
                 <div>
                   <Label required>Product Name</Label>
                   <input type="text" value={form.name} onChange={(event) => set('name', event.target.value)} placeholder="Enter Product Name" className={`w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500 ${errors.name ? 'border-red-400 bg-red-50' : 'border-gray-300'}`} />
                   {errors.name && <p className="mt-1 text-xs text-red-500">{errors.name}</p>}
+                </div>
+                <div>
+                  <Label>Product ID</Label>
+                  <input type="text" value={form.product_id} onChange={(event) => set('product_id', event.target.value)} placeholder="Enter Product ID" className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500" />
                 </div>
                 <div>
                   <Label>Barcode</Label>
@@ -392,31 +440,19 @@ export default function CreateProductPage() {
             <div className="space-y-4">
               <div>
                 <Label>Category</Label>
-                <select value={form.category_id} onChange={(event) => set('category_id', event.target.value)} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500">
-                  <option value="">Select category</option>
-                  {categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                </select>
+                <SearchableSelect value={form.category_id} onChange={(value) => set('category_id', value)} placeholder="Select category" searchPlaceholder="Search category..." options={categories.map((item) => ({ value: item.id, label: item.name }))} />
               </div>
               <div>
                 <Label>Sub Category</Label>
-                <select value={form.sub_category_id} onChange={(event) => set('sub_category_id', event.target.value)} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500">
-                  <option value="">Select sub category</option>
-                  {subCategories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                </select>
+                <SearchableSelect value={form.sub_category_id} onChange={(value) => set('sub_category_id', value)} placeholder="Select sub category" searchPlaceholder="Search sub category..." options={subCategories.map((item) => ({ value: item.id, label: item.name }))} disabled={!form.category_id} />
               </div>
               <div>
                 <Label>Brand</Label>
-                <select value={form.brand_id} onChange={(event) => set('brand_id', event.target.value)} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500">
-                  <option value="">Select brand</option>
-                  {brands.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                </select>
+                <SearchableSelect value={form.brand_id} onChange={(value) => set('brand_id', value)} placeholder="Select brand" searchPlaceholder="Search brand..." options={brands.map((item) => ({ value: item.id, label: item.name }))} />
               </div>
               <div>
                 <Label>Manufacturer</Label>
-                <select value={form.manufacturer_id} onChange={(event) => set('manufacturer_id', event.target.value)} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500">
-                  <option value="">Select manufacturer</option>
-                  {manufacturers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                </select>
+                <SearchableSelect value={form.manufacturer_id} onChange={(value) => set('manufacturer_id', value)} placeholder="Select manufacturer" searchPlaceholder="Search manufacturer..." options={manufacturers.map((item) => ({ value: item.id, label: item.name }))} />
               </div>
             </div>
           </div>
@@ -426,10 +462,7 @@ export default function CreateProductPage() {
           <div className="grid gap-4 lg:grid-cols-3">
             <div>
               <Label>Department</Label>
-              <select value={form.department_id} onChange={(event) => set('department_id', event.target.value)} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500">
-                <option value="">Select department</option>
-                {departments.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </select>
+              <SearchableSelect value={form.department_id} onChange={(value) => set('department_id', value)} placeholder="Select department" searchPlaceholder="Search department..." options={departments.map((item) => ({ value: item.id, label: item.name }))} />
             </div>
             <div>
               <Label required>Unit</Label>
@@ -589,14 +622,13 @@ export default function CreateProductPage() {
                 <div className="grid gap-4 md:grid-cols-3">
                   <div>
                     <Label>Opening Stock Store</Label>
-                    <select
+                    <SearchableSelect
                       value={form.inventory_store_id}
-                      onChange={(event) => set('inventory_store_id', event.target.value)}
-                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-blue-500"
-                    >
-                      <option value="">Select store</option>
-                      {stores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}
-                    </select>
+                      onChange={(value) => set('inventory_store_id', value)}
+                      placeholder="Select store"
+                      searchPlaceholder="Search store..."
+                      options={stores.map((store) => ({ value: store.id, label: store.name }))}
+                    />
                   </div>
                   <div>
                     <Label>Opening Stock Qty</Label>

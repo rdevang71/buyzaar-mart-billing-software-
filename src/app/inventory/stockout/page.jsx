@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import InventoryShell from '@/components/inventory/InventoryShell';
+import SearchableSelect from '@/components/SearchableSelect';
 import { getBulkField, parseBulkSheet, pickSpreadsheetFile, toBoolean } from '@/lib/bulkSheet';
 
 async function fetchStores() {
@@ -713,16 +714,13 @@ function StockOutLineItemsWindow({ id, onClose, onConfirmed }) {
               </Field>
 
               <Field label="Brand Filter">
-                <select
+                <SearchableSelect
                   value={brandId}
-                  onChange={(e) => setBrandId(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-[13px] text-gray-700 outline-none focus:border-blue-400"
-                >
-                  <option value="">All brands</option>
-                  {brands.map((brand) => (
-                    <option key={brand.id} value={brand.id}>{brand.name}</option>
-                  ))}
-                </select>
+                  onChange={setBrandId}
+                  placeholder="All brands"
+                  searchPlaceholder="Search brand..."
+                  options={brands.map((brand) => ({ value: brand.id, label: brand.name }))}
+                />
               </Field>
 
               <div className="mb-4 grid grid-cols-2 gap-3">

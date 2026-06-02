@@ -94,6 +94,7 @@ export const menuItems = [
         items: [
           { label: 'Stock Requisition', href: '/inventory/stockrequisition' },
           { label: 'Batches',           href: '/inventory/batches' },
+          { label: 'Near Expiry',       href: '/inventory/expiry-alerts' },
         ],
       },
     ],
@@ -135,6 +136,19 @@ export const menuItems = [
           { label: 'Write Off',                  href: '/sales-order/write-off' },
           { label: 'Quotation Pending Approval', href: '/sales-order/quotation-pending-approval' },
           { label: 'Auto Invoice',               href: '/sales-order/auto-invoice' },
+        ],
+      },
+    ],
+  }},
+
+  { label: 'Admin', icon: 'ti-shield-lock', href: '/admin/assistant', subSidebar: {
+    title: 'Admin Tools',
+    titleIcon: 'ti-shield-lock',
+    groups: [
+      {
+        label: 'Intelligence', icon: 'ti-message-chatbot',
+        items: [
+          { label: 'Admin Assistant', href: '/admin/assistant' },
         ],
       },
     ],
