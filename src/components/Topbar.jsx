@@ -306,20 +306,20 @@ export default function Topbar({ onMenuOpen, sidebarExpanded = false }) {
         type="button"
         onClick={() => router.push('/home')}
         className={`hidden md:flex flex-shrink-0 items-center transition-all ${
-          sidebarExpanded ? 'w-[240px] justify-start pl-8' : 'w-[64px] justify-center'
+          sidebarExpanded ? 'w-[240px] justify-start pl-3' : 'w-[64px] justify-center'
         }`}
         aria-label="Go to home"
       >
         {sidebarExpanded ? (
-          <span className="text-[18px] font-black leading-none text-indigo-700">BillingPro</span>
+          <img src="/buyzaar-sync-logo.svg" alt="Buyzaar Sync" className="h-12 w-[170px] object-contain" />
         ) : (
-          <span className="sr-only">BillingPro</span>
+          <img src="/buyzaar-sync-icon.svg" alt="Buyzaar Sync" className="h-10 w-10 object-contain" />
         )}
       </button>
 
       {/* Brand — mobile center */}
       <div className="md:hidden flex-1 flex justify-center">
-        <p className="text-[15px] font-extrabold text-indigo-700">BillingPro</p>
+        <img src="/buyzaar-sync-logo.svg" alt="Buyzaar Sync" className="h-10 w-[150px] object-contain" />
       </div>
 
       {/* Page title — desktop */}
@@ -559,7 +559,7 @@ export default function Topbar({ onMenuOpen, sidebarExpanded = false }) {
             onClick={() => setOpenProfile((prev) => !prev)}
             className="flex items-center gap-2 rounded-2xl px-1.5 py-1 transition-colors hover:bg-blue-50"
           >
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center flex-shrink-0 shadow-[0_8px_18px_rgba(37,99,235,0.22)]">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-600 to-green-500 flex items-center justify-center flex-shrink-0 shadow-[0_8px_18px_rgba(176,0,0,0.22)]">
               <span className="text-[11px] font-bold text-white">{initials}</span>
             </div>
             <div className="hidden sm:block text-left">

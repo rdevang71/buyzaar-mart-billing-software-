@@ -152,7 +152,7 @@ export default function CreditPurchasePage({
           <button
             type="button"
             onClick={openModal}
-            className="h-10 px-5 rounded bg-[#2f6ecf] text-white text-[13px] font-medium shadow-sm hover:bg-[#275db2]"
+            className="h-10 px-5 rounded bg-[#B00000] text-white text-[13px] font-medium shadow-sm hover:bg-[#920000]"
           >
             {buttonLabel}
           </button>
@@ -242,7 +242,7 @@ export default function CreditPurchasePage({
                   type="button"
                   onClick={handleSave}
                   disabled={saving}
-                  className="h-9 px-4 rounded bg-[#2f6ecf] text-white text-[13px] font-medium hover:bg-[#275db2] disabled:opacity-60"
+                  className="h-9 px-4 rounded bg-[#B00000] text-white text-[13px] font-medium hover:bg-[#920000] disabled:opacity-60"
                 >
                   {saving ? 'Saving...' : buttonLabel}
                 </button>

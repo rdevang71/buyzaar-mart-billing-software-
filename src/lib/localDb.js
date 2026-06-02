@@ -2,7 +2,7 @@ import Dexie from 'dexie';
 
 // ─── IndexedDB Schema ──────────────────────────────────────────────────────
 // Version history: bump DB_VERSION + add .stores() when schema changes
-export const localDb = new Dexie('BillingProOffline');
+export const localDb = new Dexie('BuyzaarSyncOffline');
 
 localDb.version(1).stores({
   // ── Cached server data (refreshed when online) ──────────────────────────

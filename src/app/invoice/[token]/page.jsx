@@ -18,7 +18,7 @@ export async function generateMetadata({ params }) {
   const { token } = await params;
   // Minimal meta so search engines / link-unfurlers show something useful
   return {
-    title:       'Invoice — BillingPro',
+    title:       'Invoice — Buyzaar Sync',
     description: `Digital invoice ${token.slice(0, 8).toUpperCase()}`,
   };
 }

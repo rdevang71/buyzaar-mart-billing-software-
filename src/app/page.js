@@ -18,10 +18,10 @@ const Icons = {
 };
 
 const quickActions = [
-  { label: 'Open POS', desc: 'Fast checkout', icon: Icons.pos, path: '/sales/pos', bg: 'linear-gradient(135deg, #3b82f6, #1d4ed8)' },
-  { label: 'Master Dashboard', desc: 'View analytics', icon: Icons.dashboard, path: '/home/master-dashboard', bg: 'linear-gradient(135deg, #22c55e, #15803d)' },
+  { label: 'Open POS', desc: 'Fast checkout', icon: Icons.pos, path: '/sales/pos', bg: 'linear-gradient(135deg, #B00000, #B00000)' },
+  { label: 'Master Dashboard', desc: 'View analytics', icon: Icons.dashboard, path: '/home/master-dashboard', bg: 'linear-gradient(135deg, #539D62, #477f53)' },
   { label: 'Returns', desc: 'Manage returns', icon: Icons.returns, path: '/sales/returns', bg: 'linear-gradient(135deg, #f59e0b, #b45309)' },
-  { label: 'Full POS', desc: 'Advanced billing', icon: Icons.cart, path: '/sales/pos', bg: 'linear-gradient(135deg, #a855f7, #7e22ce)' },
+  { label: 'Full POS', desc: 'Advanced billing', icon: Icons.cart, path: '/sales/pos', bg: 'linear-gradient(135deg, #dc2626, #920000)' },
 ];
 
 function formatCurrency(value) {
@@ -95,15 +95,15 @@ export default function RootPage() {
 
   const kpiData = [
     { label: 'Total Revenue', value: formatCurrency(stats.sales.totalRevenue), icon: Icons.rupee, iconBg: '#fff7ed', iconColor: '#ea580c' },
-    { label: 'Transactions', value: String(stats.sales.totalSales), icon: Icons.receipt, iconBg: '#eff6ff', iconColor: '#2563eb' },
-    { label: 'Customers', value: String(stats.customers), icon: Icons.users, iconBg: '#f0fdf4', iconColor: '#16a34a' },
-    { label: 'Tax Collected', value: formatCurrency(stats.sales.totalTax), icon: Icons.chartPie, iconBg: '#faf5ff', iconColor: '#9333ea' },
+    { label: 'Transactions', value: String(stats.sales.totalSales), icon: Icons.receipt, iconBg: '#eff6ff', iconColor: '#B00000' },
+    { label: 'Customers', value: String(stats.customers), icon: Icons.users, iconBg: '#f0fdf4', iconColor: '#539D62' },
+    { label: 'Tax Collected', value: formatCurrency(stats.sales.totalTax), icon: Icons.chartPie, iconBg: '#faf5ff', iconColor: '#B00000' },
   ];
 
   return (
     <MainLayout>
       <div style={{ marginBottom: '2rem' }}>
-        <h1 style={{ fontSize: '2rem', fontWeight: 900, color: '#111827', letterSpacing: '-0.02em', margin: 0 }}>Welcome to BillingPro</h1>
+        <h1 style={{ fontSize: '2rem', fontWeight: 900, color: '#111827', letterSpacing: '-0.02em', margin: 0 }}>Welcome to Buyzaar Sync</h1>
         <p style={{ color: '#4b5563', fontSize: '0.95rem', fontWeight: 500, marginTop: '0.5rem' }}>
           Dashboard Summary for Current Month{user?.name ? ` · ${user.name}` : ''}
         </p>

@@ -41,7 +41,7 @@ export default function InvoiceClientView({ data, invoiceURL }) {
   const hasDiscount = n(bill.discount_total) > 0;
   const hasTax      = taxTotal > 0;
   const hasRoundOff = n(bill.round_off) !== 0;
-  const storeName   = bill.store_name || 'BillingPro Store';
+  const storeName   = bill.store_name || 'Buyzaar Sync Store';
   const taxRows = Object.values((items || []).reduce((acc, item) => {
     const amount = n(item.tax_amount);
     if (amount <= 0) return acc;
@@ -100,7 +100,7 @@ export default function InvoiceClientView({ data, invoiceURL }) {
         <div className="inv-card max-w-2xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden">
 
           {/* Top accent */}
-          <div className="h-1.5 bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-500" />
+          <div className="h-1.5 bg-gradient-to-r from-blue-600 via-blue-500 to-green-500" />
 
           <div className="p-6 sm:p-8">
 

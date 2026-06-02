@@ -32,7 +32,7 @@ const DEFAULT_SETTINGS = [
     name: 'Default Business Info',
     code: 'default',
     description: 'Primary legal and contact details for the chain.',
-    config: { legalName: 'BillingPro', gstin: '', phone: '9999999999', email: 'admin@example.com', address: '' },
+    config: { legalName: 'Buyzaar Sync', gstin: '', phone: '9999999999', email: 'admin@example.com', address: '' },
   },
   {
     type: 'app-settings',
@@ -54,7 +54,7 @@ const DEFAULT_SETTINGS = [
     code: 'default',
     description: 'Default receipt template used by POS print.',
     config: {
-      businessName: 'BillingPro',
+      businessName: 'Buyzaar Sync',
       subtitle: 'GST Invoice / POS Receipt',
       headerText: '',
       footerText: 'Thank you. Visit again.',

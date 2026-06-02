@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: billingpro-backend
+    name: buyzaar-sync-backend
     env: node
     plan: starter
     buildCommand: npm install && npm run build

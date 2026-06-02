@@ -200,7 +200,7 @@ function LineItemsContent() {
         <div className="grid grid-cols-[394px_minmax(600px,1080px)] gap-[clamp(64px,13vw,248px)] pl-[54px] pr-[58px] max-xl:grid-cols-[394px_minmax(520px,1fr)] max-xl:gap-10 max-lg:grid-cols-1 max-lg:pl-0 max-lg:pr-0">
           <aside className="h-[713px] overflow-auto border border-[#9d9d9d] bg-white">
             <div className="sticky top-0 bg-[#fbfbfb] px-[13px] py-[18px]">
-              <h3 className="text-[15px] font-semibold text-[#0b5cc4]">Stock Information</h3>
+              <h3 className="text-[15px] font-semibold text-[#B00000]">Stock Information</h3>
             </div>
 
             <div className="px-3 pt-[14px]">
@@ -317,7 +317,7 @@ function LineItemsContent() {
                           <div className="text-[12px] text-[#616871]">SKU: {product.sku || '-'}</div>
                           <div className="text-[12px] text-[#616871]">Stock: {Number(product.availableStock || 0)}</div>
                         </div>
-                        <span className="text-[13px] font-medium text-[#0b5cc4]">Add</span>
+                        <span className="text-[13px] font-medium text-[#B00000]">Add</span>
                       </button>
                     ))}
                   </div>
@@ -381,7 +381,7 @@ function LineItemsContent() {
       <button
         type="button"
         onClick={() => router.push('/inventory/stockout')}
-        className="fixed bottom-[115px] left-[27px] z-40 flex h-[29px] w-[29px] items-center justify-center rounded-[8px] border-2 border-[#2b5f9e] bg-white text-[#2b5f9e]"
+        className="fixed bottom-[115px] left-[27px] z-40 flex h-[29px] w-[29px] items-center justify-center rounded-[8px] border-2 border-[#B00000] bg-white text-[#B00000]"
         title="Back to stock out"
       >
         <i className="ti ti-home text-[18px]" />
@@ -391,13 +391,13 @@ function LineItemsContent() {
         <div className="flex h-full items-center justify-between pl-[181px] pr-[188px] max-xl:px-10 max-md:px-5">
           <div className="flex flex-wrap items-center gap-[92px] max-xl:gap-10">
             <span className="text-[20px] font-semibold text-black">
-              Total Items:<strong className="font-semibold text-[#0b5cc4]">{totals.totalItems}</strong>
+              Total Items:<strong className="font-semibold text-[#B00000]">{totals.totalItems}</strong>
             </span>
             <span className="text-[20px] font-semibold text-black">
-              Total Cost:<strong className="font-semibold text-[#0b5cc4]">{formatCurrency(totals.totalCost)}</strong>
+              Total Cost:<strong className="font-semibold text-[#B00000]">{formatCurrency(totals.totalCost)}</strong>
             </span>
             <span className="text-[20px] font-semibold text-black">
-              Total Tax Value:<strong className="font-semibold text-[#0b5cc4]">{formatCurrency(totals.totalTax)}</strong>
+              Total Tax Value:<strong className="font-semibold text-[#B00000]">{formatCurrency(totals.totalTax)}</strong>
             </span>
           </div>
           <div className="flex items-center gap-4">
@@ -405,14 +405,14 @@ function LineItemsContent() {
               type="button"
               onClick={confirm}
               disabled={confirming || cart.length === 0}
-              className="h-[51px] rounded-[4px] bg-[#2f73c9] px-[14px] text-[16px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-[51px] rounded-[4px] bg-[#B00000] px-[14px] text-[16px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               {confirming ? 'Confirming...' : 'Confirm Transaction'}
             </button>
             <button
               type="button"
               onClick={() => setCart([])}
-              className="flex h-[52px] w-[52px] items-center justify-center rounded-[3px] border border-[#2f73c9] bg-white text-[#2f73c9]"
+              className="flex h-[52px] w-[52px] items-center justify-center rounded-[3px] border border-[#B00000] bg-white text-[#B00000]"
               title="Clear cart"
             >
               <i className="ti ti-trash text-[24px]" />

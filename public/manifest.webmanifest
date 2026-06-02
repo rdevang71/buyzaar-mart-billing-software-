@@ -1,12 +1,12 @@
 {
-  "name": "BillingPro",
-  "short_name": "BillingPro",
+  "name": "Buyzaar Sync",
+  "short_name": "Buyzaar Sync",
   "description": "POS billing, inventory, and customer management",
   "start_url": "/sales/pos",
   "scope": "/",
   "display": "standalone",
   "background_color": "#f8fafc",
-  "theme_color": "#1d4ed8",
+  "theme_color": "#B00000",
   "orientation": "any",
   "icons": [
     {

@@ -144,7 +144,7 @@ function normalizePaymentOptions(modes = []) {
 
 const inputClassName = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500 focus:ring-2 focus:ring-blue-400 outline-none';
 const DEFAULT_RECEIPT_CONFIG = {
-  businessName: 'BillingPro',
+  businessName: 'Buyzaar Sync',
   subtitle: 'GST Invoice / POS Receipt',
   headerText: '',
   footerText: 'Thank you. Visit again.',
@@ -955,7 +955,7 @@ export default function POSPage() {
           </style>
         </head>
         <body>
-          <h1>${receiptConfig.businessName || 'BillingPro'}</h1>
+          <h1>${receiptConfig.businessName || 'Buyzaar Sync'}</h1>
           <div class="center muted">${receiptConfig.subtitle || 'GST Invoice / POS Receipt'}</div>
           ${receiptConfig.headerText ? `<div class="center muted" style="white-space:pre-line;margin-top:6px">${receiptConfig.headerText}</div>` : ''}
           <div class="line"></div>
@@ -1855,8 +1855,8 @@ export default function POSPage() {
                     </div>
                   </div>
                 )}
-                <div className="text-center mb-3">
-                  <p className="text-xl font-black text-slate-950">BillingPro</p>
+                <div className="mb-3 flex flex-col items-center text-center">
+                  <img src="/buyzaar-sync-logo.svg" alt="Buyzaar Sync" className="h-12 w-auto object-contain" />
                   <p className="text-xs text-slate-500">
                     {receiptData.bill?.isOffline ? 'OFFLINE RECEIPT' : 'GST Invoice / POS Receipt'}
                   </p>

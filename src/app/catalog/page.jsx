@@ -51,7 +51,7 @@ export default function CatalogDashboard() {
   const health = stats.health_score ?? 100;
   const circumference = 2 * Math.PI * 34;
   const dashOffset = circumference - (health / 100) * circumference;
-  const healthColor = health >= 80 ? '#16a34a' : health >= 50 ? '#f59e0b' : '#dc2626';
+  const healthColor = health >= 80 ? '#539D62' : health >= 50 ? '#f59e0b' : '#dc2626';
 
   if (loading) {
     return (

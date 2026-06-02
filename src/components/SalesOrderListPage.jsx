@@ -195,7 +195,7 @@ export default function SalesOrderListPage({
               <div className="relative" ref={bulkRef}>
                 <button
                   onClick={() => setBulkOpen((o) => !o)}
-                  className="flex items-center gap-1.5 px-4 py-[7px] border border-[#1a6fbe] text-[#1a6fbe] bg-white rounded-md text-xs font-semibold hover:bg-blue-50 transition shadow-sm"
+                  className="flex items-center gap-1.5 px-4 py-[7px] border border-[#B00000] text-[#B00000] bg-white rounded-md text-xs font-semibold hover:bg-blue-50 transition shadow-sm"
                 >
                   Bulk Operations
                   <svg
@@ -278,7 +278,7 @@ export default function SalesOrderListPage({
             <button
               onClick={handleFetch}
               disabled={loading}
-              className="px-6 py-[7px] bg-[#1a6fbe] hover:bg-[#155fa0] active:scale-95 disabled:cursor-not-allowed disabled:opacity-70 text-white text-xs font-semibold rounded-md transition shadow-sm"
+              className="px-6 py-[7px] bg-[#B00000] hover:bg-[#920000] active:scale-95 disabled:cursor-not-allowed disabled:opacity-70 text-white text-xs font-semibold rounded-md transition shadow-sm"
             >
               {loading ? 'Loading…' : 'Fetch'}
             </button>

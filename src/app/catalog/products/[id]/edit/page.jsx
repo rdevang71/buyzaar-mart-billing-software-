@@ -7,8 +7,8 @@ import SearchableSelect from '@/components/SearchableSelect';
 
 const COLOR_OPTIONS = [
   { name: 'Red', value: '#ef4444' },
-  { name: 'Blue', value: '#3b82f6' },
-  { name: 'Green', value: '#22c55e' },
+  { name: 'Blue', value: '#B00000' },
+  { name: 'Green', value: '#539D62' },
   { name: 'Orange', value: '#f97316' },
   { name: 'Black', value: '#111827' },
   { name: 'Gray', value: '#6b7280' },

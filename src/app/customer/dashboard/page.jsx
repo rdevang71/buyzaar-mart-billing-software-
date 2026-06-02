@@ -149,7 +149,7 @@ export default function CustomerDashboardPage() {
                   tickLine={false}
                 />
                 <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }} />
-                <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={1.8} dot={{ fill: '#3b82f6', r: 3 }} />
+                <Line type="monotone" dataKey="value" stroke="#B00000" strokeWidth={1.8} dot={{ fill: '#B00000', r: 3 }} />
               </LineChart>
             </ResponsiveContainer>
           </div>

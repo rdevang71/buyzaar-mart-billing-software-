@@ -209,11 +209,11 @@ function LoginPageContent() {
 
   return (
     <AuthScreen
-      brandTitle="Merchant Console"
+      brandTitle="Buyzaar Sync"
       brandTagline="Manage your storefront, anytime anywhere."
-      leftPanelKicker="Merchant Console"
+      leftPanelKicker="Buyzaar Sync"
       leftPanelTitle="Manage your storefront, anytime anywhere."
-      leftPanelSubtitle="Sign in to your Merchant console. Track settlements, manage POS terminals, and turn live data into smarter decisions, all in one place."
+      leftPanelSubtitle="Sign in to your Buyzaar Sync. Track settlements, manage POS terminals, and turn live data into smarter decisions, all in one place."
       eyebrow="Welcome back."
       title="Sign in to continue."
       subtitle=""
@@ -234,7 +234,7 @@ function LoginPageContent() {
               name="email"
               value={form.email}
               onChange={onChange}
-              placeholder="admin@billingpro.com"
+              placeholder="admin@buyzaarsync.com"
               required
               disabled={loading}
               className="w-full bg-transparent text-[13px] text-gray-900 outline-none placeholder:text-gray-400 disabled:cursor-not-allowed disabled:opacity-50"

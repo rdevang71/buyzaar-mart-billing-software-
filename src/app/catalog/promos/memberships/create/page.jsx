@@ -5,12 +5,12 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 const DISCOUNT_TYPES = ['Percentage', 'Fixed Amount'];
-const COLOR_PRESETS = ['#2563eb', '#16a34a', '#dc2626', '#9333ea', '#ea580c', '#0891b2', '#4b5563'];
+const COLOR_PRESETS = ['#B00000', '#539D62', '#dc2626', '#B00000', '#ea580c', '#B00000', '#4b5563'];
 
 const initialForm = {
   appearance_type: 'image',
   image_url: '',
-  color: '#2563eb',
+  color: '#B00000',
   name: '',
   membership_code: '',
   category_id: '',
