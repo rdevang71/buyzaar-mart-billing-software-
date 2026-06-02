@@ -139,7 +139,7 @@ export async function GET(request) {
 
     const stockInParams = [];
     const stockInWhere = [
-      "si.status = 'confirmed'",
+      "COALESCE(si.status, 'confirmed') NOT IN ('cancelled', 'void', 'rejected', 'deleted')",
       'sii.qty > 0',
       `NOT EXISTS (
         SELECT 1
@@ -147,6 +147,7 @@ export async function GET(request) {
         WHERE existing.source_type = 'stock_in'
           AND NULLIF(existing.source_id, '') ~ '^[0-9]+$'
           AND NULLIF(existing.source_id, '')::BIGINT = sii.id
+          AND existing.available_qty > 0
       )`,
     ];
 
