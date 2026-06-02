@@ -2,12 +2,12 @@ import './globals.css';
 import { RootClientWrapper } from './RootClientWrapper';
 
 export const metadata = {
-  title: 'BillingPro',
-  description: 'Professional billing software',
+  title: 'Buyzaar Sync',
+  description: 'Retail sync and billing software',
   manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,
-    title: 'BillingPro',
+    title: 'Buyzaar Sync',
     statusBarStyle: 'default',
   },
 };
@@ -16,7 +16,7 @@ export const viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
-  themeColor: '#1d4ed8',
+  themeColor: '#B00000',
 };
 
 export default function RootLayout({ children }) {

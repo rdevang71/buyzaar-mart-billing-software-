@@ -417,7 +417,7 @@ export async function POST(request) {
  * Content-Type: application/json
  * 
  * {
- *   "email": "admin@billingpro.com",
+ *   "email": "admin@buyzaarsync.com",
  *   "password": "admin@123"
  * }
  * 

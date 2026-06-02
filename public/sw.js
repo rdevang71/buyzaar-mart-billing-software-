@@ -1,4 +1,4 @@
-const CACHE_NAME = 'billingpro-shell-v2';
+const CACHE_NAME = 'buyzaar-sync-shell-v2';
 const APP_SHELL = [
   '/',
   '/login',

@@ -121,7 +121,7 @@ export default function MainLayout({ children }) {
 
       {/* Desktop SubSidebar panel */}
       {hasAccessibleMenu && subOpen && (
-        <div className="hidden md:block fixed left-[64px] top-[56px] h-[calc(100vh-56px)] z-30 w-[256px] border-r border-slate-200/80 bg-[#edf3fa] shadow-[6px_0_22px_rgba(15,23,42,0.06)] animate-shell-slide-in">
+        <div className="hidden md:block fixed left-[64px] top-[56px] h-[calc(100vh-56px)] z-30 w-[256px] border-r border-slate-200/80 bg-[#fff1f1] shadow-[6px_0_22px_rgba(15,23,42,0.06)] animate-shell-slide-in">
           <SubSidebar
             subSidebar={activeMenu.subSidebar}
             onClose={null}

@@ -80,7 +80,7 @@ export default function Sidebar({
         <div className={`
           hidden md:flex h-12 w-12 items-center justify-center rounded-2xl
           cursor-pointer transition-all duration-200
-          ${isActive ? 'bg-indigo-600 text-white shadow-[0_10px_22px_rgba(79,70,229,0.22)]' : 'text-slate-500 hover:bg-indigo-50 hover:text-indigo-700'}
+          ${isActive ? 'bg-indigo-600 text-white shadow-[0_10px_22px_rgba(176,0,0,0.22)]' : 'text-slate-500 hover:bg-indigo-50 hover:text-indigo-700'}
         `}>
           {isActive && <span className="absolute -left-2 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-indigo-600" />}
           <i className={`ti ${item.icon} text-[22px]`} />
@@ -101,9 +101,9 @@ export default function Sidebar({
           )}
         </div>
 
-        <span className={`pointer-events-none absolute left-[66px] top-1/2 z-[200] hidden w-[290px] -translate-y-1/2 rounded-3xl border border-fuchsia-300/35 bg-gradient-to-br from-fuchsia-700 via-violet-700 to-purple-800 px-4 py-3.5 text-left shadow-[0_20px_45px_rgba(88,28,135,0.42)] backdrop-blur-sm transition-all duration-300 ease-out md:block ${isHovered ? 'visible translate-x-2 scale-100 opacity-100' : 'invisible translate-x-0 scale-95 opacity-0'}`}>
+        <span className={`pointer-events-none absolute left-[66px] top-1/2 z-[200] hidden w-[290px] -translate-y-1/2 rounded-3xl border border-red-300/35 bg-gradient-to-br from-red-700 via-red-700 to-green-700 px-4 py-3.5 text-left shadow-[0_20px_45px_rgba(176,0,0,0.32)] backdrop-blur-sm transition-all duration-300 ease-out md:block ${isHovered ? 'visible translate-x-2 scale-100 opacity-100' : 'invisible translate-x-0 scale-95 opacity-0'}`}>
           <span className="block text-[16px] font-extrabold tracking-wide text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.25)]">{item.label}</span>
-          <span className="mt-2 block whitespace-normal text-[13px] font-medium leading-snug text-indigo-100">
+          <span className="mt-2 block whitespace-normal text-[13px] font-medium leading-snug text-red-100">
             {item.description || descriptions[item.label] || `Open ${item.label}`}
           </span>
         </span>
@@ -146,7 +146,7 @@ export default function Sidebar({
       `}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
           <div>
-            <p className="text-[16px] font-extrabold text-indigo-700">BillingPro</p>
+            <img src="/buyzaar-sync-logo.svg" alt="Buyzaar Sync" className="h-10 w-auto object-contain" />
             <p className="text-[10px] text-gray-400">India's No.1 Business App</p>
           </div>
           <button onClick={onMobileClose} className="p-2 rounded-lg hover:bg-slate-100">
@@ -183,20 +183,20 @@ export default function Sidebar({
         </aside>
       ) : (
       <aside className="hidden md:flex fixed left-0 top-[56px] h-[calc(100vh-56px)] w-[64px] flex-col items-center overflow-visible border-r border-slate-200/80 bg-white/95 z-40 shadow-[2px_0_18px_rgba(15,23,42,0.04)]">
-        <div className="flex w-full justify-center border-b border-slate-100 px-2 py-3">
+        {/* <div className="flex w-full justify-center border-b border-slate-100 px-2 py-3">
           <button
             type="button"
             onClick={() => {
               setActiveMenu(null);
               onRequestOpen?.();
             }}
-            className="flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-[0_10px_22px_rgba(79,70,229,0.2)] transition-all hover:bg-indigo-700 hover:shadow-[0_12px_26px_rgba(79,70,229,0.26)]"
+            className="flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-[0_10px_22px_rgba(176,0,0,0.2)] transition-all hover:bg-indigo-700 hover:shadow-[0_12px_26px_rgba(176,0,0,0.26)]"
             title="Open sidebar"
             aria-label="Open sidebar"
           >
-            <span className="text-[20px] font-black leading-none">B</span>
+            <img src="/buyzaar-sync-icon.svg" alt="" className="h-8 w-8 object-contain" aria-hidden="true" />
           </button>
-        </div>
+        </div> */}
         <div className="no-scrollbar flex-1 space-y-2 overflow-visible px-2 py-3">
           {items.map((item) => (
             <NavItem key={item.label} item={item} />

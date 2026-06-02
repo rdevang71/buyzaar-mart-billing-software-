@@ -1,5 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="96" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Buyzaar Sync icon</title>
+  <desc id="desc">Transparent red circuit chip icon with green outline.</desc>
   <g fill="none" fill-rule="evenodd">
     <g stroke="#B00000" stroke-linecap="round" stroke-linejoin="round" stroke-width="20">
       <path d="M256 86v86M172 118l62 50v56M92 210l62 74h94M64 256h184M92 322l62-74h94M172 394l62-50v-56M256 426v-86M340 118l-62 50v56M420 210l-62 74h-94M448 256H264M420 322l-62-74h-94M340 394l-62-50v-56"/>

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import MainLayout from '@/components/MainLayout';
 
 const DEFAULT_CONFIG = {
-  businessName: 'BillingPro',
+  businessName: 'Buyzaar Sync',
   subtitle: 'GST Invoice / POS Receipt',
   headerText: '',
   footerText: 'Thank you. Visit again.',

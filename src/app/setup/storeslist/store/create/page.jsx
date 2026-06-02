@@ -403,8 +403,8 @@ export default function CreateStorePage() {
         }
         .input:focus {
           outline: none;
-          border-color: #2563eb;
-          box-shadow: 0 0 0 1px #2563eb;
+          border-color: #B00000;
+          box-shadow: 0 0 0 1px #B00000;
         }
         .input-error {
           border-color: #ef4444;

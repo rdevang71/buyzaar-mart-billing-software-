@@ -1,4 +1,4 @@
-# BillingPro Deployment
+# Buyzaar Sync Deployment
 
 This app is a Next.js full-stack app. For the requested split:
 
@@ -20,8 +20,8 @@ DB_SSL=true
 If you already have local data, export/import it:
 
 ```powershell
-pg_dump -h localhost -U postgres -d billingpro -Fc -f billingpro.dump
-pg_restore --clean --if-exists --no-owner --no-privileges -d "NEON_DATABASE_URL" billingpro.dump
+pg_dump -h localhost -U postgres -d buyzaar_sync -Fc -f buyzaar-sync.dump
+pg_restore --clean --if-exists --no-owner --no-privileges -d "NEON_DATABASE_URL" buyzaar-sync.dump
 ```
 
 ## 2. Render backend

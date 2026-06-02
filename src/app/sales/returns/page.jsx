@@ -32,7 +32,7 @@ function formatReceiptDateTime(value) {
 }
 
 const DEFAULT_RECEIPT_CONFIG = {
-  businessName: 'BillingPro',
+  businessName: 'Buyzaar Sync',
   subtitle: 'Return Product Receipt',
   headerText: '',
   footerText: 'Thank you. Visit again.',
@@ -383,7 +383,7 @@ export default function ReturnsPage() {
           </style>
         </head>
         <body>
-          <h1>${receiptConfig.businessName || 'BillingPro'}</h1>
+          <h1>${receiptConfig.businessName || 'Buyzaar Sync'}</h1>
           <div class="center muted">Return Product Receipt</div>
           ${receiptConfig.headerText ? `<div class="center muted" style="white-space:pre-line;margin-top:6px">${receiptConfig.headerText}</div>` : ''}
           <div class="line"></div>
