@@ -233,7 +233,7 @@ export default function ReportsListPage({
       <div className="min-h-screen bg-transparent text-sm text-slate-800">
 
         {/* Breadcrumb */}
-        <nav className="mb-3 flex items-center gap-1.5 text-xs text-slate-500">
+        <nav className="mb-3 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
           {breadcrumbs.map((crumb, i) => (
             <span key={i} className="flex items-center gap-1.5">
               {i > 0 && <span className="text-slate-400">›</span>}
@@ -247,7 +247,7 @@ export default function ReportsListPage({
         </nav>
 
         {/* Title */}
-        <h1 className="mb-0.5 text-2xl font-black tracking-tight text-slate-900">{title}</h1>
+        <h1 className="mb-0.5 text-[22px] font-black tracking-tight text-slate-900 sm:text-2xl">{title}</h1>
         {description && (
           <p className="mb-4 text-xs text-slate-500">
             {description.replace('Need Help?', '')}
@@ -259,7 +259,7 @@ export default function ReportsListPage({
 
         {/* Filter Card */}
         {resolvedFiltersWithStores.length > 0 && (
-          <div className="mb-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_1px_12px_rgba(15,23,42,0.04)]">
+          <div className="mb-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_1px_12px_rgba(15,23,42,0.04)] sm:p-5">
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
               {resolvedFiltersWithStores.map((f) => (
                 <div key={f.key}>
@@ -316,7 +316,7 @@ export default function ReportsListPage({
             </div>
 
             {/* Filter Actions */}
-            <div className="mt-4 flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
+            <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 pt-3">
               <button
                 onClick={handleDownload}
                 className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 transition hover:bg-slate-50"
@@ -329,7 +329,7 @@ export default function ReportsListPage({
               <button
                 onClick={handleApply}
                 disabled={loading}
-                className="rounded-xl bg-indigo-600 px-6 py-2 text-sm font-medium text-white transition hover:bg-indigo-700"
+                className="flex-1 rounded-xl bg-indigo-600 px-6 py-2 text-sm font-medium text-white transition hover:bg-indigo-700 sm:flex-none"
               >
                 {loading ? 'Loading...' : 'Apply'}
               </button>
@@ -348,7 +348,7 @@ export default function ReportsListPage({
 
         {/* Search */}
         <div className="mb-2 flex justify-end">
-          <div className="relative">
+          <div className="relative w-full sm:w-auto">
             <svg className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 20 20">
               <circle cx="9" cy="9" r="6" stroke="currentColor" strokeWidth="1.5"/>
               <path d="M15 15l-3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
@@ -358,7 +358,7 @@ export default function ReportsListPage({
               placeholder="Search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-56 rounded-xl border border-slate-200 bg-white py-2 pl-8 pr-3 text-sm text-slate-700 placeholder:text-slate-400 transition focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400"
+              className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-8 pr-3 text-sm text-slate-700 placeholder:text-slate-400 transition focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 sm:w-56"
             />
           </div>
         </div>
@@ -425,7 +425,7 @@ export default function ReportsListPage({
         </div>
 
         {/* Pagination */}
-        <div className="mt-4 flex items-center gap-4">
+        <div className="mt-4 flex flex-wrap items-center gap-4">
           <div className="relative">
             <select
               value={pageSize}

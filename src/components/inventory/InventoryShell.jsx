@@ -50,7 +50,7 @@ export default function InventoryShell({
 
   return (
     <MainLayout>
-      <div className="mb-4 flex items-center gap-2 text-[12px] text-slate-500">
+      <div className="mb-4 flex flex-wrap items-center gap-2 text-[12px] text-slate-500">
         {breadcrumb.map((item, index) => (
           <span key={item.label} className="flex items-center gap-2">
             <span className={index === breadcrumb.length - 1 ? 'font-semibold text-slate-900' : 'text-indigo-600'}>
@@ -61,16 +61,16 @@ export default function InventoryShell({
         ))}
       </div>
 
-      <div className="mb-5 flex items-start justify-between gap-4 rounded-3xl border border-slate-200 bg-white/85 p-5 shadow-[0_1px_12px_rgba(15,23,42,0.04)]">
-        <div>
-          <h1 className="text-[28px] font-black tracking-tight text-slate-900 leading-tight">{title}</h1>
+      <div className="mb-5 flex flex-col items-start justify-between gap-4 rounded-3xl border border-slate-200 bg-white/85 p-4 shadow-[0_1px_12px_rgba(15,23,42,0.04)] sm:p-5 md:flex-row">
+        <div className="min-w-0">
+          <h1 className="text-[24px] font-black leading-tight tracking-tight text-slate-900 sm:text-[28px]">{title}</h1>
           <p className="mt-1 text-[12.5px] text-slate-400">{subtitle}</p>
         </div>
 
         {actions.length > 0 && (
-          <div className="flex items-center gap-3 flex-shrink-0">
+          <div className="flex w-full flex-wrap items-center gap-3 md:w-auto md:flex-shrink-0">
             {actions.map((action, index) => {
-              const className = `flex items-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-medium transition-colors ${
+              const className = `flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-medium transition-colors sm:flex-none ${
                   index === actions.length - 1 && action.primary
                     ? 'bg-indigo-600 text-white hover:bg-indigo-700'
                     : 'border border-indigo-200 text-indigo-600 hover:bg-indigo-50'
@@ -156,8 +156,8 @@ export default function InventoryShell({
 
       {showTable && tableHeaders.length > 0 && (
       <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
-          <div className="flex min-w-[260px] max-w-[340px] flex-1 items-center gap-2 rounded-xl bg-slate-50 px-3 py-2">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-3 py-3 sm:px-4">
+          <div className="flex min-w-0 max-w-full flex-[1_1_260px] items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 sm:max-w-[340px]">
             <i className="ti ti-search text-slate-400 text-[16px]" />
             <input
               type="text"
@@ -170,7 +170,7 @@ export default function InventoryShell({
               className="flex-1 bg-transparent text-[13px] text-slate-700 outline-none placeholder:text-slate-400"
             />
           </div>
-          <div className="ml-auto flex flex-wrap items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
             {Array.isArray(filters) ? filters.map((filter) => (
               <button key={filter} type="button" className="flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-[12.5px] text-slate-600 transition-colors hover:bg-slate-50">
                 <i className="ti ti-filter text-[14px] text-indigo-500" />
@@ -217,7 +217,7 @@ export default function InventoryShell({
           </table>
         </div>
 
-        <div className="flex items-center gap-3 border-t border-slate-100 px-4 py-3 text-[12px] text-slate-400">
+        <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 px-4 py-3 text-[12px] text-slate-400">
           <select className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] text-slate-600">
             <option>10</option>
           </select>

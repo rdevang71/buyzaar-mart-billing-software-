@@ -289,22 +289,40 @@ export async function GET(req) {
 
     // 8. Top Customers
     const topCustomersRes = await query(`
-      SELECT 
+      WITH billed_customers AS (
+        SELECT
+          COALESCE(NULLIF(TRIM(sb.customer_mobile), ''), 'walkin-' || COALESCE(NULLIF(TRIM(sb.customer_name), ''), sb.id::text)) AS customer_key,
+          NULLIF(MAX(TRIM(sb.customer_name)), '') AS bill_customer_name,
+          NULLIF(MAX(TRIM(sb.customer_mobile)), '') AS bill_mobile,
+          COUNT(DISTINCT sb.id)::int AS transactions,
+          COALESCE(SUM(sb.grand_total), 0) AS total_spent,
+          COALESCE(MAX(sb.created_at), NULL)::text AS last_purchase_date
+        FROM sales_bills sb
+        WHERE DATE(sb.created_at) >= '${date_from}'
+          AND DATE(sb.created_at) <= '${date_to}'
+          AND COALESCE(sb.status, 'paid') NOT IN ('cancelled', 'void')
+          AND (
+            NULLIF(TRIM(COALESCE(sb.customer_name, '')), '') IS NOT NULL
+            OR NULLIF(TRIM(COALESCE(sb.customer_mobile, '')), '') IS NOT NULL
+          )
+          ${salesBillStoreWhere ? salesBillStoreWhere.replace(/^WHERE\s+/i, 'AND ') : ''}
+        GROUP BY customer_key
+      )
+      SELECT
         c.id,
-        CONCAT_WS(' ', c.first_name, c.last_name) as name,
-        c.mobile_number as phone,
-        COUNT(DISTINCT sb.id) as transactions,
-        COALESCE(SUM(sb.grand_total), 0) as total_spent,
-        COALESCE(MAX(sb.created_at), NULL)::text as last_purchase_date
-      FROM customers c
-      LEFT JOIN sales_bills sb ON c.mobile_number = sb.customer_mobile
-        AND DATE(sb.created_at) >= '${date_from}'
-        AND DATE(sb.created_at) <= '${date_to}'
-        AND sb.status != 'cancelled'
-      ${salesBillStoreWhere}
-      GROUP BY c.id, c.first_name, c.last_name, c.mobile_number
-      HAVING COUNT(DISTINCT sb.id) > 0
-      ORDER BY total_spent DESC
+        COALESCE(
+          NULLIF(TRIM(CONCAT_WS(' ', c.first_name, c.last_name)), ''),
+          bc.bill_customer_name,
+          bc.bill_mobile,
+          'Walk-in Customer'
+        ) AS name,
+        COALESCE(c.mobile_number, bc.bill_mobile, '') AS phone,
+        bc.transactions,
+        bc.total_spent,
+        bc.last_purchase_date
+      FROM billed_customers bc
+      LEFT JOIN customers c ON c.mobile_number = bc.bill_mobile
+      ORDER BY bc.total_spent DESC
       LIMIT 20
     `).catch(() => ({ rows: [] }));
 
